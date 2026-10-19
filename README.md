@@ -7,6 +7,15 @@
 
 ---
 
+## 下载
+
+最新构建在 **Releases** 页面（手机上直接点链接就能下）：
+
+- [agent2api-magisk-v3.1.4-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/agent2api-magisk-v3.1.4-arm64.zip) —— Magisk / KernelSU 模块包
+- [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 手机端 APK
+
+---
+
 ## 三个产物
 
 | 产物 | 说明 | 怎么得到 |
