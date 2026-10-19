@@ -1,0 +1,349 @@
+#!/system/bin/sh
+# Agent2API 模块控制命令
+#   ctl status | start | stop | restart | health | doctor
+#   ctl update [check | drop | install] [tag]
+#   ctl rollback [data] | backup [目录] | clean [保留份数]
+#   ctl log [行数] | srvlog [行数] | dns | env | version
+MODDIR=$(cd "$(dirname "$0")/.." && pwd)
+. "$MODDIR/bin/lib.sh"
+
+# 读用户配置，保证 status 里显示的端口与实际一致
+load_env
+PORT=${AGENT2API_PROXY_PORT:-3065}
+
+# 进程存活时长（秒）：/proc/<pid>/stat 的 starttime（第 22 字段，单位 tick/100Hz）
+#
+# 不能用 `set -- $(cat /proc/<pid>/stat)`：第 2 字段是 "(comm)"，comm 里允许
+# 空格和括号（进程改名就能触发），一旦出现后续字段整体错位，${22} 取到的
+# 就不是 starttime，算出来是天数级别的垃圾值。先剥掉 "pid (comm) " 前缀，
+# 之后 state 变成第 1 个字段，starttime 落在第 20 个。
+proc_uptime() {
+  [ -n "$1" ] && [ -r "/proc/$1/stat" ] || return 1
+  _st=$(sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | cut -d' ' -f20)
+  case "$_st" in ''|*[!0-9]*) return 1 ;; esac
+  read _up _idle < /proc/uptime 2>/dev/null || return 1
+  echo $(( ${_up%%.*} - _st / 100 ))
+}
+
+# 目录体积（MB），用于 doctor / clean 的输出
+dir_mb() {
+  _k=$(du -sk "$1" 2>/dev/null | cut -f1)
+  case "$_k" in ''|*[!0-9]*) _k=0 ;; esac
+  echo $((_k / 1024))
+}
+
+# 回滚归档份数与总体积
+failed_stats() {
+  _n=0; _k=0
+  for _d in "$UPDDIR".failed.*; do
+    [ -d "$_d" ] || continue
+    _n=$((_n + 1))
+    _s=$(du -sk "$_d" 2>/dev/null | cut -f1)
+    case "$_s" in ''|*[!0-9]*) _s=0 ;; esac
+    _k=$((_k + _s))
+  done
+  echo "$_n $((_k / 1024))"
+}
+
+cmd=${1:-status}
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+  status)
+    _mver=$(grep -E '^version=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    _base=$(base_version)
+    _ovl=$(overlay_version)
+    _cur=${_ovl:-$_base}
+    # 明确区分「模块壳」与「服务端载荷」：两者的版本号本来就可以不同，
+    # 混在一起显示会让人以为装错了包（壳 v3.1.2 + 载荷 3.1.0 是正常组合）。
+    echo "模块壳：$_mver（$MODDIR）"
+    echo "服务端载荷：${_cur:-未知（rootfs 里没有 VERSION）}$( [ -n "$_ovl" ] && echo "（已通过 ctl/面板更新，出厂 ${_base:-未知}）" )"
+    if [ -f "$FATALFILE" ]; then
+      echo "状态：⛔ 启动失败（$FATALFILE）："
+      sed 's/^/      /' "$FATALFILE"
+      echo "      处理后执行：ctl restart"
+    elif is_running; then
+      _pid=$(cat "$PIDFILE" 2>/dev/null)
+      _up=$(proc_uptime "$_pid")
+      _rss=$(rss_mb "$_pid")
+      _rs=$(cat "$RESTARTS" 2>/dev/null | tr -dc '0-9')
+      echo "服务：运行中  pid=$_pid  uptime=${_up:-?}s  RSS=${_rss}MB  崩溃重启=${_rs:-0} 次"
+      if [ "$AGENT2API_WATCHDOG" != "0" ]; then
+        echo "      内存看门狗：阈值 $(mem_limit_mb)MB（AGENT2API_MAX_RSS_MB=0 表示按内存 1/8 自动）"
+      fi
+    else
+      echo "服务：未运行"
+    fi
+    if supervisor_running; then
+      echo "守护：运行中  pid=$(cat "$SUPPID" 2>/dev/null)  轮询=${AGENT2API_POLL_SECS:-10}s  健康检查=${AGENT2API_HEALTH_CHECK:-1}"
+    else
+      echo "守护：未运行"
+    fi
+    if port_owned_by_server; then
+      echo "端口：$PORT 已监听（本服务，${AGENT2API_HOST:-127.0.0.1}:$PORT）"
+    elif port_listening; then
+      _op=$(port_owner_pid)
+      echo "端口：$PORT 已监听，但持有人不是本服务（pid=${_op:-未知}）—— 服务会 bind 失败"
+    else
+      echo "端口：$PORT 未监听"
+    fi
+    if [ -f "$DATA/lan-exposed" ]; then
+      echo "注意：监听 ${AGENT2API_HOST}（局域网可达），面板是明文 HTTP —— 确保已设强密码/Key"
+    fi
+    if [ "${AGENT2API_SELF_UPDATE:-1}" = "1" ]; then
+      echo "面板内更新：已启用（面板「设置 → 软件更新」点一下即可，守护会自动重启生效）"
+    else
+      echo "面板内更新：已关闭（env.sh 的 AGENT2API_SELF_UPDATE=0），请用 ctl update"
+    fi
+    _fst=$(failed_stats)
+    set -- $_fst
+    [ "${1:-0}" -gt 0 ] && echo "注意：回滚归档 ${1} 份 / ${2}MB（ctl clean 可清理）"
+    echo "面板：http://127.0.0.1:$PORT/   自检：ctl doctor   更新：ctl update check"
+    ;;
+  start)
+    rm -f "$FATALFILE"
+    rm -f "$DATA/disable"
+    if supervisor_running; then
+      echo "守护已在运行；如需重启用 ctl restart"
+    else
+      spawn_supervisor
+      _i=0
+      while [ "$_i" -lt 15 ]; do
+        supervisor_running && is_running && break
+        _sleep 2; _i=$((_i + 1))
+      done
+      supervisor_running && echo "已启动，守护 pid=$(cat "$SUPPID" 2>/dev/null)" || echo "启动失败，看 $MODLOG"
+    fi
+    ;;
+  stop)
+    stop_all
+    echo "已停止（开机不再自启，直到 ctl start）"
+    ;;
+  restart)
+    stop_all
+    sleep 1
+    rm -f "$FATALFILE" "$DATA/disable"
+    spawn_supervisor
+    _i=0
+    while [ "$_i" -lt 15 ]; do
+      supervisor_running && is_running && health_ok && break
+      _sleep 2; _i=$((_i + 1))
+    done
+    if supervisor_running; then
+      echo "已重启，守护 pid=$(cat "$SUPPID" 2>/dev/null)"
+      health_ok && echo "健康检查：/health 正常" || echo "健康检查：暂未通过（启动中或异常，看 $SRVLOG）"
+    else
+      echo "重启失败，看 $MODLOG"
+    fi
+    ;;
+  health)
+    if health_ok; then
+      echo "/health 正常（http://${AGENT2API_HOST:-127.0.0.1}:$PORT/health）"
+    else
+      echo "/health 无响应（服务未起或假死；ctl srvlog 看现场）"
+      exit 1
+    fi
+    ;;
+  doctor)
+    # 一键自检：把散落在各处的判断收拢成一份可粘贴的清单。
+    # 只读，不改任何状态。
+    _bad=0
+    _warn=0
+    _okline()  { echo "  ✓ $1"; }
+    _warnline(){ echo "  ⚠ $1"; _warn=$((_warn + 1)); }
+    _badline() { echo "  ✗ $1"; _bad=$((_bad + 1)); }
+
+    echo "Agent2API 自检（$(date '+%Y-%m-%d %H:%M:%S')）"
+    _mver=$(grep -E '^version=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2)
+    _base=$(base_version); _ovl=$(overlay_version)
+    _okline "模块壳：${_mver:-未知}   载荷：${_ovl:-${_base:-未知}}$( [ -n "$_ovl" ] && echo "（已更新，出厂 ${_base:-未知}）" )"
+
+    # chroot
+    if _ch=$(find_chroot 2>/dev/null); then _okline "chroot：$_ch"
+    else _badline "chroot：找不到（toybox / busybox 都没有），服务无法启动"; fi
+
+    # rootfs 只读加固：唯一可靠判据是写测试（只读挂载对 root 也是 EROFS）
+    if _have_mount "$ROOT"; then
+      if : > "$ROOT/.rotest" 2>/dev/null; then
+        rm -f "$ROOT/.rotest" 2>/dev/null
+        _warnline "rootfs 只读加固：未生效（bind 成功但可写，toybox 忽略了 ro）"
+      else
+        _okline "rootfs 只读加固：已生效（写测试 EROFS）"
+      fi
+    else
+      _warnline "rootfs 只读加固：未挂载（服务未运行时正常）"
+    fi
+
+    # 挂载点就位情况：只统计"缺了就起不来"的致命项（zero/random/resolv 是警告级，
+    # 部分 ROM 上缺了也能正常跑，算进来只会让 ✗ 失去意义）
+    # 注意 dev 是整体一个 tmpfs（v3.1.3 起不再逐个 bind 设备节点），所以这里查
+    # `dev` 而不是 `dev/null` —— 查子路径会永远报"未就位"。
+    _mp_total=0; _mp_ok=0
+    for _d in proc dev tmp var/lib/agent2api var/log/agent2api; do
+      _mp_total=$((_mp_total + 1))
+      _have_mount "$ROOT/$_d" && _mp_ok=$((_mp_ok + 1))
+    done
+    if [ "$_mp_ok" -eq "$_mp_total" ]; then _okline "挂载：致命项 $_mp_ok/$_mp_total 就位"
+    elif [ "$_mp_ok" -eq 0 ]; then _warnline "挂载：0/$_mp_total（服务未运行）"
+    else _badline "挂载：致命项只有 $_mp_ok/$_mp_total 就位（看 ctl log 的 FATAL 行）"; fi
+    _have_mount "$ROOT/etc/resolv.conf" || _warnline "挂载：resolv.conf 未 bind（chroot 内用静态副本，DNS 不会自愈）"
+
+    # 设备节点：tmpfs + mknod 的产物，不是独立挂载点，单独查
+    _devbad=""
+    for _n in null zero random urandom; do
+      [ -c "$ROOT/dev/$_n" ] || _devbad="$_devbad $_n"
+    done
+    if [ -n "$_devbad" ]; then
+      _badline "chroot /dev：缺设备节点$_devbad"
+    else
+      _okline "chroot /dev：null/zero/random/urandom 就绪"
+    fi
+
+    # 进程
+    if is_running; then
+      _pid=$(cat "$PIDFILE" 2>/dev/null)
+      _up=$(proc_uptime "$_pid"); _rss=$(rss_mb "$_pid"); _lim=$(mem_limit_mb)
+      _okline "服务：pid=$_pid uptime=${_up:-?}s RSS=${_rss}MB（阈值 ${_lim}MB）"
+      [ "$_rss" -gt "$((_lim * 8 / 10))" ] && _warnline "内存：RSS ${_rss}MB 已接近阈值 ${_lim}MB，留意泄漏"
+      _oom=$(cat "/proc/$_pid/oom_score_adj" 2>/dev/null)
+      case "$_oom" in
+        -1000) _warnline "oom_score_adj=-1000：内核永不回收本进程，泄漏时会去杀系统进程" ;;
+        -[0-9]*) _okline "oom_score_adj=$_oom" ;;
+      esac
+    else
+      _badline "服务：未运行"
+    fi
+    supervisor_running && _okline "守护：运行中 pid=$(cat "$SUPPID" 2>/dev/null)" || _warnline "守护：未运行"
+
+    # 端口
+    if port_owned_by_server; then _okline "端口 $PORT：本服务持有"
+    elif port_listening; then
+      _op=$(port_owner_pid)
+      _badline "端口 $PORT：被 pid=${_op:-未知} 占用，服务 bind 会失败"
+    else _warnline "端口 $PORT：未监听"; fi
+
+    # 健康
+    if health_ok; then _okline "/health：正常"
+    elif is_running; then _badline "/health：无响应（疑似假死，看 ctl srvlog）"
+    else _warnline "/health：未探测（服务未运行）"; fi
+
+    # 时区
+    _tz=${TZ_NAME:-Asia/Shanghai}
+    if [ -f "$ROOT/usr/share/zoneinfo/$_tz" ] || [ "$_tz" = "UTC" ]; then
+      _okline "时区：$_tz（tzdata 命中）"
+    else
+      _warnline "时区：$_tz 在 tzdata 里不存在，实际会回落 Asia/Shanghai"
+    fi
+
+    # 日志与磁盘
+    _lg=$(dir_mb "$LOGDIR")
+    _free=$(df -k "$DATA" 2>/dev/null | tail -n 1 | tr -s ' ' | sed 's/^ *//' | cut -d' ' -f4)
+    case "$_free" in ''|*[!0-9]*) _free=0 ;; esac
+    if [ "$_free" -lt 512000 ]; then
+      _warnline "磁盘：/data 剩余 $((_free / 1024))MB（低于 500MB，注意日志/快照）"
+    else
+      _okline "磁盘：/data 剩余 $((_free / 1024))MB，日志 ${_lg}MB"
+    fi
+    for _f in "$SRVLOG" "$APPLOG"; do
+      [ -f "$_f" ] || continue
+      _s=$(wc -c < "$_f" 2>/dev/null | tr -dc '0-9'); [ -n "$_s" ] || _s=0
+      [ "$_s" -gt "$((16 * 1048576))" ] && _warnline "$(basename "$_f")：$((_s / 1048576))MB 超过 16MB 上限（轮转可能失效）"
+    done
+
+    # 更新层
+    _fst=$(failed_stats); set -- $_fst
+    if [ "${1:-0}" -gt 0 ]; then
+      _warnline "回滚归档：${1} 份 / ${2}MB（ctl clean 清理）"
+    else
+      _okline "回滚归档：无"
+    fi
+
+    # 安全
+    if lan_exposed_unsafe; then
+      _badline "安全：对外监听 ${AGENT2API_HOST} 且未配任何鉴权（守护会拒绝启动）"
+    elif lan_exposed; then
+      _warnline "安全：对外监听 ${AGENT2API_HOST}，面板是明文 HTTP"
+    else
+      _okline "安全：仅监听回环地址"
+    fi
+
+    echo "小结：${_bad} 项异常 / ${_warn} 项提醒"
+    [ "$_bad" -gt 0 ] && exit 1
+    exit 0
+    ;;
+  update)
+    # ctl update              → 在线安装最新
+    # ctl update check        → 只查版本
+    # ctl update drop         → 装投放目录里的手动下载包
+    # ctl update v3.2.0       → 在线安装指定 tag（配镜像可绕开 API）
+    _m=${1:-install}
+    _t=${2:-}
+    case "$_m" in
+      check|drop|install) ;;
+      v[0-9]*|[0-9]*) _t=$_m; _m=install ;;
+      *) _m=install ;;
+    esac
+    update_action "$_m" "$_t"
+    ;;
+  rollback)
+    _rd=0
+    [ "${1:-}" = "data" ] && _rd=1
+    if [ ! -d "$UPDDIR" ]; then
+      echo "没有可回滚的上一版载荷（从未通过 ctl / 面板更新过）；要回出厂版本请重刷模块包"
+      exit 0
+    fi
+    echo "回滚到内置版本 $(base_version)$( [ "$_rd" = "1" ] && echo '，并恢复升级前数据快照' ) ..."
+    rollback_update "$_rd" && echo "回滚完成" || echo "回滚后未就绪，看 $MODLOG"
+    ;;
+  clean)
+    # 清理可再生的占用：回滚归档 / 旧更新层 / 半成品暂存 / 上一份快照
+    _keep=${1:-2}
+    case "$_keep" in ''|*[!0-9]*) _keep=2 ;; esac
+    _before=$(du -sk "$DATA" 2>/dev/null | cut -f1); [ -n "$_before" ] || _before=0
+    echo "清理回滚归档（保留最近 ${_keep} 份）..."
+    prune_failed_archives "$_keep"
+    rm -rf "$UPDDIR.old" "$UPDDIR.superseded" 2>/dev/null
+    rm -rf "$UPDSTAGE" 2>/dev/null
+    rm -f "$BACKUPDIR/pre-update.tgz.1" 2>/dev/null
+    rm -f "$LOGDIR/server.log.1" "$LOGDIR/app.log.1" 2>/dev/null
+    _after=$(du -sk "$DATA" 2>/dev/null | cut -f1); [ -n "$_after" ] || _after=0
+    _freed=$(( (_before - _after) / 1024 ))
+    [ "$_freed" -lt 0 ] && _freed=0
+    echo "已清理，释放约 ${_freed}MB（当前 $DATA 占用 $((_after / 1024))MB）"
+    ;;
+  backup)
+    backup_data "${1:-}" || { echo "备份失败（权限？目录不存在？）"; exit 1; }
+    ;;
+  log)
+    n=${1:-40}
+    if [ -f "$MODLOG" ]; then tail -n "$n" "$MODLOG"; else echo "还没有日志：$MODLOG"; fi
+    ;;
+  srvlog)
+    n=${1:-40}
+    if [ -f "$SRVLOG" ]; then tail -n "$n" "$SRVLOG"; else echo "还没有服务日志：$SRVLOG"; fi
+    ;;
+  dns)
+    gen_resolv
+    echo "--- $RESOLV_SRC（bind 进 chroot 的 /etc/resolv.conf）---"
+    cat "$RESOLV_SRC"
+    ;;
+  env)
+    echo "--- $DATA/env.sh ---"
+    if [ -f "$DATA/env.sh" ]; then cat "$DATA/env.sh"; else echo "（不存在，重启模块会用默认值重建）"; fi
+    ;;
+  version)
+    grep -E '^(version|versionCode)=' "$MODDIR/module.prop"
+    echo "服务端出厂版本：$(base_version)  当前运行版本：$(current_version)"
+    if [ -f "$UPDDIR/ver-report" ]; then
+      echo "更新层版本报告：$(cat "$UPDDIR/ver-report")"
+    fi
+    ;;
+  *)
+    echo "用法：ctl status|start|stop|restart|health|doctor"
+    echo "      ctl update [check|drop|install] [tag]    # 在线更新（check 只查版本）"
+    echo "      ctl rollback [data]                      # 回滚到模块内置版本（data 连数据快照一起恢复）"
+    echo "      ctl backup [目录]                        # 备份 data/ + env.sh 到 tgz"
+    echo "      ctl clean [保留份数]                     # 清理回滚归档/暂存（默认保留 2 份）"
+    echo "      ctl log [行数]|srvlog [行数]|dns|env|version"
+    ;;
+esac

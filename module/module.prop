@@ -1,0 +1,7 @@
+id=agent2api
+name=Agent2API 网关（手机常驻）
+version=v3.1.4
+versionCode=31400
+author=富江
+description=agent2api-server 跑在 Android：glibc chroot 常驻 + 崩溃自愈 + 健康探活 + 内存看门狗 + 在线热更新（ctl update，免重刷模块）。数据在 /data/adb/agent2api。面板 http://127.0.0.1:3065/ 。注意：version 是「模块壳」版本，内置服务端载荷版本另算（ctl version 查看），两者可以不同
+minMagisk=20400

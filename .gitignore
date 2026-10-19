@@ -1,0 +1,16 @@
+# 构建产物（可用 pack.py / repack.py 重新生成）
+dist/
+apktool_out/
+apktool_clean/
+build/
+*.apk
+*.idsig
+*.zip
+
+# 依赖与临时文件
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db
+*.log
