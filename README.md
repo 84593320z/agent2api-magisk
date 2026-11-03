@@ -101,6 +101,9 @@ apk-mod/               手机端 APK 改造
   a2a-mod.jks          APK 签名密钥库（口令 a2a-mod-2026）
   README-mod.md        APK 侧的详细说明与验证记录
 docs/                  审计 / 修复报告
+  2026-11-03-源码审计-Agent2API-Android17.md   上一版的完整源码审计（19 项发现）
+  fix-verification-2026-11-03.md              19 项修复的逐项复测记录
+  fix-verify-2026-11-03.json                  复测原始输出
 test/run.sh            离线桩测试（不需要真机）
 test/fix_verify.py     本次 19 项修复的逐项复测夹具（Windows + msys sh 下跑通）
 pack.py                打包脚本（自动从 module.prop 取版本号）

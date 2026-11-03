@@ -1,0 +1,247 @@
+{
+ "t01_startup_pid": {
+  "rc": 0,
+  "kv": {
+   "STATIC_SETSID": "1",
+   "STATIC_OLD_BLOCK": "0",
+   "BOOTSTART": "1",
+   "BOOTSTART_SVC": "1",
+   "NEW_RC": "0",
+   "NEW_TICKS_SET": "1",
+   "DEAD_RC": "1",
+   "DEAD_REASON": "1",
+   "DEAD_MSG": "无法确认当前进程身份，取消加锁|"
+  },
+  "stdout": "STATIC_SETSID=1\nSTATIC_OLD_BLOCK=0\nBOOTSTART=1\nBOOTSTART_SVC=1\nNEW_RC=0\nNEW_TICKS_SET=1\nDEAD_RC=1\nDEAD_REASON=1\nDEAD_MSG=无法确认当前进程身份，取消加锁|\n",
+  "stderr": ""
+ },
+ "t02_rollback_keeps_old": {
+  "rc": 0,
+  "kv": {
+   "ACT_RC": "0",
+   "NOW_VER": "2.0.0",
+   "OLD_KEPT": "1",
+   "OLD_VER": "1.0.0",
+   "PENDING": "1",
+   "PENDING_MATCH": "1",
+   "COMMIT_RC": "0",
+   "OLD_AFTER_COMMIT": "1",
+   "PENDING_AFTER": "1",
+   "COMMIT_BAD_RC": "1",
+   "BAD_KEPT": "1",
+   "COMMIT_EVIL_RC": "0",
+   "EVIL_MARKER_CLEARED": "1",
+   "ACTLOG": "[警告：动态链接器软链刷新失败（插件可能暂时不可用，重启后自动重试）]"
+  },
+  "stdout": "ACT_RC=0\nNOW_VER=2.0.0\nOLD_KEPT=1\nOLD_VER=1.0.0\nPENDING=1\nPENDING_MATCH=1\nCOMMIT_RC=0\nOLD_AFTER_COMMIT=1\nPENDING_AFTER=1\nCOMMIT_BAD_RC=1\nBAD_KEPT=1\nCOMMIT_EVIL_RC=0\nEVIL_MARKER_CLEARED=1\nACTLOG=[警告：动态链接器软链刷新失败（插件可能暂时不可用，重启后自动重试）]\n",
+  "stderr": ""
+ },
+ "t03_interp_whitelist": {
+  "rc": 0,
+  "kv": {
+   "APEX_RES": "other:/apex/com.android.runtime/bin/linker64",
+   "APEX_UNCHANGED": "1",
+   "GLIBC_RES": "fixed",
+   "GLIBC_INTERP": "/e/AI/tmp/a2a-review-20261103/fixverify/live/ld.so",
+   "WANT": "/e/AI/tmp/a2a-review-20261103/fixverify/live/ld.so"
+  },
+  "stdout": "APEX_RES=other:/apex/com.android.runtime/bin/linker64\nAPEX_UNCHANGED=1\nGLIBC_RES=fixed\nGLIBC_INTERP=/e/AI/tmp/a2a-review-20261103/fixverify/live/ld.so\nWANT=/e/AI/tmp/a2a-review-20261103/fixverify/live/ld.so\n",
+  "stderr": ""
+ },
+ "t04_reaping_stale": {
+  "rc": 0,
+  "kv": {
+   "STALE_RC": "0",
+   "STALE_TOKEN_SET": "1",
+   "LIVE_RC": "1"
+  },
+  "stdout": "STALE_RC=0\nSTALE_TOKEN_SET=1\nLIVE_RC=1\n",
+  "stderr": ""
+ },
+ "t05_fastcrash_backoff": {
+  "rc": 0,
+  "kv": {
+   "STATIC_START_RESET": "0",
+   "STATIC_GATE120": "1",
+   "STATIC_T6": "1",
+   "STATIC_T3": "1",
+   "BLOCK_LINES": "52",
+   "ROUNDS": "6",
+   "FAILS": "6",
+   "GIVEUP": "1"
+  },
+  "stdout": "STATIC_START_RESET=0\nSTATIC_GATE120=1\nSTATIC_T6=1\nSTATIC_T3=1\nBLOCK_LINES=52\nROUNDS=6\nFAILS=6\nGIVEUP=1\n",
+  "stderr": ""
+ },
+ "t06_cfg_set_backslash": {
+  "rc": 0,
+  "kv": {
+   "SET_RC": "0",
+   "LINES": "1",
+   "INJECTED": "0",
+   "GET": "abc\\nallow_no_key=1",
+   "ALLOW": "NONE",
+   "RAWLINES": "1"
+  },
+  "stdout": "SET_RC=0\nLINES=1\nINJECTED=0\nGET=abc\\nallow_no_key=1\nALLOW=NONE\nRAWLINES=1\n",
+  "stderr": ""
+ },
+ "t07_trap_preserved": {
+  "rc": 7,
+  "kv": {
+   "AFTER_CALLS": "1"
+  },
+  "stdout": "AFTER_CALLS=1\nOUTER_TERM_FIRED\n",
+  "stderr": ""
+ },
+ "t08_version_compare": {
+  "rc": 0,
+  "kv": {
+   "A": "1",
+   "B": "1",
+   "C": "1",
+   "D": "1",
+   "E": "0",
+   "F": "0"
+  },
+  "stdout": "A=1\nB=1\nC=1\nD=1\nE=0\nF=0\n",
+  "stderr": ""
+ },
+ "t09_dns_liveness": {
+  "rc": 0,
+  "kv": {
+   "R500": "1",
+   "R204": "0",
+   "R200": "0",
+   "RNOCURL": "1"
+  },
+  "stdout": "R500=1\nR204=0\nR200=0\nRNOCURL=1\n",
+  "stderr": ""
+ },
+ "t10_ipv6_table_all": {
+  "rc": 0,
+  "kv": {
+   "NEW_RC": "0",
+   "OLD_RC": "1",
+   "TABLEALL": "1"
+  },
+  "stdout": "NEW_RC=0\nOLD_RC=1\nTABLEALL=1\n",
+  "stderr": ""
+ },
+ "t11_dns_atomic_rollback": {
+  "rc": 0,
+  "kv": {
+   "STILL_CP": "0",
+   "USES_MV": "1",
+   "APPLY_RC": "0",
+   "NS": "2",
+   "HAS_1111": "1",
+   "LEFTOVER": "0",
+   "ENSURE_RC": "1",
+   "RESTORED": "1",
+   "SEARCH_KEPT": "1",
+   "OPTS_KEPT": "1"
+  },
+  "stdout": "STILL_CP=0\nUSES_MV=1\nAPPLY_RC=0\nNS=2\nHAS_1111=1\nLEFTOVER=0\nENSURE_RC=1\nRESTORED=1\nSEARCH_KEPT=1\nOPTS_KEPT=1\n",
+  "stderr": ""
+ },
+ "t12_health_url_host": {
+  "rc": 0,
+  "kv": {
+   "V6": "[http://[::1]:3065/health ]",
+   "ANY": "[http://127.0.0.1:3065/health ]",
+   "LAN": "[http://192.168.1.7:3065/health http://127.0.0.1:3065/health ]",
+   "LO": "[http://127.0.0.1:3065/health ]",
+   "V6B": "[http://[::1]:3065/health ]"
+  },
+  "stdout": "V6=[http://[::1]:3065/health ]\nANY=[http://127.0.0.1:3065/health ]\nLAN=[http://192.168.1.7:3065/health http://127.0.0.1:3065/health ]\nLO=[http://127.0.0.1:3065/health ]\nV6B=[http://[::1]:3065/health ]\n",
+  "stderr": ""
+ },
+ "t13_keep_awake": {
+  "rc": 0,
+  "kv": {
+   "PAUSED": "1",
+   "DISABLED": "1",
+   "GIVEUP": "1",
+   "RUNTIME": "1"
+  },
+  "stdout": "PAUSED=1\nDISABLED=1\nGIVEUP=1\nRUNTIME=1\n",
+  "stderr": ""
+ },
+ "t14_static_payload": {
+  "rc": 0,
+  "kv": {
+   "STATIC_VALID": "0",
+   "STATIC_SMOKE": "0",
+   "DYN_VALID": "0",
+   "DYN_SMOKE": "0",
+   "DYN_NOLIB": "1",
+   "IS_STATIC": "1",
+   "IS_STATIC_DYN": "0",
+   "UPD_GUARD": "1",
+   "LIBVERIFY": "1"
+  },
+  "stdout": "STATIC_VALID=0\nSTATIC_SMOKE=0\nDYN_VALID=0\nDYN_SMOKE=0\nDYN_NOLIB=1\nIS_STATIC=1\nIS_STATIC_DYN=0\nUPD_GUARD=1\nLIBVERIFY=1\n",
+  "stderr": ""
+ },
+ "t15_mirror_prefix": {
+  "rc": 0,
+  "kv": {
+   "M1": "[https://mirror.example/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]",
+   "M2": "[https://mirror.example/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]",
+   "M3": "[https://ghfast.top/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]",
+   "M4": "[https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]"
+  },
+  "stdout": "M1=[https://mirror.example/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]\nM2=[https://mirror.example/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]\nM3=[https://ghfast.top/https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]\nM4=[https://github.com/aimod-cc/Agent2API/releases/download/v1/x.tar.gz]\n",
+  "stderr": ""
+ },
+ "t16_stop_child_identity": {
+  "rc": 0,
+  "kv": {
+   "BLOCK_LINES": "42",
+   "FAIL_RC": "1",
+   "PID_KEPT": "1",
+   "START_KEPT": "1",
+   "OK_RC": "0",
+   "PID_GONE": "1"
+  },
+  "stdout": "BLOCK_LINES=42\nFAIL_RC=1\nPID_KEPT=1\nSTART_KEPT=1\nOK_RC=0\nPID_GONE=1\n",
+  "stderr": ""
+ },
+ "t17_signal_terminates": {
+  "rc": 1,
+  "kv": {},
+  "stdout": "",
+  "stderr": ""
+ },
+ "t18_zoneinfo_atomic": {
+  "rc": 0,
+  "kv": {
+   "FUNC_LINES": "15",
+   "A_RESTORED": "1",
+   "B_ROLLED": "1",
+   "B_NEW_GONE": "1",
+   "C_KEPT": "1",
+   "PF_RECOVER": "1"
+  },
+  "stdout": "FUNC_LINES=15\nA_RESTORED=1\nB_ROLLED=1\nB_NEW_GONE=1\nC_KEPT=1\nPF_RECOVER=1\n",
+  "stderr": ""
+ },
+ "t19_unzip_selection": {
+  "rc": 0,
+  "kv": {
+   "BLOCK_LINES": "10",
+   "UNZIP_VAR": "[unzip]"
+  },
+  "stdout": "BLOCK_LINES=10\nUNZIP_VAR=[unzip]\nUNZIP_ARGS:-o /tmp/z.zip -d /tmp/out\n",
+  "stderr": ""
+ },
+ "t19b_busybox": {
+  "rc": 0,
+  "kv": {
+   "UNZIP_VAR": "[busybox unzip]"
+  },
+  "stdout": "UNZIP_VAR=[busybox unzip]\nBUSYBOX_UNZIP_ARGS:-o /tmp/z.zip -d /tmp/out\n",
+  "stderr": ""
+ }
+}
