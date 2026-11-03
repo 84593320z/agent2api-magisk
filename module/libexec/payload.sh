@@ -43,11 +43,17 @@ payload_validate() { # $1=目录 $2=soft
 
 payload_fix_perms() {
   _d="$1"
-  chmod 755 "$_d" "$_d/agent2api-server" "$_d/lib" 2>/dev/null || return 1
-  for _f in "$_d/lib/"*.so*; do
-    [ -e "$_f" ] || continue
-    chmod 755 "$_f" 2>/dev/null || return 1
-  done
+  # R05：静态（musl）载荷没有 lib/ 目录。把 chmod lib 当硬失败，会让
+  # "payload_validate 已经通过"的静态包在权限阶段被判死，安装/更新/回滚
+  # 全都走不下去。动态载荷该有的检查一条不少，静态载荷按实际布局处理。
+  chmod 755 "$_d" "$_d/agent2api-server" 2>/dev/null || return 1
+  if [ -d "$_d/lib" ]; then
+    chmod 755 "$_d/lib" 2>/dev/null || return 1
+    for _f in "$_d/lib/"*.so*; do
+      [ -e "$_f" ] || continue
+      chmod 755 "$_f" 2>/dev/null || return 1
+    done
+  fi
   [ ! -e "$_d/VERSION" ] || chmod 644 "$_d/VERSION" 2>/dev/null || return 1
   chmod_tree "$_d/ui" 755 644 || return 1
   return 0
@@ -111,6 +117,14 @@ update_lock_acquire() { # $1=锁目录 $2=竞争/回收重试秒数，活动事�
         *)
           if ! pid_alive "$_ul_rpid" \
              || [ "$(proc_start_ticks "$_ul_rpid" 2>/dev/null)" != "$_ul_rstart" ]; then
+            # R08：摘除前必须确认 reaping 还是刚才读到的这一份。回收权在持有
+            # 期间别人不能新建，但"读到 → 判定僵死 → 删"之间若发生过期删除＋
+            # 重建，盲删就会把新一代活着的回收者的标记删掉。
+            _ul_rnow=$(cat "$_ul_lock/reaping" 2>/dev/null) || _ul_rnow=""
+            if [ "$_ul_rnow" != "$_ul_rtok" ] || [ -z "$_ul_rnow" ]; then
+              rm -f "$_ul_claim" "$_ul_guard_claim" 2>/dev/null
+              _ul_n=$((_ul_n + 1)); continue
+            fi
             log_to "$SUPLOG" "回收僵死的 reaping 标记（pid=$_ul_rpid 已不在或已复用）"
             rm -f "$_ul_lock/reaping" 2>/dev/null
             rm -f "$_ul_claim" "$_ul_guard_claim" 2>/dev/null
@@ -136,14 +150,39 @@ update_lock_acquire() { # $1=锁目录 $2=竞争/回收重试秒数，活动事�
   say "更新锁正被另一个回收者处理，请稍后重试"
   return 1
 }
+update_lock_is_self() { # $1=锁目录；锁是否由当前进程（同 pid 同启动代次）持有
+  _uls_owner=$(cat "$1/owner" 2>/dev/null) || return 1
+  [ -n "$_uls_owner" ] || return 1
+  _uls_pid=$(printf '%s\n' "$_uls_owner" | awk '{print $1}')
+  _uls_ticks=$(printf '%s\n' "$_uls_owner" | awk '{print $2}')
+  [ "$_uls_pid" = "$$" ] || return 1
+  [ -n "$_uls_ticks" ] || return 1
+  _uls_self=$(proc_start_ticks $$ 2>/dev/null) || return 1
+  [ -n "$_uls_self" ] || return 1
+  [ "$_uls_ticks" = "$_uls_self" ] || return 1
+  return 0
+}
+
 update_lock_release() {
   _ur_lock="${1:-$RUNDIR/update.lock.d}"
-  [ -n "$UPDATE_LOCK_TOKEN" ] || return 0
   _ur_owner=$(cat "$_ur_lock/owner" 2>/dev/null) || _ur_owner=""
+  [ -n "$_ur_owner" ] || return 0
+  _ur_pid=$(printf '%s\n' "$_ur_owner" | awk '{print $1}')
+  _ur_ticks=$(printf '%s\n' "$_ur_owner" | awk '{print $2}')
   _ur_token=$(printf '%s\n' "$_ur_owner" | awk '{print $3}')
-  if [ "$_ur_token" = "$UPDATE_LOCK_TOKEN" ]; then
-    rm -f "$_ur_lock/owner" 2>/dev/null || return 1
+  # R07：判断"这把锁是不是我持有的"要按 owner 里的 pid + 启动代次，而不是读
+  # 一个会被嵌套调用冲掉的全局 token（临界区内收到 TERM → handler 再调
+  # svc_stop → 内层 release 把 token 清空，外层就再也释放不掉）。旧实现随后
+  # update/service 两把 owner 双双残留，下一次安装直接"另一个事务正在运行"。
+  _ur_self_ticks=$(proc_start_ticks $$ 2>/dev/null) || _ur_self_ticks=""
+  [ "$_ur_pid" = "$$" ] || return 0
+  [ -n "$_ur_self_ticks" ] || return 0
+  [ "$_ur_ticks" = "$_ur_self_ticks" ] || return 0
+  # 同一个 pid 在释放前可能已经重新取过锁（token 变了），那就不是我们这一代。
+  if [ -n "$UPDATE_LOCK_TOKEN" ] && [ "$_ur_token" != "$UPDATE_LOCK_TOKEN" ]; then
+    return 0
   fi
+  rm -f "$_ur_lock/owner" 2>/dev/null || return 1
   # service.lock.d 常嵌套在 update.lock.d 事务内。只清当前锁对应的 token，
   # 内层释放不能抹掉外层身份，否则外层 owner 会遗留到进程退出。
   if [ "$UPDATE_LOCK_PATH" = "$_ur_lock" ]; then
@@ -255,7 +294,17 @@ payload_activate_staged() { # $1=staging $2=事务标签
   # 这份同一事务的旧版本是唯一能立刻顶回去的副本（备份目录 prev 是上一代，
   # 不是这一次被换下来的那一份）。改成写 pending 标记，由
   # payload_commit_old 在健康通过/安装收尾后删除。
-  printf '%s\n' "$_pa_tag $$ $_pa_old" >"$RUNDIR/update.pending" 2>/dev/null
+  # R02：pending 写不成/写不完整绝不能当成功。旧实现丢掉终端错误继续
+  # return 0，调用方以为"旧载荷已登记待提交"，实际 marker 是空的：这份
+  # 唯一能回滚的旧目录从此没有任何记账，下一轮 sweep 会把它当垃圾删掉。
+  # 先写临时文件再 rename，pending 被外来者占成目录时这里会明确失败。
+  if ! printf '%s\n' "$_pa_tag $$ $_pa_old" >"$RUNDIR/update.pending.tmp.$$" 2>/dev/null \
+     || ! mv -f "$RUNDIR/update.pending.tmp.$$" "$RUNDIR/update.pending" 2>/dev/null; then
+    rm -f "$RUNDIR/update.pending.tmp.$$" 2>/dev/null
+    rm -f "$RUNDIR/update.active" 2>/dev/null
+    echo "无法登记待提交的事务旧载荷：$_pa_old（旧版仍在原处，请勿手工删除）"
+    return 1
+  fi
   rm -f "$RUNDIR/update.active" 2>/dev/null
   # /data/a2a/ld.so 只是"插件解释器"这条旁路，真正的服务端是用绝对路径
   # $LOADER 起的，跟这个软链无关。切换已经成功却因为软链失败报整体失败，
@@ -266,11 +315,22 @@ payload_activate_staged() { # $1=staging $2=事务标签
 
 # 提交事务旧载荷：只有当前载荷被证明完整时才删，删的是 pending 里记录的
 # 那一个路径，绝不按通配符批量删（避免误删别人的回滚副本）。
-payload_commit_old() {
+payload_commit_old() { # $1=期望的事务标记"tag pid"（可选）；不匹配则一个字节都不动
   _pco_marker="$RUNDIR/update.pending"
   [ -s "$_pco_marker" ] || return 0
-  _pco_path=$(awk '{print $3}' "$_pco_marker" 2>/dev/null | head -n 1)
-  [ -n "$_pco_path" ] || { rm -f "$_pco_marker" 2>/dev/null; return 0; }
+  _pco_line=$(head -n 1 "$_pco_marker" 2>/dev/null) || _pco_line=""
+  _pco_path=$(printf '%s\n' "$_pco_line" | awk '{print $3}')
+  [ -n "$_pco_path" ] || { log_to "$SUPLOG" "pending 内容不完整，保留待人工检查"; return 1; }
+  # R03：pending 是全局唯一的一份。回滚在大锁释放之后才读它，读到的可能是
+  # 另一笔事务刚写下的标记，于是会删掉**别人**的旧载荷。调用方给出期望标记
+  # 时先核对"tag pid"，对不上就不动。
+  if [ -n "${1:-}" ]; then
+    _pco_have=$(printf '%s\n' "$_pco_line" | awk '{print $1" "$2}')
+    if [ "$_pco_have" != "$1" ]; then
+      log_to "$SUPLOG" "pending 属于另一笔事务（期望 $1，实际 ${_pco_have:-空}），跳过提交"
+      return 1
+    fi
+  fi
   # 只接受本模块自己的临时目录名，挡住 marker 被写坏导致的任意删除。
   case "$_pco_path" in
     "$APP_HOME"/payload.*.old.*|"$APP_HOME"/payload.old) ;;
@@ -280,8 +340,13 @@ payload_commit_old() {
     log_to "$SUPLOG" "当前载荷不完整，保留事务旧载荷：$_pco_path"
     return 1
   fi
-  rm -rf "$_pco_path" 2>/dev/null
-  rm -f "$_pco_marker" 2>/dev/null
+  # R02：删除失败（只读挂载/权限/目录里有删不掉的项）不能假装提交成功，
+  # 更不能把 marker 一起删掉 —— marker 是这一笔待提交旧载荷的唯一线索。
+  if ! rm -rf "$_pco_path" 2>/dev/null || [ -e "$_pco_path" ]; then
+    log_to "$SUPLOG" "事务旧载荷删除失败，保留 pending 稍后重试：$_pco_path"
+    return 1
+  fi
+  rm -f "$_pco_marker" 2>/dev/null || return 1
   return 0
 }
 

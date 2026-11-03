@@ -1,0 +1,67 @@
+{
+  "all_pass": true,
+  "total": 8,
+  "failed": 0,
+  "cases": [
+    {
+      "case": "fast_crash_fuse",
+      "pass": true,
+      "final": [
+        "FINAL fails=6 giveup=1 launches=6 releases=192 takes=7 clock=6000",
+        "FINAL fails=6 giveup=1 launches=6 releases=193 takes=7 clock=6000"
+      ]
+    },
+    {
+      "case": "natural_death_70s",
+      "pass": true,
+      "final": [
+        "FINAL fails=7 giveup=1 launches=5 releases=195 takes=6 clock=6000",
+        "FINAL fails=7 giveup=1 launches=5 releases=196 takes=6 clock=6000"
+      ],
+      "note": "70s 自然死亡不再清零 FAILS，最终熔断"
+    },
+    {
+      "case": "backoff_keepawake_off",
+      "pass": true,
+      "final": [
+        "FINAL fails=6 giveup=1 launches=6 releases=12 takes=4 clock=600",
+        "FINAL fails=6 giveup=1 launches=6 releases=13 takes=4 clock=600"
+      ]
+    },
+    {
+      "case": "backoff_autostart_off",
+      "pass": true,
+      "launches_total": 3,
+      "states": []
+    },
+    {
+      "case": "backoff_gate_blocked",
+      "pass": true,
+      "launches_total": 3,
+      "states": []
+    },
+    {
+      "case": "port_conflict_holds",
+      "pass": true,
+      "events_tail": [
+        "SLEEP t=0 dur=60 wake=0 fails=0 giveup=0",
+        "SLEEP t=60 dur=60 wake=0 fails=0 giveup=0",
+        "SLEEP t=120 dur=60 wake=0 fails=0 giveup=0",
+        "SLEEP t=180 dur=60 wake=0 fails=0 giveup=0"
+      ]
+    },
+    {
+      "case": "backoff_sleep_releases_wake",
+      "pass": true,
+      "note": "熔断前的每一次退避 sleep 都不持 wake lock"
+    },
+    {
+      "case": "backoff_stop_marker",
+      "pass": true,
+      "final": [
+        "FINAL fails=3 giveup=0 launches=3 releases=2 takes=4 clock=90",
+        "FINAL fails=3 giveup=0 launches=3 releases=3 takes=4 clock=90"
+      ]
+    }
+  ]
+}

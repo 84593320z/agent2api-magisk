@@ -1,7 +1,7 @@
 id=agent2api
 name=Agent2API 服务端 (arm64)
-version=v3.3.0-beta.7 (magisk.31)
-versionCode=2026110331
+version=v3.3.0-beta.7 (magisk.32)
+versionCode=2026110332
 author=aimod-cc / Magisk 移植
-description=本机自建 musl 静态载荷 v3.3.0-beta.7｜不依赖 glibc 与系统 DNS，无 DNS 采样、无 nsswitch 覆盖；分级兜底+验活；状态卡实时显示。
+description=模块 v3.3.0-beta.7（内置 musl 静态载荷 v3.3.0-beta.6）｜不依赖 glibc 与系统 DNS，无 DNS 采样、无 nsswitch 覆盖；分级兜底+验活；状态卡实时显示。
 updateJson=

@@ -421,10 +421,19 @@ dns_liveness_ok() {
   _dl_url=$(cfg_get dns_probe_url "http://connect.rom.miui.com/generate_204")
   _dl_code=""
   # -f 让 4xx/5xx 直接失败；再显式核对状态码，避免被劫持页/错误页骗过。
+  # --noproxy：验活走的是刚写进去的解析链，不能被系统代理截胡。
+  _dl_rc=0
   case "$_dl_url" in
-    https://*) _dl_code=$("$CURL" -sS -f -o /dev/null -w '%{http_code}' --max-time 6 --cacert "$CACERT" "$_dl_url" 2>/dev/null) ;;
-    *)         _dl_code=$("$CURL" -sS -f -o /dev/null -w '%{http_code}' --max-time 6 "$_dl_url" 2>/dev/null) ;;
+    https://*) _dl_code=$("$CURL" -sS -f --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 6 --cacert "$CACERT" "$_dl_url" 2>/dev/null) || _dl_rc=$? ;;
+    *)         _dl_code=$("$CURL" -sS -f --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 6 "$_dl_url" 2>/dev/null) || _dl_rc=$? ;;
   esac
+  # R13：必须同时满足 curl 退出码 0 与 200/204。只看状态码时，连接被中途截断
+  # （curl 18/56，响应头已到）会被判成可用，把一个坏解析链记进 dns.lastgood，
+  # 之后每次开机都优先用它，域名解析变慢甚至直接失败。
+  if [ "$_dl_rc" -ne 0 ]; then
+    log_to "$SUPLOG" "DNS 验活失败（curl rc=$_dl_rc）：$_dl_url"
+    return 1
+  fi
   case "$_dl_code" in
     200|204) return 0 ;;
   esac
@@ -541,7 +550,15 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
   # 只记 nameserver 会把 search/options/注释全部丢掉，回滚反而更糟。
   _eback="$TMPD/resolv.orig.$$"
   rm -f "$_eback" 2>/dev/null
-  [ -s "$DNSFILE" ] && cp -f "$DNSFILE" "$_eback" 2>/dev/null
+  # R14：备份失败就不能开始改。旧实现无视 cp 失败，一旦四级候选全部不可用，
+  # 回滚只能走「仅回填 nameserver」的降级路径，search/ndots/注释会被整段丢掉。
+  if [ -s "$DNSFILE" ]; then
+    if ! cp -f "$DNSFILE" "$_eback" 2>/dev/null || [ ! -s "$_eback" ]; then
+      rm -f "$_eback" 2>/dev/null
+      log_to "$SUPLOG" "无法备份现有 DNS 配置（$_eback），放弃本次改写"
+      return 1
+    fi
+  fi
   _eorig=""
   [ -s "$DNSFILE" ] && _eorig=$(sed -n 's/^nameserver[[:space:]]*//p' "$DNSFILE" 2>/dev/null | awk '{printf "%s ", $1}')
 
@@ -560,6 +577,8 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
       printf '%s\n' $_ecand | head -n 6 >"$_elgf" 2>/dev/null
       chmod 644 "$_elgf" 2>/dev/null
       log_to "$SUPLOG" "DNS 生效并验证通过：$(printf '%s ' $_ecand)"
+      # R14：成功也要收拾临时备份，否则每次 DNS 生效都往 tmp 里留一份整文件副本。
+      rm -f "$_eback" 2>/dev/null
       return 0
     fi
   done

@@ -8,6 +8,7 @@
 #      是 Windows 打包最常见的致命坑，这里在打包前直接拦下来；
 #   3) 时间戳固定，保证同源码打包结果可复现（便于比对 hash）。
 import os
+import re
 import sys
 import zipfile
 
@@ -21,8 +22,11 @@ with open(os.path.join(SRC, "module.prop"), encoding="utf-8") as _fh:
         if _line.startswith("version="):
             _VER = _line.strip().split("=", 1)[1]
             break
-# 版本串里带 " (magisk.31)" 这类后缀，文件名只取第一段，避免出现空格和括号
+# 版本串形如 "v3.3.0-beta.7 (magisk.32)"：主版本取第一段，再把 magisk.NN 拼上去，这样每次发版的资产文件名不重名，用户也不会下错。
 _SLUG = _VER.split()[0]
+_m = re.search(r"magisk\.(\d+)", _VER)
+if _m:
+    _SLUG += "-magisk." + _m.group(1)
 OUT = os.path.join(HERE, "dist", "agent2api-magisk-%s-arm64.zip" % _SLUG)
 
 # 必须是 0755 的：安装/运行脚本 + 两个原生可执行文件
@@ -87,9 +91,12 @@ def main():
 
     # 必备文件检查
     must = ["module.prop", "customize.sh", "service.sh", "post-fs-data.sh",
-            "uninstall.sh", "action.sh", "libexec/common.sh", "libexec/dns.sh",
-            "libexec/control.sh", "libexec/supervise.sh", "libexec/payload.sh",
-            "libexec/boot-start.sh", "seed/agent2api-server", "seed/VERSION",
+            "uninstall.sh", "action.sh", "boot-completed.sh", "hotinstall.sh",
+            "libexec/common.sh", "libexec/dns.sh", "libexec/control.sh",
+            "libexec/supervise.sh", "libexec/payload.sh", "libexec/updater.sh",
+            "libexec/plugin.sh", "libexec/launch.sh", "libexec/boot-start.sh",
+            "libexec/a2a", "seed/agent2api-server", "seed/VERSION",
+            "tools/curl", "tools/cacert.pem", "settings.conf.example",
             "META-INF/com/google/android/update-binary"]
     have = {e[0] for e in entries}
     for m in must:

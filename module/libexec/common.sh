@@ -160,13 +160,31 @@ cfg_get() { # $1=键 $2=默认值；显式空值与“键不存在”语义不�
 
 cfg_set() { # 用 awk 写值，避免 sed 的 | & \ 与正则注入；磁盘满不破坏原配置
   case "$1" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
+  # R11：值里出现任何控制字符（换行/回车/TAB）都会让一行变多行，等于让
+  # 调用者写进另一个键（配置注入）。awk -v 时代靠转义挡住一半，换成
+  # ENVIRON 原样传值之后必须在这里显式拒绝。
+  case "$2" in
+    *[[:cntrl:]]*) say "配置值不能包含控制字符：$1"; return 1 ;;
+  esac
+  # 含空格或 # 的值不加引号会被 cfg_get 当成"行尾注释"截断，读回来就不是
+  # 写进去的东西。这里统一用引号包裹，cfg_get 会原样返回。
+  _cs_val=$2
+  case "$_cs_val" in
+    *'"'*)
+      case "$_cs_val" in
+        *"'"*) say "配置值不能同时包含单双引号：$1"; return 1 ;;
+      esac
+      _cs_val=$(printf "'%s'" "$_cs_val")
+      ;;
+    *[[:space:]]*|*#*) _cs_val=$(printf '"%s"' "$_cs_val") ;;
+  esac
   [ -d "$CFGDIR" ] || mkdir -p "$CFGDIR" 2>/dev/null || return 1
   [ -f "$SETTINGS" ] || : >"$SETTINGS" || return 1
   _tmp="$SETTINGS.tmp.$$"
   # 用 ENVIRON 传键值：awk -v 会把值里的反斜杠转义序列展开，
   # 于是字面量 abc\nallow_no_key=1 会被写成两行，等于让调用者改到了
   # 另一个键（安全上就是配置注入）。ENVIRON 是原样字符串，不做解释。
-  A2A_CFG_KEY="$1" A2A_CFG_VAL="$2" awk 'BEGIN { k=ENVIRON["A2A_CFG_KEY"]; v=ENVIRON["A2A_CFG_VAL"]; done=0 }
+  A2A_CFG_KEY="$1" A2A_CFG_VAL="$_cs_val" awk 'BEGIN { k=ENVIRON["A2A_CFG_KEY"]; v=ENVIRON["A2A_CFG_VAL"]; done=0 }
     $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
       if (!done) { print k "=" v; done=1 }; next
     }
@@ -634,13 +652,26 @@ payload_recover_interrupted() {
     for _old in "$APP_HOME"/payload.*.old.* "$APP_HOME/payload.old" "$APP_HOME/payload.rollback.old" "$BACKUPDIR/prev"; do
       [ -d "$_old" ] || continue
       if payload_validate "$_old" >/dev/null 2>&1; then
-        [ -e "$PAYLOAD" ] && mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null
-        if mv "$_old" "$PAYLOAD" 2>/dev/null; then
+        # R09：移开"坏 current"失败时必须放弃这一次恢复。旧实现忽略 mv 的
+        # 返回码继续往下 mv，old 会被嵌进坏目录（payload/下再套一层 old 名），
+        # 结果 current 仍然坏、唯一回滚副本也被毁掉，函数还照样 return 0 报成功。
+        if [ -e "$PAYLOAD" ]; then
+          if ! mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null; then
+            log_to "$SUPLOG" "无法移开不完整的当前载荷，跳过本次恢复：$_old"
+            continue
+          fi
+        fi
+        if mv "$_old" "$PAYLOAD" 2>/dev/null && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
           payload_fix_perms "$PAYLOAD"
           log_to "$SUPLOG" "已恢复中断的载荷切换：$_old"
           rm -rf "$APP_HOME/payload.incomplete.$$"
           break
         fi
+        # 换上去的仍然不可用：把刚移开的目录放回原位，别把 current 留空。
+        if [ -d "$APP_HOME/payload.incomplete.$$" ] && [ ! -e "$PAYLOAD" ]; then
+          mv "$APP_HOME/payload.incomplete.$$" "$PAYLOAD" 2>/dev/null
+        fi
+        log_to "$SUPLOG" "恢复中断载荷失败（$_old 换上去后仍未通过校验）"
       fi
     done
   fi

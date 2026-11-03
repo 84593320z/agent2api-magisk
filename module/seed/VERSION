@@ -1,4 +1,7 @@
-ver=3.3.0-beta.7
+# 这里写的是 seed/agent2api-server 自报的版本，必须与实际二进制一致。
+# 二进制没有重编时不能跟着模块版本一起跳号，否则 a2a status 和
+# payload_install_from 的版本比较全部建立在假数据上（R18）。
+ver=3.3.0-beta.6
 built=2026-11-01T09:44:00Z
 arch=aarch64
 source=84593320z/agent2api-musl (CI musl)

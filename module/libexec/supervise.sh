@@ -457,11 +457,10 @@ while [ "$STOP" = "0" ]; do
     [ "$_up" -lt 0 ] && _up=0
     wait "$CHILD" 2>/dev/null
     rm -f "$RUNDIR/server.pid" "$RUNDIR/server.start" 2>/dev/null
-    if [ "$_up" -lt 60 ]; then
-      FAILS=$((FAILS + 1))
-    else
-      FAILS=0
-    fi
+    # R17：只要不是「巡检确认稳定运行 120s」，就必须记账。
+    # 旧实现在存活 ≥60s 的自然死亡上清零 FAILS：一个每 70 秒死一次的服务
+    # 永远停在 FAILS=0，3 次退避、6 次熔断都触发不了，等于无限重启。
+    FAILS=$((FAILS + 1))
     log_to "$SUPLOG" "服务端已退出（存活 ${_up}s，连续异常 $FAILS 次）"
     # 服务端死了，它拉起的插件/内核就成了孤儿，一起清掉再重启，
     # 否则新实例会因为端口被孤儿占着起不来
@@ -488,6 +487,8 @@ while [ "$STOP" = "0" ]; do
   if [ "$FAILS" -ge 6 ]; then
     GIVEUP=1
     log_to "$SUPLOG" "连续快速失败 6 次，熔断自动拉起；排障后执行 a2a restart"
+    # R16：熔断期间没有子进程，wake lock 必须放掉，否则纯耗电。
+    release_wake
     write_state dead
     sleep 30
     continue
@@ -495,8 +496,26 @@ while [ "$STOP" = "0" ]; do
     _wait=$((FAILS * 30))
     [ "$_wait" -gt 300 ] && _wait=300
     log_to "$SUPLOG" "连续快速失败 $FAILS 次，退避 ${_wait}s 再试"
+    # R16：退避期间子进程已死，先放掉 wake lock；真要拉起时再按配置取回。
+    release_wake
     write_state backoff
     sleep "$_wait"
+    # R15：这一觉最长 300s。期间用户可能点了停止、关掉自启、断网或掉到门限
+    # 以下；睡醒必须重新确认，不能无条件落到下面的拉起入口。
+    if [ "$STOP" = "1" ] || [ -f "$RUNDIR/stop" ]; then
+      rm -f "$RUNDIR/stop" 2>/dev/null
+      break
+    fi
+    if [ "$(cfg_get autostart 1)" != "1" ] && [ -z "$CHILD" ]; then
+      log_to "$SUPLOG" "退避期间 autostart 已被关闭，不再拉起"
+      write_state disabled
+      continue
+    fi
+    if ! gates_ok; then
+      log_to "$SUPLOG" "退避期间门禁不再满足（$GATE_REASON），暂不拉起"
+      write_state paused
+      continue
+    fi
     # 不能把 continue 留在这里：它会让 FAILS 永远不再增长，永久困在退避。
     # 落到统一的拉起入口，成功后由健康运行分支清零连续失败。
   fi
@@ -505,12 +524,15 @@ while [ "$STOP" = "0" ]; do
   if port_listen "$PORT"; then
     _who=$(port_owner "$PORT" 2>/dev/null)
     log_to "$SUPLOG" "端口 $PORT 已被其它进程占用（pid=${_who:-未知}），60s 后复查"
+    # R16：等待期间同样没有子进程，先把 wake lock 放掉。
+    release_wake
     write_state port-conflict
     sleep 60
     continue
   fi
 
-  # 9) 拉起
+  # 9) 拉起：前面几处已经放过 wake lock，这里按配置重新取回。
+  if [ "$(cfg_get keep_awake 0)" = "1" ]; then take_wake; fi
   if start_child; then
     # 不能"一起来就清零"：那样"起来 → 30 秒内崩 → 再起来"永远停在 1 次，
     # 3 次退避和 6 次熔断都触发不了，等于把保护逻辑关掉。
@@ -519,6 +541,19 @@ while [ "$STOP" = "0" ]; do
       log_to "$SUPLOG" "本次拉起成功，但仍保留此前 $FAILS 次快速失败计数以观察稳定性"
     fi
     write_state running
+    # R01：到这里才算「新载荷真的跑起来了」——start_child 已通过进程/端口/HTTP
+    # 联合健康检查。事务旧载荷的提交点放在这里（F-002），而不是 post-fs-data：
+    # 那时服务还没起，手里没有任何健康证据。
+    if [ -s "$RUNDIR/update.pending" ]; then
+      _sup_tag=$(awk '{print $1" "$2}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
+      if [ -n "$_sup_tag" ]; then
+        if payload_commit_old "$_sup_tag"; then
+          log_to "$SUPLOG" "已提交上一笔事务的旧载荷（$_sup_tag）"
+        else
+          log_to "$SUPLOG" "事务旧载荷暂未提交（$_sup_tag），下一轮启动再试"
+        fi
+      fi
+    fi
   else
     write_state starting-unhealthy
   fi

@@ -75,19 +75,37 @@ do
   [ -s "$MODPATH/$_required" ] || abort "模块包不完整：缺少或空文件 $_required"
 done
 
+# R05：安装期没有 readelf，只能按"载荷里有没有 ld-linux 字串"粗判静态。
+# 静态载荷根本没有 lib/，旧清单强行要求 lib/libc.so.6，会让静态包 100% 装不上。
+payload_seed_is_static() { # $1=载荷目录
+  [ -f "$1/agent2api-server" ] || return 1
+  grep -qa 'ld-linux' "$1/agent2api-server" 2>/dev/null && return 1
+  return 0
+}
+
 SEED="$MODPATH/seed"
 HAVE_SEED=0
 [ -d "$SEED" ] && HAVE_SEED=1
 if [ "$HAVE_SEED" = "1" ]; then
-  for _required in VERSION agent2api-server lib/ld-linux-aarch64.so.1 \
-                   lib/libc.so.6 ui/index.html
+  for _required in VERSION agent2api-server ui/index.html
   do
     [ -s "$SEED/$_required" ] || abort "模块包不完整：缺少或空文件 seed/$_required"
   done
+  # R05：只有动态链接的种子才需要运行时；静态种子带 lib/ 反而会被硬失败拦死。
+  if ! payload_seed_is_static "$SEED"; then
+    for _required in lib/ld-linux-aarch64.so.1 lib/libc.so.6
+    do
+      [ -s "$SEED/$_required" ] || abort "模块包不完整：缺少或空文件 seed/$_required"
+    done
+  fi
 else
   # 精简包只能用于已有完整安装，不能在首次安装时伪造成功。
-  [ -s "$SERVER_BIN" ] && [ -s "$LOADER" ] && [ -s "$PAYLOAD/ui/index.html" ] \
+  [ -s "$SERVER_BIN" ] && [ -s "$PAYLOAD/ui/index.html" ] \
     || abort "模块包不完整：缺少 seed/ 目录，系统里也没有可用的载荷"
+  # R05：只有动态载荷才要求链接器；静态载荷要这一项等于直接拒绝升级。
+  if ! payload_seed_is_static "$PAYLOAD"; then
+    [ -s "$LOADER" ] || abort "现有动态载荷缺少运行时链接器：$LOADER"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -123,12 +141,14 @@ install_cleanup() {
   # 旧实现只在 _ZONE_COMMITTED=1 时还原，于是"移开旧库、新库还没 rename
   # 进来"这个窗口里被中断，两处都不存在，zoneinfo 直接丢失。
   if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_ZONE_OLD_PRESENT" = "1" ] && [ -d "$_ZONE_OLD" ]; then
-    if [ "$_ZONE_COMMITTED" = "1" ] && [ -e "$APP_HOME/zoneinfo" ]; then
+    # R10：事务失败就是整体回退——先移开当前 zoneinfo（可能是换了一半的新目录），
+    # 再把旧目录整体放回。旧实现依赖 _ZONE_COMMITTED 标志，进程恰好死在
+    # 「新目录已发布、标志还没置」的窗口里时两边都不动，留下新旧混用，
+    # VERSION/tzdata.zi 这些辅助文件也跟着半新半旧。
+    if [ -e "$APP_HOME/zoneinfo" ]; then
       rm -rf "$APP_HOME/zoneinfo" 2>/dev/null
     fi
-    if [ ! -e "$APP_HOME/zoneinfo" ]; then
-      mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
-    fi
+    mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
   fi
   rm -rf "$_INSTALL_TRANSACTION" 2>/dev/null
   update_lock_release "$RUNDIR/update.lock.d"
@@ -170,11 +190,16 @@ fi
 
 install_payload_perms() {
   chmod_tree "$1" 755 644 || return 1
-  chmod 755 "$1/agent2api-server" "$1/lib" "$1/lib/ld-linux-aarch64.so.1" 2>/dev/null || return 1
-  for _f in "$1/lib/"*.so*; do
-    [ -e "$_f" ] || continue
-    chmod 755 "$_f" 2>/dev/null || return 1
-  done
+  chmod 755 "$1/agent2api-server" 2>/dev/null || return 1
+  # R05：静态载荷没有 lib/。旧实现把"lib 目录不存在"当成权限失败，
+  # 静态包每次安装都会在这里 abort。
+  if [ -d "$1/lib" ]; then
+    chmod 755 "$1/lib" "$1/lib/ld-linux-aarch64.so.1" 2>/dev/null || return 1
+    for _f in "$1/lib/"*.so*; do
+      [ -e "$_f" ] || continue
+      chmod 755 "$_f" 2>/dev/null || return 1
+    done
+  fi
   return 0
 }
 
@@ -202,15 +227,21 @@ for f in customize.sh post-fs-data.sh service.sh uninstall.sh action.sh boot-com
 done
 chmod 755 "$MODPATH/libexec" "$MODPATH/libexec/"* 2>/dev/null || abort "libexec 权限设置失败"
 
-ui_print "- 自检：动态链接器"
-_CHECK_LOADER="$_CHECK_PAYLOAD/lib/ld-linux-aarch64.so.1"
-[ -x "$_CHECK_LOADER" ] || abort "动态链接器没有执行权限"
-if _ld_output=$("$_CHECK_LOADER" --version 2>&1); then
-  _LDV=$(printf '%s\n' "$_ld_output" | head -n 1)
-  [ -n "$_LDV" ] || abort "动态链接器自检没有返回版本信息"
-  ui_print "  $_LDV"
+# R05：静态载荷不需要（也没有）动态链接器，这一段必须整体跳过。
+if payload_seed_is_static "$_CHECK_PAYLOAD"; then
+  _LDV="static（无动态链接器）"
+  ui_print "- 自检：静态载荷，跳过动态链接器检查"
 else
-  abort "动态链接器无法执行，安装已终止"
+  ui_print "- 自检：动态链接器"
+  _CHECK_LOADER="$_CHECK_PAYLOAD/lib/ld-linux-aarch64.so.1"
+  [ -x "$_CHECK_LOADER" ] || abort "动态链接器没有执行权限"
+  if _ld_output=$("$_CHECK_LOADER" --version 2>&1); then
+    _LDV=$(printf '%s\n' "$_ld_output" | head -n 1)
+    [ -n "$_LDV" ] || abort "动态链接器自检没有返回版本信息"
+    ui_print "  $_LDV"
+  else
+    abort "动态链接器无法执行，安装已终止"
+  fi
 fi
 ui_print "- 自检：服务端架构"
 _SA=$(elf_arch "$_CHECK_PAYLOAD/agent2api-server" 2>/dev/null)
@@ -218,13 +249,16 @@ _SA=$(elf_arch "$_CHECK_PAYLOAD/agent2api-server" 2>/dev/null)
 ui_print "  aarch64 OK"
 
 _patch_bad=""
+# R05：静态载荷没有 lib/libc.so.6，这一项必须"不存在就跳过"，
+# 否则静态包会在自检阶段被永久拒绝；curl 是必检项。
 for _f in "$_CHECK_PAYLOAD/lib/libc.so.6" "$_TOOLS_STAGE/curl"; do
+  [ -e "$_f" ] || continue
   if ! grep -q '/data/a2a/resolv' "$_f" 2>/dev/null; then
     _patch_bad="$_patch_bad $(basename "$_f")"
   fi
 done
 [ -z "$_patch_bad" ] || abort "这些文件没有做路径重定向：$_patch_bad"
-ui_print "  二进制路径重定向 OK（glibc/curl 都指向 $A2A_LIVE）"
+ui_print "  二进制路径重定向 OK（curl 指向 $A2A_LIVE）"
 
 . "$MODPATH/libexec/dns.sh" || abort "无法加载 libexec/dns.sh"
 dns_bootstrap || ui_print "  ! DNS/NSS 写入有失败项，开机后会自动重试，可用 a2a doctor 检查"

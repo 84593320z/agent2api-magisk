@@ -1,0 +1,470 @@
+{
+  "all_pass": true,
+  "total": 32,
+  "passed": 32,
+  "failed": 0,
+  "cases": [
+    {
+      "case": "r01_activate_registers_pending",
+      "pass": true,
+      "expected": {
+        "pending_written": "1",
+        "old_payload_intact": "1",
+        "new_version_live": "v2.0.0"
+      },
+      "got": {
+        "pending_written": "1",
+        "old_payload_intact": "1",
+        "new_version_live": "v2.0.0"
+      }
+    },
+    {
+      "case": "r01_post_fs_data_keeps_pending",
+      "pass": true,
+      "expected": {
+        "pending_kept": "1",
+        "old_kept": "1"
+      },
+      "got": {
+        "pending_kept": "1",
+        "old_kept": "1"
+      }
+    },
+    {
+      "case": "r01_supervisor_commits_after_health",
+      "pass": true,
+      "expected": {
+        "launches": "1",
+        "pending_gone": "1",
+        "old_payload_gone": "1",
+        "live_version": "v2.0.0"
+      },
+      "got": {
+        "launches": "1",
+        "pending_gone": "1",
+        "old_payload_gone": "1",
+        "live_version": "v2.0.0"
+      }
+    },
+    {
+      "case": "r01_updater_commit_keeps_identity",
+      "pass": true,
+      "expected": {
+        "installed": "1",
+        "identity_kept": "1",
+        "identity_cleared": "1",
+        "committed_flag": "1"
+      },
+      "got": {
+        "installed": "1",
+        "identity_kept": "1",
+        "identity_cleared": "1",
+        "committed_flag": "1"
+      }
+    },
+    {
+      "case": "r02_pending_write_failure_aborts",
+      "pass": true,
+      "expected": {
+        "activation_rc": "1",
+        "active_cleared": "1"
+      },
+      "got": {
+        "activation_rc": "1",
+        "active_cleared": "1"
+      }
+    },
+    {
+      "case": "r02_commit_delete_failure_reports_error",
+      "pass": true,
+      "expected": {
+        "commit_rc": "1",
+        "old_kept": "1",
+        "pending_kept": "1"
+      },
+      "got": {
+        "commit_rc": "1",
+        "old_kept": "1",
+        "pending_kept": "1"
+      }
+    },
+    {
+      "case": "r03_commit_rejects_foreign_generation",
+      "pass": true,
+      "expected": {
+        "foreign_rc": "1",
+        "foreign_kept": "1",
+        "foreign_pending_kept": "1",
+        "match_rc": "0",
+        "old_deleted": "1",
+        "pending_cleared": "1"
+      },
+      "got": {
+        "foreign_rc": "1",
+        "foreign_kept": "1",
+        "foreign_pending_kept": "1",
+        "match_rc": "0",
+        "old_deleted": "1",
+        "pending_cleared": "1"
+      }
+    },
+    {
+      "case": "r04_rollback_converges_pending",
+      "pass": true,
+      "expected": {
+        "before_version": "v2.0.0",
+        "after_version": "v1.0.0",
+        "pending_gone": "1",
+        "committed": "1"
+      },
+      "got": {
+        "before_version": "v2.0.0",
+        "after_version": "v1.0.0",
+        "pending_gone": "1",
+        "committed": "1"
+      }
+    },
+    {
+      "case": "r05_static_payload_functions",
+      "pass": true,
+      "expected": {
+        "static_validate": "0",
+        "static_perms": "0",
+        "static_smoke": "0",
+        "dyn_validate": "0",
+        "dyn_perms": "0",
+        "broken_validate": "1"
+      },
+      "got": {
+        "static_validate": "0",
+        "static_perms": "0",
+        "static_smoke": "0",
+        "dyn_validate": "0",
+        "dyn_perms": "0",
+        "broken_validate": "1"
+      }
+    },
+    {
+      "case": "r05_static_launch_skips_loader",
+      "pass": true,
+      "expected": {
+        "launch_reached": "1"
+      },
+      "got": {
+        "launch_reached": "1"
+      }
+    },
+    {
+      "case": "r05_customize_static_detection",
+      "pass": true,
+      "expected": {
+        "static_hit": "0",
+        "dyn_hit": "1"
+      },
+      "got": {
+        "static_hit": "0",
+        "dyn_hit": "1"
+      }
+    },
+    {
+      "case": "r06_stop_cleans_dead_owner",
+      "pass": true,
+      "expected": {
+        "outer": "1",
+        "stop_rc": "0",
+        "instance_lock_gone": "1",
+        "outer_token_ok": "1",
+        "service_owner_intact": "1"
+      },
+      "got": {
+        "outer": "1",
+        "stop_rc": "0",
+        "instance_lock_gone": "1",
+        "outer_token_ok": "1",
+        "service_owner_intact": "1"
+      }
+    },
+    {
+      "case": "r07_reentrant_start_keeps_lock",
+      "pass": true,
+      "expected": {
+        "acq": "1",
+        "reentrant_rc": "0",
+        "token_kept": "1",
+        "owner_kept": "1",
+        "owner_freed": "1"
+      },
+      "got": {
+        "acq": "1",
+        "reentrant_rc": "0",
+        "token_kept": "1",
+        "owner_kept": "1",
+        "owner_freed": "1"
+      }
+    },
+    {
+      "case": "r06b_stop_timeout_keeps_state",
+      "pass": true,
+      "expected": {
+        "stop_rc": "1",
+        "pid_kept": "1",
+        "stop_marker": "1"
+      },
+      "got": {
+        "stop_rc": "1",
+        "pid_kept": "1",
+        "stop_marker": "1"
+      }
+    },
+    {
+      "case": "r08_reaper_generation_guard",
+      "pass": true,
+      "stdout_tail": "METRIC acquire_rc=1\nMETRIC live_owner_kept=1\nMETRIC live_token=livetoken"
+    },
+    {
+      "case": "r09_recovery_no_nesting",
+      "pass": true,
+      "expected": {
+        "old_intact": "1",
+        "no_nest": "1"
+      },
+      "got": {
+        "old_intact": "1",
+        "no_nest": "1"
+      }
+    },
+    {
+      "case": "r10_zoneinfo_rollback_without_flag",
+      "pass": true,
+      "expected": {
+        "zone_version": "old",
+        "aux_restored": "old-tz",
+        "old_dir_gone": "1"
+      },
+      "got": {
+        "zone_version": "old",
+        "aux_restored": "old-tz",
+        "old_dir_gone": "1"
+      }
+    },
+    {
+      "case": "r11_cfg_set_roundtrip",
+      "pass": true,
+      "expected": {
+        "lf_rc": "1",
+        "cr_rc": "1",
+        "plain_rc": "0",
+        "plain_val": "plain",
+        "space_rc": "0",
+        "space_val": "has space",
+        "hash_rc": "0",
+        "hash_val": "has # hash",
+        "quote_rc": "0",
+        "quote_val": "it's",
+        "injected_absent": "ABSENT",
+        "dedup": "1",
+        "last_wins": "v3"
+      },
+      "got": {
+        "lf_rc": "1",
+        "cr_rc": "1",
+        "plain_rc": "0",
+        "plain_val": "plain",
+        "space_rc": "0",
+        "space_val": "has space",
+        "hash_rc": "0",
+        "hash_val": "has # hash",
+        "quote_rc": "0",
+        "quote_val": "it's",
+        "injected_absent": "ABSENT",
+        "dedup": "1",
+        "last_wins": "v3"
+      }
+    },
+    {
+      "case": "r12_health_proxy_independent",
+      "pass": true,
+      "expected": {
+        "direct": "0",
+        "proxied": "0",
+        "proxied_upper": "0"
+      },
+      "got": {
+        "direct": "0",
+        "proxied": "0",
+        "proxied_upper": "0"
+      }
+    },
+    {
+      "case": "r12_health_status_matrix",
+      "pass": true,
+      "expected": {
+        "ok": "0",
+        "degraded": "0",
+        "bad": "1",
+        "truncated": "1"
+      },
+      "got": {
+        "ok": "0",
+        "degraded": "0",
+        "bad": "1",
+        "truncated": "1"
+      }
+    },
+    {
+      "case": "r12_health_ipv6_wildcard",
+      "pass": true,
+      "expected": {
+        "explicit": "0",
+        "wildcard": "0",
+        "bracket_wildcard": "0"
+      },
+      "got": {
+        "explicit": "0",
+        "wildcard": "0",
+        "bracket_wildcard": "0"
+      }
+    },
+    {
+      "case": "r13_liveness_curl_status",
+      "pass": true,
+      "expected": {
+        "ok": "0",
+        "truncated": "1",
+        "refused": "1",
+        "probe_off": "0"
+      },
+      "got": {
+        "ok": "0",
+        "truncated": "1",
+        "refused": "1",
+        "probe_off": "0"
+      }
+    },
+    {
+      "case": "r14_dns_backup_failure_blocks",
+      "pass": true,
+      "expected": {
+        "ensure_rc": "1",
+        "search_kept": "1",
+        "backup_left": "0"
+      },
+      "got": {
+        "ensure_rc": "1",
+        "search_kept": "1",
+        "backup_left": "0"
+      }
+    },
+    {
+      "case": "r14_dns_success_cleans_backup",
+      "pass": true,
+      "expected": {
+        "ensure_rc": "0",
+        "backup_left": "0"
+      },
+      "got": {
+        "ensure_rc": "0",
+        "backup_left": "0"
+      }
+    },
+    {
+      "case": "r17_natural_death_still_counts",
+      "pass": true,
+      "expected": {
+        "fails_after_70s": "1",
+        "fails_after_kill": "1"
+      },
+      "got": {
+        "fails_after_70s": "1",
+        "fails_after_kill": "1"
+      }
+    },
+    {
+      "case": "r16_backoff_releases_wake",
+      "pass": true,
+      "expected": {
+        "releases_after_backoff": "1",
+        "wake_after_backoff": "0",
+        "giveup": "1"
+      },
+      "got": {
+        "releases_after_backoff": "1",
+        "wake_after_backoff": "0",
+        "giveup": "1"
+      }
+    },
+    {
+      "case": "r16_port_conflict_releases_wake",
+      "pass": true,
+      "expected": {
+        "releases": "1",
+        "wake": "0",
+        "launches": "0"
+      },
+      "got": {
+        "releases": "1",
+        "wake": "0",
+        "launches": "0"
+      }
+    },
+    {
+      "case": "r15_backoff_rechecks_state",
+      "pass": true,
+      "expected": {
+        "gate_launches": "0",
+        "autooff_launches": "0",
+        "stop_launches": "0",
+        "normal_launches": "1"
+      },
+      "got": {
+        "gate_launches": "0",
+        "autooff_launches": "0",
+        "stop_launches": "0",
+        "normal_launches": "1"
+      }
+    },
+    {
+      "case": "r16_take_wake_on_relaunch",
+      "pass": true,
+      "expected": {
+        "takes": "1",
+        "wake": "1",
+        "takes_when_off": "0"
+      },
+      "got": {
+        "takes": "1",
+        "wake": "1",
+        "takes_when_off": "0"
+      }
+    },
+    {
+      "case": "r15_autostart_and_stop_gate_launch",
+      "pass": true,
+      "expected": {
+        "autostart_off_launches": "1"
+      },
+      "got": {
+        "autostart_off_launches": "1"
+      }
+    },
+    {
+      "case": "r18_version_metadata",
+      "pass": true,
+      "stdout_tail": "METRIC binary=3.3.0-beta.6\nMETRIC version_file=3.3.0-beta.6\nMETRIC consistent=1\nMETRIC module_prop=v3.3.0-beta.7 (magisk.32)\nMETRIC prop_mentions_payload=1"
+    },
+    {
+      "case": "r19_boot_helper_module_dir",
+      "pass": true,
+      "expected": {
+        "resolved": "/e/AI/tmp/a2a-magisk-repo/module",
+        "has_prop": "1",
+        "is_fallback": "0"
+      },
+      "got": {
+        "resolved": "/e/AI/tmp/a2a-magisk-repo/module",
+        "has_prop": "1",
+        "is_fallback": "0"
+      }
+    }
+  ]
+}

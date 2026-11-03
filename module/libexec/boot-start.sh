@@ -16,6 +16,15 @@ case "$_self" in
   */*) MODDIR="${_self%/*}" ;;
   *)   MODDIR="." ;;
 esac
+# R19：本脚本住在 <模块根>/libexec/ 下，取目录只得到 libexec，模块根是它的
+# 上一层。旧实现少了这一层，只"恰好"靠 /data/adb/modules/agent2api 兜底才对；
+# 模块目录改名、走 modules_update 或多开时会拿错路径。先向上找一级，再退标准路径。
+if [ ! -f "$MODDIR/module.prop" ]; then
+  _bs_parent="${MODDIR%/*}"
+  if [ -n "$_bs_parent" ] && [ "$_bs_parent" != "$MODDIR" ]; then
+    MODDIR="$_bs_parent"
+  fi
+fi
 [ -f "$MODDIR/module.prop" ] || MODDIR="/data/adb/modules/agent2api"
 
 [ -f "$MODDIR/libexec/common.sh" ] || exit 0

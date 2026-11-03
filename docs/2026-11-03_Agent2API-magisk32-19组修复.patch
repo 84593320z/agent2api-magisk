@@ -1,0 +1,794 @@
+diff --git a/module/customize.sh b/module/customize.sh
+index 05a5822..cc7f517 100644
+--- a/module/customize.sh
++++ b/module/customize.sh
+@@ -75,19 +75,37 @@ do
+   [ -s "$MODPATH/$_required" ] || abort "模块包不完整：缺少或空文件 $_required"
+ done
+ 
++# R05：安装期没有 readelf，只能按"载荷里有没有 ld-linux 字串"粗判静态。
++# 静态载荷根本没有 lib/，旧清单强行要求 lib/libc.so.6，会让静态包 100% 装不上。
++payload_seed_is_static() { # $1=载荷目录
++  [ -f "$1/agent2api-server" ] || return 1
++  grep -qa 'ld-linux' "$1/agent2api-server" 2>/dev/null && return 1
++  return 0
++}
++
+ SEED="$MODPATH/seed"
+ HAVE_SEED=0
+ [ -d "$SEED" ] && HAVE_SEED=1
+ if [ "$HAVE_SEED" = "1" ]; then
+-  for _required in VERSION agent2api-server lib/ld-linux-aarch64.so.1 \
+-                   lib/libc.so.6 ui/index.html
++  for _required in VERSION agent2api-server ui/index.html
+   do
+     [ -s "$SEED/$_required" ] || abort "模块包不完整：缺少或空文件 seed/$_required"
+   done
++  # R05：只有动态链接的种子才需要运行时；静态种子带 lib/ 反而会被硬失败拦死。
++  if ! payload_seed_is_static "$SEED"; then
++    for _required in lib/ld-linux-aarch64.so.1 lib/libc.so.6
++    do
++      [ -s "$SEED/$_required" ] || abort "模块包不完整：缺少或空文件 seed/$_required"
++    done
++  fi
+ else
+   # 精简包只能用于已有完整安装，不能在首次安装时伪造成功。
+-  [ -s "$SERVER_BIN" ] && [ -s "$LOADER" ] && [ -s "$PAYLOAD/ui/index.html" ] \
++  [ -s "$SERVER_BIN" ] && [ -s "$PAYLOAD/ui/index.html" ] \
+     || abort "模块包不完整：缺少 seed/ 目录，系统里也没有可用的载荷"
++  # R05：只有动态载荷才要求链接器；静态载荷要这一项等于直接拒绝升级。
++  if ! payload_seed_is_static "$PAYLOAD"; then
++    [ -s "$LOADER" ] || abort "现有动态载荷缺少运行时链接器：$LOADER"
++  fi
+ fi
+ 
+ # ---------------------------------------------------------------------------
+@@ -123,12 +141,14 @@ install_cleanup() {
+   # 旧实现只在 _ZONE_COMMITTED=1 时还原，于是"移开旧库、新库还没 rename
+   # 进来"这个窗口里被中断，两处都不存在，zoneinfo 直接丢失。
+   if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_ZONE_OLD_PRESENT" = "1" ] && [ -d "$_ZONE_OLD" ]; then
+-    if [ "$_ZONE_COMMITTED" = "1" ] && [ -e "$APP_HOME/zoneinfo" ]; then
++    # R10：事务失败就是整体回退——先移开当前 zoneinfo（可能是换了一半的新目录），
++    # 再把旧目录整体放回。旧实现依赖 _ZONE_COMMITTED 标志，进程恰好死在
++    # 「新目录已发布、标志还没置」的窗口里时两边都不动，留下新旧混用，
++    # VERSION/tzdata.zi 这些辅助文件也跟着半新半旧。
++    if [ -e "$APP_HOME/zoneinfo" ]; then
+       rm -rf "$APP_HOME/zoneinfo" 2>/dev/null
+     fi
+-    if [ ! -e "$APP_HOME/zoneinfo" ]; then
+-      mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
+-    fi
++    mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
+   fi
+   rm -rf "$_INSTALL_TRANSACTION" 2>/dev/null
+   update_lock_release "$RUNDIR/update.lock.d"
+@@ -170,11 +190,16 @@ fi
+ 
+ install_payload_perms() {
+   chmod_tree "$1" 755 644 || return 1
+-  chmod 755 "$1/agent2api-server" "$1/lib" "$1/lib/ld-linux-aarch64.so.1" 2>/dev/null || return 1
+-  for _f in "$1/lib/"*.so*; do
+-    [ -e "$_f" ] || continue
+-    chmod 755 "$_f" 2>/dev/null || return 1
+-  done
++  chmod 755 "$1/agent2api-server" 2>/dev/null || return 1
++  # R05：静态载荷没有 lib/。旧实现把"lib 目录不存在"当成权限失败，
++  # 静态包每次安装都会在这里 abort。
++  if [ -d "$1/lib" ]; then
++    chmod 755 "$1/lib" "$1/lib/ld-linux-aarch64.so.1" 2>/dev/null || return 1
++    for _f in "$1/lib/"*.so*; do
++      [ -e "$_f" ] || continue
++      chmod 755 "$_f" 2>/dev/null || return 1
++    done
++  fi
+   return 0
+ }
+ 
+@@ -202,15 +227,21 @@ for f in customize.sh post-fs-data.sh service.sh uninstall.sh action.sh boot-com
+ done
+ chmod 755 "$MODPATH/libexec" "$MODPATH/libexec/"* 2>/dev/null || abort "libexec 权限设置失败"
+ 
+-ui_print "- 自检：动态链接器"
+-_CHECK_LOADER="$_CHECK_PAYLOAD/lib/ld-linux-aarch64.so.1"
+-[ -x "$_CHECK_LOADER" ] || abort "动态链接器没有执行权限"
+-if _ld_output=$("$_CHECK_LOADER" --version 2>&1); then
+-  _LDV=$(printf '%s\n' "$_ld_output" | head -n 1)
+-  [ -n "$_LDV" ] || abort "动态链接器自检没有返回版本信息"
+-  ui_print "  $_LDV"
++# R05：静态载荷不需要（也没有）动态链接器，这一段必须整体跳过。
++if payload_seed_is_static "$_CHECK_PAYLOAD"; then
++  _LDV="static（无动态链接器）"
++  ui_print "- 自检：静态载荷，跳过动态链接器检查"
+ else
+-  abort "动态链接器无法执行，安装已终止"
++  ui_print "- 自检：动态链接器"
++  _CHECK_LOADER="$_CHECK_PAYLOAD/lib/ld-linux-aarch64.so.1"
++  [ -x "$_CHECK_LOADER" ] || abort "动态链接器没有执行权限"
++  if _ld_output=$("$_CHECK_LOADER" --version 2>&1); then
++    _LDV=$(printf '%s\n' "$_ld_output" | head -n 1)
++    [ -n "$_LDV" ] || abort "动态链接器自检没有返回版本信息"
++    ui_print "  $_LDV"
++  else
++    abort "动态链接器无法执行，安装已终止"
++  fi
+ fi
+ ui_print "- 自检：服务端架构"
+ _SA=$(elf_arch "$_CHECK_PAYLOAD/agent2api-server" 2>/dev/null)
+@@ -218,13 +249,16 @@ _SA=$(elf_arch "$_CHECK_PAYLOAD/agent2api-server" 2>/dev/null)
+ ui_print "  aarch64 OK"
+ 
+ _patch_bad=""
++# R05：静态载荷没有 lib/libc.so.6，这一项必须"不存在就跳过"，
++# 否则静态包会在自检阶段被永久拒绝；curl 是必检项。
+ for _f in "$_CHECK_PAYLOAD/lib/libc.so.6" "$_TOOLS_STAGE/curl"; do
++  [ -e "$_f" ] || continue
+   if ! grep -q '/data/a2a/resolv' "$_f" 2>/dev/null; then
+     _patch_bad="$_patch_bad $(basename "$_f")"
+   fi
+ done
+ [ -z "$_patch_bad" ] || abort "这些文件没有做路径重定向：$_patch_bad"
+-ui_print "  二进制路径重定向 OK（glibc/curl 都指向 $A2A_LIVE）"
++ui_print "  二进制路径重定向 OK（curl 指向 $A2A_LIVE）"
+ 
+ . "$MODPATH/libexec/dns.sh" || abort "无法加载 libexec/dns.sh"
+ dns_bootstrap || ui_print "  ! DNS/NSS 写入有失败项，开机后会自动重试，可用 a2a doctor 检查"
+diff --git a/module/libexec/a2a b/module/libexec/a2a
+index 3ae4797..1962dbd 100644
+--- a/module/libexec/a2a
++++ b/module/libexec/a2a
+@@ -354,10 +354,25 @@ cmd_rollback() {
+     say "回滚或服务恢复失败，请查看日志并执行 a2a doctor"
+     return 1
+   fi
++  # R03：趁还在锁内记下本笔事务的 pending 标记（activate_staged 写成
++  # "rollback $$ <old>"），再走 rollback_finish 释放锁。释放之后光看全局
++  # pending 不安全——并发事务可能已经写进自己的标记。
++  _rb_tag=""
++  if [ -s "$RUNDIR/update.pending" ]; then
++    _rb_tag=$(awk '{print $1" "$2}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
++  fi
+   rollback_finish 0 || return 1
+   # 回滚后的版本已经通过健康检查（或本来就没在跑），这时才允许删除
+-  # 事务旧载荷（F-002 两阶段提交的提交点）。
+-  payload_commit_old
++  # 事务旧载荷（F-002 两阶段提交的提交点）。锁已释放，重取一次再按标记提交。
++  if [ -n "$_rb_tag" ]; then
++    if update_lock_acquire "$RUNDIR/update.lock.d" 30; then
++      payload_commit_old "$_rb_tag" \
++        || say "事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试"
++      update_lock_release "$RUNDIR/update.lock.d"
++    else
++      say "暂时拿不到更新锁，事务旧载荷留待下次启动提交"
++    fi
++  fi
+   [ "$_was_running" != "1" ] || say "服务已恢复"
+   return 0
+ }
+diff --git a/module/libexec/boot-start.sh b/module/libexec/boot-start.sh
+index 14584ac..d91d98d 100644
+--- a/module/libexec/boot-start.sh
++++ b/module/libexec/boot-start.sh
+@@ -16,6 +16,15 @@ case "$_self" in
+   */*) MODDIR="${_self%/*}" ;;
+   *)   MODDIR="." ;;
+ esac
++# R19：本脚本住在 <模块根>/libexec/ 下，取目录只得到 libexec，模块根是它的
++# 上一层。旧实现少了这一层，只"恰好"靠 /data/adb/modules/agent2api 兜底才对；
++# 模块目录改名、走 modules_update 或多开时会拿错路径。先向上找一级，再退标准路径。
++if [ ! -f "$MODDIR/module.prop" ]; then
++  _bs_parent="${MODDIR%/*}"
++  if [ -n "$_bs_parent" ] && [ "$_bs_parent" != "$MODDIR" ]; then
++    MODDIR="$_bs_parent"
++  fi
++fi
+ [ -f "$MODDIR/module.prop" ] || MODDIR="/data/adb/modules/agent2api"
+ 
+ [ -f "$MODDIR/libexec/common.sh" ] || exit 0
+diff --git a/module/libexec/common.sh b/module/libexec/common.sh
+index bf5b197..6cf6cf1 100644
+--- a/module/libexec/common.sh
++++ b/module/libexec/common.sh
+@@ -160,13 +160,31 @@ cfg_get() { # $1=键 $2=默认值；显式空值与“键不存在”语义不
+ 
+ cfg_set() { # 用 awk 写值，避免 sed 的 | & \ 与正则注入；磁盘满不破坏原配置
+   case "$1" in ''|*[!A-Za-z0-9_]*) return 1 ;; esac
++  # R11：值里出现任何控制字符（换行/回车/TAB）都会让一行变多行，等于让
++  # 调用者写进另一个键（配置注入）。awk -v 时代靠转义挡住一半，换成
++  # ENVIRON 原样传值之后必须在这里显式拒绝。
++  case "$2" in
++    *[[:cntrl:]]*) say "配置值不能包含控制字符：$1"; return 1 ;;
++  esac
++  # 含空格或 # 的值不加引号会被 cfg_get 当成"行尾注释"截断，读回来就不是
++  # 写进去的东西。这里统一用引号包裹，cfg_get 会原样返回。
++  _cs_val=$2
++  case "$_cs_val" in
++    *'"'*)
++      case "$_cs_val" in
++        *"'"*) say "配置值不能同时包含单双引号：$1"; return 1 ;;
++      esac
++      _cs_val=$(printf "'%s'" "$_cs_val")
++      ;;
++    *[[:space:]]*|*#*) _cs_val=$(printf '"%s"' "$_cs_val") ;;
++  esac
+   [ -d "$CFGDIR" ] || mkdir -p "$CFGDIR" 2>/dev/null || return 1
+   [ -f "$SETTINGS" ] || : >"$SETTINGS" || return 1
+   _tmp="$SETTINGS.tmp.$$"
+   # 用 ENVIRON 传键值：awk -v 会把值里的反斜杠转义序列展开，
+   # 于是字面量 abc\nallow_no_key=1 会被写成两行，等于让调用者改到了
+   # 另一个键（安全上就是配置注入）。ENVIRON 是原样字符串，不做解释。
+-  A2A_CFG_KEY="$1" A2A_CFG_VAL="$2" awk 'BEGIN { k=ENVIRON["A2A_CFG_KEY"]; v=ENVIRON["A2A_CFG_VAL"]; done=0 }
++  A2A_CFG_KEY="$1" A2A_CFG_VAL="$_cs_val" awk 'BEGIN { k=ENVIRON["A2A_CFG_KEY"]; v=ENVIRON["A2A_CFG_VAL"]; done=0 }
+     $0 ~ "^[[:space:]]*" k "[[:space:]]*=" {
+       if (!done) { print k "=" v; done=1 }; next
+     }
+@@ -634,13 +652,26 @@ payload_recover_interrupted() {
+     for _old in "$APP_HOME"/payload.*.old.* "$APP_HOME/payload.old" "$APP_HOME/payload.rollback.old" "$BACKUPDIR/prev"; do
+       [ -d "$_old" ] || continue
+       if payload_validate "$_old" >/dev/null 2>&1; then
+-        [ -e "$PAYLOAD" ] && mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null
+-        if mv "$_old" "$PAYLOAD" 2>/dev/null; then
++        # R09：移开"坏 current"失败时必须放弃这一次恢复。旧实现忽略 mv 的
++        # 返回码继续往下 mv，old 会被嵌进坏目录（payload/下再套一层 old 名），
++        # 结果 current 仍然坏、唯一回滚副本也被毁掉，函数还照样 return 0 报成功。
++        if [ -e "$PAYLOAD" ]; then
++          if ! mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null; then
++            log_to "$SUPLOG" "无法移开不完整的当前载荷，跳过本次恢复：$_old"
++            continue
++          fi
++        fi
++        if mv "$_old" "$PAYLOAD" 2>/dev/null && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+           payload_fix_perms "$PAYLOAD"
+           log_to "$SUPLOG" "已恢复中断的载荷切换：$_old"
+           rm -rf "$APP_HOME/payload.incomplete.$$"
+           break
+         fi
++        # 换上去的仍然不可用：把刚移开的目录放回原位，别把 current 留空。
++        if [ -d "$APP_HOME/payload.incomplete.$$" ] && [ ! -e "$PAYLOAD" ]; then
++          mv "$APP_HOME/payload.incomplete.$$" "$PAYLOAD" 2>/dev/null
++        fi
++        log_to "$SUPLOG" "恢复中断载荷失败（$_old 换上去后仍未通过校验）"
+       fi
+     done
+   fi
+diff --git a/module/libexec/control.sh b/module/libexec/control.sh
+index cb99c91..fb1d6fc 100644
+--- a/module/libexec/control.sh
++++ b/module/libexec/control.sh
+@@ -53,7 +53,12 @@ svc_health_urls() { # $1=端口；一行一个候选 URL
+   _hu_port="$1"
+   _hu_host=$(cfg_get host 127.0.0.1)
+   case "$_hu_host" in
+-    ''|0.0.0.0|"*"|::|"[::]") printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
++    '') printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
++    0.0.0.0|"*"|::|"[::]")
++      # R12：host=:: 时服务端常常只监听 [::]:port（Android 上 v6-only 很常见），
++      # 只试 127.0.0.1 会把一个健康的实例判成死，每 30 秒无意义地重启一次。
++      printf 'http://[::1]:%s/health\n' "$_hu_port"
++      printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
+     ::1|"[::1]") printf 'http://[::1]:%s/health\n' "$_hu_port" ;;
+     *:*)
+       _hu_host=${_hu_host#\[}; _hu_host=${_hu_host%\]}
+@@ -81,7 +86,12 @@ svc_http_health() { # $1=单次超时秒；同时核对进程身份、socket 归
+   # 每次健康检查多花几毫秒，还得保证 $CACERT 一直存在。
+   _rc=1
+   for _url in $(svc_health_urls "$_port"); do
+-    _code=$("$CURL" -sS -o "$_body" -w '%{http_code}' --max-time "$_t" "$_url" 2>/dev/null)
++    # R12：回环请求绝不能被 http_proxy 劫持（代理回 502 会把健康实例判死）。
++    _code=$("$CURL" -sS --noproxy '*' -o "$_body" -w '%{http_code}' --max-time "$_t" "$_url" 2>/dev/null)
++    _crc=$?
++    # R13：只看状态码不够。连接被中途截断时 curl 返回 18/56，而 -w 仍可能打印
++    # 200，于是坏实例被当成健康的；必须同时要求 curl 退出码为 0。
++    [ "$_crc" -eq 0 ] || continue
+     [ "$_code" = "200" ] || continue
+     grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|degraded)"' "$_body" 2>/dev/null || continue
+     _rc=0
+@@ -156,10 +166,18 @@ svc_start() {
+   # 会把 cmd_rollback / upd_do_update 装的事务恢复处理器一起清掉，
+   # 之后收到 TERM 就没人收尾，留下半截事务。
+   # 锁的活性由 stale owner / 僵死 reaping 回收保证。
+-  update_lock_acquire "$RUNDIR/service.lock.d" || return 1
++  # R07：临界区内可能被 TERM 打断，信号处理器会重入 svc_start/svc_stop。
++  # 同一进程已经持锁时必须按「已持有」处理：再去 acquire 必然失败，直接
++  # return 1 会让外层半途退出，update / service 两把 owner 一起残留。
++  _svc_owned=0
++  if update_lock_is_self "$RUNDIR/service.lock.d"; then
++    _svc_owned=1
++  else
++    update_lock_acquire "$RUNDIR/service.lock.d" || return 1
++  fi
+   svc_start_impl
+   _rc=$?
+-  update_lock_release "$RUNDIR/service.lock.d"
++  [ "$_svc_owned" = "1" ] || update_lock_release "$RUNDIR/service.lock.d"
+   UPDATE_LOCK_TOKEN=$_svc_outer_token
+   UPDATE_LOCK_PATH=$_svc_outer_path
+   return "$_rc"
+@@ -216,15 +234,22 @@ svc_stop_impl() {
+   _stop_oticks=$(printf '%s\n' "$_stop_owner" | awk '{print $2}')
+   if [ -n "$_stop_opid" ] && [ -n "$_stop_oticks" ] \
+      && { ! pid_alive "$_stop_opid" || [ "$(proc_start_ticks "$_stop_opid" 2>/dev/null)" != "$_stop_oticks" ]; }; then
+-    update_lock_acquire "$RUNDIR/lock" 2 || return 1
+-    _stop_held_token=$UPDATE_LOCK_TOKEN
+-    _stop_held_path=$UPDATE_LOCK_PATH
+-    rm -f "$RUNDIR/lock/owner" 2>/dev/null || return 1
+-    UPDATE_LOCK_TOKEN=""
+-    UPDATE_LOCK_PATH=""
+-    rmdir "$RUNDIR/lock" 2>/dev/null
+-    UPDATE_LOCK_TOKEN=$_stop_held_token
+-    UPDATE_LOCK_PATH=$_stop_held_path
++    # R06：外层身份必须在取内层锁之前存好。旧顺序是 acquire 之后才存，
++    # 存进去的已是内层 token；恢复后外层 service.lock.d 的 owner 再也匹配不上，
++    # svc_stop 报成功却留下 service owner，下一次安装直接「另一个事务正在运行」。
++    _stop_outer_token=${UPDATE_LOCK_TOKEN:-}
++    _stop_outer_path=${UPDATE_LOCK_PATH:-}
++    if update_lock_is_self "$RUNDIR/lock"; then
++      : # 已经是本进程的实例锁：不重复取，也不要重复放
++    else
++      update_lock_acquire "$RUNDIR/lock" 2 || return 1
++      rm -f "$RUNDIR/lock/owner" 2>/dev/null
++      UPDATE_LOCK_TOKEN=""
++      UPDATE_LOCK_PATH=""
++      rmdir "$RUNDIR/lock" 2>/dev/null
++    fi
++    UPDATE_LOCK_TOKEN=$_stop_outer_token
++    UPDATE_LOCK_PATH=$_stop_outer_path
+   fi
+   rm -f "$RUNDIR/server.pid" "$RUNDIR/server.start" "$RUNDIR/supervisor.pid" "$RUNDIR/supervisor.start" "$RUNDIR/stop" 2>/dev/null
+   return 0
+@@ -233,11 +258,16 @@ svc_stop_impl() {
+ svc_stop() {
+   _svc_outer_token=${UPDATE_LOCK_TOKEN:-}
+   _svc_outer_path=${UPDATE_LOCK_PATH:-}
+-  # 同 svc_start：不覆盖调用者的信号处理器。
+-  update_lock_acquire "$RUNDIR/service.lock.d" || return 1
++  # 同 svc_start：不覆盖调用者的信号处理器，且允许同进程重入。
++  _svc_owned=0
++  if update_lock_is_self "$RUNDIR/service.lock.d"; then
++    _svc_owned=1
++  else
++    update_lock_acquire "$RUNDIR/service.lock.d" || return 1
++  fi
+   svc_stop_impl
+   _rc=$?
+-  update_lock_release "$RUNDIR/service.lock.d"
++  [ "$_svc_owned" = "1" ] || update_lock_release "$RUNDIR/service.lock.d"
+   UPDATE_LOCK_TOKEN=$_svc_outer_token
+   UPDATE_LOCK_PATH=$_svc_outer_path
+   return "$_rc"
+diff --git a/module/libexec/dns.sh b/module/libexec/dns.sh
+index 395ae14..81a18e8 100644
+--- a/module/libexec/dns.sh
++++ b/module/libexec/dns.sh
+@@ -421,10 +421,19 @@ dns_liveness_ok() {
+   _dl_url=$(cfg_get dns_probe_url "http://connect.rom.miui.com/generate_204")
+   _dl_code=""
+   # -f 让 4xx/5xx 直接失败；再显式核对状态码，避免被劫持页/错误页骗过。
++  # --noproxy：验活走的是刚写进去的解析链，不能被系统代理截胡。
++  _dl_rc=0
+   case "$_dl_url" in
+-    https://*) _dl_code=$("$CURL" -sS -f -o /dev/null -w '%{http_code}' --max-time 6 --cacert "$CACERT" "$_dl_url" 2>/dev/null) ;;
+-    *)         _dl_code=$("$CURL" -sS -f -o /dev/null -w '%{http_code}' --max-time 6 "$_dl_url" 2>/dev/null) ;;
++    https://*) _dl_code=$("$CURL" -sS -f --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 6 --cacert "$CACERT" "$_dl_url" 2>/dev/null) || _dl_rc=$? ;;
++    *)         _dl_code=$("$CURL" -sS -f --noproxy '*' -o /dev/null -w '%{http_code}' --max-time 6 "$_dl_url" 2>/dev/null) || _dl_rc=$? ;;
+   esac
++  # R13：必须同时满足 curl 退出码 0 与 200/204。只看状态码时，连接被中途截断
++  # （curl 18/56，响应头已到）会被判成可用，把一个坏解析链记进 dns.lastgood，
++  # 之后每次开机都优先用它，域名解析变慢甚至直接失败。
++  if [ "$_dl_rc" -ne 0 ]; then
++    log_to "$SUPLOG" "DNS 验活失败（curl rc=$_dl_rc）：$_dl_url"
++    return 1
++  fi
+   case "$_dl_code" in
+     200|204) return 0 ;;
+   esac
+@@ -541,7 +550,15 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
+   # 只记 nameserver 会把 search/options/注释全部丢掉，回滚反而更糟。
+   _eback="$TMPD/resolv.orig.$$"
+   rm -f "$_eback" 2>/dev/null
+-  [ -s "$DNSFILE" ] && cp -f "$DNSFILE" "$_eback" 2>/dev/null
++  # R14：备份失败就不能开始改。旧实现无视 cp 失败，一旦四级候选全部不可用，
++  # 回滚只能走「仅回填 nameserver」的降级路径，search/ndots/注释会被整段丢掉。
++  if [ -s "$DNSFILE" ]; then
++    if ! cp -f "$DNSFILE" "$_eback" 2>/dev/null || [ ! -s "$_eback" ]; then
++      rm -f "$_eback" 2>/dev/null
++      log_to "$SUPLOG" "无法备份现有 DNS 配置（$_eback），放弃本次改写"
++      return 1
++    fi
++  fi
+   _eorig=""
+   [ -s "$DNSFILE" ] && _eorig=$(sed -n 's/^nameserver[[:space:]]*//p' "$DNSFILE" 2>/dev/null | awk '{printf "%s ", $1}')
+ 
+@@ -560,6 +577,8 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
+       printf '%s\n' $_ecand | head -n 6 >"$_elgf" 2>/dev/null
+       chmod 644 "$_elgf" 2>/dev/null
+       log_to "$SUPLOG" "DNS 生效并验证通过：$(printf '%s ' $_ecand)"
++      # R14：成功也要收拾临时备份，否则每次 DNS 生效都往 tmp 里留一份整文件副本。
++      rm -f "$_eback" 2>/dev/null
+       return 0
+     fi
+   done
+diff --git a/module/libexec/launch.sh b/module/libexec/launch.sh
+index a8c1e81..fa23cd8 100644
+--- a/module/libexec/launch.sh
++++ b/module/libexec/launch.sh
+@@ -24,16 +24,21 @@ PRINT_ONLY=0
+ 
+ ensure_layout
+ 
+-if [ ! -x "$LOADER" ]; then
+-  log_to "$SUPLOG" "启动失败：loader 不存在或不可执行：$LOADER"
+-  echo "启动失败：缺少运行时 $LOADER，请重装模块" >&2
+-  exit 78
+-fi
+ if [ ! -f "$SERVER_BIN" ]; then
+   log_to "$SUPLOG" "启动失败：服务端二进制不存在：$SERVER_BIN"
+   echo "启动失败：缺少 $SERVER_BIN，请重装模块" >&2
+   exit 78
+ fi
++# R05：先判定静态/动态，再决定要不要 loader。静态（musl）载荷没有 PT_INTERP，
++# 本来就不需要 lib/ld-linux-aarch64.so.1；旧顺序在静态包上直接 78 退出，
++# 而同一个包 payload_validate 是通过的，两条判定互相打架。
++if ! payload_is_static; then
++  if [ ! -x "$LOADER" ]; then
++    log_to "$SUPLOG" "启动失败：loader 不存在或不可执行：$LOADER"
++    echo "启动失败：缺少运行时 $LOADER，请重装模块" >&2
++    exit 78
++  fi
++fi
+ 
+ # ---------------------------------------------------------------------------
+ # 读配置
+diff --git a/module/libexec/payload.sh b/module/libexec/payload.sh
+index ce0c4c9..71f68a8 100644
+--- a/module/libexec/payload.sh
++++ b/module/libexec/payload.sh
+@@ -43,11 +43,17 @@ payload_validate() { # $1=目录 $2=soft
+ 
+ payload_fix_perms() {
+   _d="$1"
+-  chmod 755 "$_d" "$_d/agent2api-server" "$_d/lib" 2>/dev/null || return 1
+-  for _f in "$_d/lib/"*.so*; do
+-    [ -e "$_f" ] || continue
+-    chmod 755 "$_f" 2>/dev/null || return 1
+-  done
++  # R05：静态（musl）载荷没有 lib/ 目录。把 chmod lib 当硬失败，会让
++  # "payload_validate 已经通过"的静态包在权限阶段被判死，安装/更新/回滚
++  # 全都走不下去。动态载荷该有的检查一条不少，静态载荷按实际布局处理。
++  chmod 755 "$_d" "$_d/agent2api-server" 2>/dev/null || return 1
++  if [ -d "$_d/lib" ]; then
++    chmod 755 "$_d/lib" 2>/dev/null || return 1
++    for _f in "$_d/lib/"*.so*; do
++      [ -e "$_f" ] || continue
++      chmod 755 "$_f" 2>/dev/null || return 1
++    done
++  fi
+   [ ! -e "$_d/VERSION" ] || chmod 644 "$_d/VERSION" 2>/dev/null || return 1
+   chmod_tree "$_d/ui" 755 644 || return 1
+   return 0
+@@ -111,6 +117,14 @@ update_lock_acquire() { # $1=锁目录 $2=竞争/回收重试秒数，活动事
+         *)
+           if ! pid_alive "$_ul_rpid" \
+              || [ "$(proc_start_ticks "$_ul_rpid" 2>/dev/null)" != "$_ul_rstart" ]; then
++            # R08：摘除前必须确认 reaping 还是刚才读到的这一份。回收权在持有
++            # 期间别人不能新建，但"读到 → 判定僵死 → 删"之间若发生过期删除＋
++            # 重建，盲删就会把新一代活着的回收者的标记删掉。
++            _ul_rnow=$(cat "$_ul_lock/reaping" 2>/dev/null) || _ul_rnow=""
++            if [ "$_ul_rnow" != "$_ul_rtok" ] || [ -z "$_ul_rnow" ]; then
++              rm -f "$_ul_claim" "$_ul_guard_claim" 2>/dev/null
++              _ul_n=$((_ul_n + 1)); continue
++            fi
+             log_to "$SUPLOG" "回收僵死的 reaping 标记（pid=$_ul_rpid 已不在或已复用）"
+             rm -f "$_ul_lock/reaping" 2>/dev/null
+             rm -f "$_ul_claim" "$_ul_guard_claim" 2>/dev/null
+@@ -136,14 +150,39 @@ update_lock_acquire() { # $1=锁目录 $2=竞争/回收重试秒数，活动事
+   say "更新锁正被另一个回收者处理，请稍后重试"
+   return 1
+ }
++update_lock_is_self() { # $1=锁目录；锁是否由当前进程（同 pid 同启动代次）持有
++  _uls_owner=$(cat "$1/owner" 2>/dev/null) || return 1
++  [ -n "$_uls_owner" ] || return 1
++  _uls_pid=$(printf '%s\n' "$_uls_owner" | awk '{print $1}')
++  _uls_ticks=$(printf '%s\n' "$_uls_owner" | awk '{print $2}')
++  [ "$_uls_pid" = "$$" ] || return 1
++  [ -n "$_uls_ticks" ] || return 1
++  _uls_self=$(proc_start_ticks $$ 2>/dev/null) || return 1
++  [ -n "$_uls_self" ] || return 1
++  [ "$_uls_ticks" = "$_uls_self" ] || return 1
++  return 0
++}
++
+ update_lock_release() {
+   _ur_lock="${1:-$RUNDIR/update.lock.d}"
+-  [ -n "$UPDATE_LOCK_TOKEN" ] || return 0
+   _ur_owner=$(cat "$_ur_lock/owner" 2>/dev/null) || _ur_owner=""
++  [ -n "$_ur_owner" ] || return 0
++  _ur_pid=$(printf '%s\n' "$_ur_owner" | awk '{print $1}')
++  _ur_ticks=$(printf '%s\n' "$_ur_owner" | awk '{print $2}')
+   _ur_token=$(printf '%s\n' "$_ur_owner" | awk '{print $3}')
+-  if [ "$_ur_token" = "$UPDATE_LOCK_TOKEN" ]; then
+-    rm -f "$_ur_lock/owner" 2>/dev/null || return 1
++  # R07：判断"这把锁是不是我持有的"要按 owner 里的 pid + 启动代次，而不是读
++  # 一个会被嵌套调用冲掉的全局 token（临界区内收到 TERM → handler 再调
++  # svc_stop → 内层 release 把 token 清空，外层就再也释放不掉）。旧实现随后
++  # update/service 两把 owner 双双残留，下一次安装直接"另一个事务正在运行"。
++  _ur_self_ticks=$(proc_start_ticks $$ 2>/dev/null) || _ur_self_ticks=""
++  [ "$_ur_pid" = "$$" ] || return 0
++  [ -n "$_ur_self_ticks" ] || return 0
++  [ "$_ur_ticks" = "$_ur_self_ticks" ] || return 0
++  # 同一个 pid 在释放前可能已经重新取过锁（token 变了），那就不是我们这一代。
++  if [ -n "$UPDATE_LOCK_TOKEN" ] && [ "$_ur_token" != "$UPDATE_LOCK_TOKEN" ]; then
++    return 0
+   fi
++  rm -f "$_ur_lock/owner" 2>/dev/null || return 1
+   # service.lock.d 常嵌套在 update.lock.d 事务内。只清当前锁对应的 token，
+   # 内层释放不能抹掉外层身份，否则外层 owner 会遗留到进程退出。
+   if [ "$UPDATE_LOCK_PATH" = "$_ur_lock" ]; then
+@@ -255,7 +294,17 @@ payload_activate_staged() { # $1=staging $2=事务标签
+   # 这份同一事务的旧版本是唯一能立刻顶回去的副本（备份目录 prev 是上一代，
+   # 不是这一次被换下来的那一份）。改成写 pending 标记，由
+   # payload_commit_old 在健康通过/安装收尾后删除。
+-  printf '%s\n' "$_pa_tag $$ $_pa_old" >"$RUNDIR/update.pending" 2>/dev/null
++  # R02：pending 写不成/写不完整绝不能当成功。旧实现丢掉终端错误继续
++  # return 0，调用方以为"旧载荷已登记待提交"，实际 marker 是空的：这份
++  # 唯一能回滚的旧目录从此没有任何记账，下一轮 sweep 会把它当垃圾删掉。
++  # 先写临时文件再 rename，pending 被外来者占成目录时这里会明确失败。
++  if ! printf '%s\n' "$_pa_tag $$ $_pa_old" >"$RUNDIR/update.pending.tmp.$$" 2>/dev/null \
++     || ! mv -f "$RUNDIR/update.pending.tmp.$$" "$RUNDIR/update.pending" 2>/dev/null; then
++    rm -f "$RUNDIR/update.pending.tmp.$$" 2>/dev/null
++    rm -f "$RUNDIR/update.active" 2>/dev/null
++    echo "无法登记待提交的事务旧载荷：$_pa_old（旧版仍在原处，请勿手工删除）"
++    return 1
++  fi
+   rm -f "$RUNDIR/update.active" 2>/dev/null
+   # /data/a2a/ld.so 只是"插件解释器"这条旁路，真正的服务端是用绝对路径
+   # $LOADER 起的，跟这个软链无关。切换已经成功却因为软链失败报整体失败，
+@@ -266,11 +315,22 @@ payload_activate_staged() { # $1=staging $2=事务标签
+ 
+ # 提交事务旧载荷：只有当前载荷被证明完整时才删，删的是 pending 里记录的
+ # 那一个路径，绝不按通配符批量删（避免误删别人的回滚副本）。
+-payload_commit_old() {
++payload_commit_old() { # $1=期望的事务标记"tag pid"（可选）；不匹配则一个字节都不动
+   _pco_marker="$RUNDIR/update.pending"
+   [ -s "$_pco_marker" ] || return 0
+-  _pco_path=$(awk '{print $3}' "$_pco_marker" 2>/dev/null | head -n 1)
+-  [ -n "$_pco_path" ] || { rm -f "$_pco_marker" 2>/dev/null; return 0; }
++  _pco_line=$(head -n 1 "$_pco_marker" 2>/dev/null) || _pco_line=""
++  _pco_path=$(printf '%s\n' "$_pco_line" | awk '{print $3}')
++  [ -n "$_pco_path" ] || { log_to "$SUPLOG" "pending 内容不完整，保留待人工检查"; return 1; }
++  # R03：pending 是全局唯一的一份。回滚在大锁释放之后才读它，读到的可能是
++  # 另一笔事务刚写下的标记，于是会删掉**别人**的旧载荷。调用方给出期望标记
++  # 时先核对"tag pid"，对不上就不动。
++  if [ -n "${1:-}" ]; then
++    _pco_have=$(printf '%s\n' "$_pco_line" | awk '{print $1" "$2}')
++    if [ "$_pco_have" != "$1" ]; then
++      log_to "$SUPLOG" "pending 属于另一笔事务（期望 $1，实际 ${_pco_have:-空}），跳过提交"
++      return 1
++    fi
++  fi
+   # 只接受本模块自己的临时目录名，挡住 marker 被写坏导致的任意删除。
+   case "$_pco_path" in
+     "$APP_HOME"/payload.*.old.*|"$APP_HOME"/payload.old) ;;
+@@ -280,8 +340,13 @@ payload_commit_old() {
+     log_to "$SUPLOG" "当前载荷不完整，保留事务旧载荷：$_pco_path"
+     return 1
+   fi
+-  rm -rf "$_pco_path" 2>/dev/null
+-  rm -f "$_pco_marker" 2>/dev/null
++  # R02：删除失败（只读挂载/权限/目录里有删不掉的项）不能假装提交成功，
++  # 更不能把 marker 一起删掉 —— marker 是这一笔待提交旧载荷的唯一线索。
++  if ! rm -rf "$_pco_path" 2>/dev/null || [ -e "$_pco_path" ]; then
++    log_to "$SUPLOG" "事务旧载荷删除失败，保留 pending 稍后重试：$_pco_path"
++    return 1
++  fi
++  rm -f "$_pco_marker" 2>/dev/null || return 1
+   return 0
+ }
+ 
+diff --git a/module/libexec/supervise.sh b/module/libexec/supervise.sh
+index 445359d..d420b97 100644
+--- a/module/libexec/supervise.sh
++++ b/module/libexec/supervise.sh
+@@ -457,11 +457,10 @@ while [ "$STOP" = "0" ]; do
+     [ "$_up" -lt 0 ] && _up=0
+     wait "$CHILD" 2>/dev/null
+     rm -f "$RUNDIR/server.pid" "$RUNDIR/server.start" 2>/dev/null
+-    if [ "$_up" -lt 60 ]; then
+-      FAILS=$((FAILS + 1))
+-    else
+-      FAILS=0
+-    fi
++    # R17：只要不是「巡检确认稳定运行 120s」，就必须记账。
++    # 旧实现在存活 ≥60s 的自然死亡上清零 FAILS：一个每 70 秒死一次的服务
++    # 永远停在 FAILS=0，3 次退避、6 次熔断都触发不了，等于无限重启。
++    FAILS=$((FAILS + 1))
+     log_to "$SUPLOG" "服务端已退出（存活 ${_up}s，连续异常 $FAILS 次）"
+     # 服务端死了，它拉起的插件/内核就成了孤儿，一起清掉再重启，
+     # 否则新实例会因为端口被孤儿占着起不来
+@@ -488,6 +487,8 @@ while [ "$STOP" = "0" ]; do
+   if [ "$FAILS" -ge 6 ]; then
+     GIVEUP=1
+     log_to "$SUPLOG" "连续快速失败 6 次，熔断自动拉起；排障后执行 a2a restart"
++    # R16：熔断期间没有子进程，wake lock 必须放掉，否则纯耗电。
++    release_wake
+     write_state dead
+     sleep 30
+     continue
+@@ -495,8 +496,26 @@ while [ "$STOP" = "0" ]; do
+     _wait=$((FAILS * 30))
+     [ "$_wait" -gt 300 ] && _wait=300
+     log_to "$SUPLOG" "连续快速失败 $FAILS 次，退避 ${_wait}s 再试"
++    # R16：退避期间子进程已死，先放掉 wake lock；真要拉起时再按配置取回。
++    release_wake
+     write_state backoff
+     sleep "$_wait"
++    # R15：这一觉最长 300s。期间用户可能点了停止、关掉自启、断网或掉到门限
++    # 以下；睡醒必须重新确认，不能无条件落到下面的拉起入口。
++    if [ "$STOP" = "1" ] || [ -f "$RUNDIR/stop" ]; then
++      rm -f "$RUNDIR/stop" 2>/dev/null
++      break
++    fi
++    if [ "$(cfg_get autostart 1)" != "1" ] && [ -z "$CHILD" ]; then
++      log_to "$SUPLOG" "退避期间 autostart 已被关闭，不再拉起"
++      write_state disabled
++      continue
++    fi
++    if ! gates_ok; then
++      log_to "$SUPLOG" "退避期间门禁不再满足（$GATE_REASON），暂不拉起"
++      write_state paused
++      continue
++    fi
+     # 不能把 continue 留在这里：它会让 FAILS 永远不再增长，永久困在退避。
+     # 落到统一的拉起入口，成功后由健康运行分支清零连续失败。
+   fi
+@@ -505,12 +524,15 @@ while [ "$STOP" = "0" ]; do
+   if port_listen "$PORT"; then
+     _who=$(port_owner "$PORT" 2>/dev/null)
+     log_to "$SUPLOG" "端口 $PORT 已被其它进程占用（pid=${_who:-未知}），60s 后复查"
++    # R16：等待期间同样没有子进程，先把 wake lock 放掉。
++    release_wake
+     write_state port-conflict
+     sleep 60
+     continue
+   fi
+ 
+-  # 9) 拉起
++  # 9) 拉起：前面几处已经放过 wake lock，这里按配置重新取回。
++  if [ "$(cfg_get keep_awake 0)" = "1" ]; then take_wake; fi
+   if start_child; then
+     # 不能"一起来就清零"：那样"起来 → 30 秒内崩 → 再起来"永远停在 1 次，
+     # 3 次退避和 6 次熔断都触发不了，等于把保护逻辑关掉。
+@@ -519,6 +541,19 @@ while [ "$STOP" = "0" ]; do
+       log_to "$SUPLOG" "本次拉起成功，但仍保留此前 $FAILS 次快速失败计数以观察稳定性"
+     fi
+     write_state running
++    # R01：到这里才算「新载荷真的跑起来了」——start_child 已通过进程/端口/HTTP
++    # 联合健康检查。事务旧载荷的提交点放在这里（F-002），而不是 post-fs-data：
++    # 那时服务还没起，手里没有任何健康证据。
++    if [ -s "$RUNDIR/update.pending" ]; then
++      _sup_tag=$(awk '{print $1" "$2}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
++      if [ -n "$_sup_tag" ]; then
++        if payload_commit_old "$_sup_tag"; then
++          log_to "$SUPLOG" "已提交上一笔事务的旧载荷（$_sup_tag）"
++        else
++          log_to "$SUPLOG" "事务旧载荷暂未提交（$_sup_tag），下一轮启动再试"
++        fi
++      fi
++    fi
+   else
+     write_state starting-unhealthy
+   fi
+diff --git a/module/libexec/updater.sh b/module/libexec/updater.sh
+index c8b3289..9325982 100644
+--- a/module/libexec/updater.sh
++++ b/module/libexec/updater.sh
+@@ -233,9 +233,18 @@ upd_payload_after_move() {
+   UPD_ACTIVATE_AFTER=$2
+ }
+ upd_payload_commit() {
++  # R01：这里只承认「新载荷已就位」，绝不提前清事务身份。
++  # UPD_ACTIVATE_BEFORE 指向被移开的旧载荷目录，是健康检查失败或收到信号时
++  # 唯一能恢复现场的证据。旧实现在健康检查之前就把它清空，于是
++  #   1) 健康失败后 upd_on_signal / 回滚拿不到旧载荷，只能退回 backup/prev；
++  #   2) 开机时也没法判断这笔事务还欠一个提交点。
+   UPD_INSTALLED=1
++}
++upd_payload_committed() {
++  # 真正的提交点：新载荷已通过健康检查，旧载荷已删除或已确认留待重试。
+   UPD_ACTIVATE_BEFORE=""
+   UPD_ACTIVATE_AFTER=""
++  UPD_COMMITTED=1
+ }
+ 
+ upd_finish_service() {
+@@ -423,16 +432,39 @@ upd_do_update() {
+     printf '新版健康检查失败，正在回滚并强制重启旧版…\n'
+     payload_rollback || printf '回滚失败，请执行 a2a doctor\n'
+     if [ "$UPD_WAS_RUNNING" = "1" ]; then svc_restart; fi
+-    if [ "$UPD_WAS_RUNNING" = "1" ] && svc_wait_health 45; then
+-      printf '旧版已恢复并通过健康检查\n'
++    _upd_rb_ok=1
++    if [ "$UPD_WAS_RUNNING" = "1" ]; then
++      if svc_wait_health 45; then
++        printf '旧版已恢复并通过健康检查\n'
++      else
++        printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
++        _upd_rb_ok=0
++      fi
++    fi
++    # R04：回滚成功后 pending 仍指着刚才失败的那一版。旧版已恢复可用，
++    # 这笔事务的「旧载荷」（即失败的 v2）就该提交掉；否则 pending 永远悬空，
++    # 下一次开机由守护拿着旧标记去提交，删的是别的代次的目录。
++    if [ "$_upd_rb_ok" = "1" ] && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
++      if payload_commit_old "rollback $$"; then
++        upd_payload_committed
++      else
++        printf '失败版本暂未删除（见 a2a logs），下次启动健康后自动重试\n'
++      fi
+     else
+-      printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
++      printf '旧版尚未确认健康，保留事务现场：%s\n' \
++        "$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
+     fi
+     upd_transaction_finish 1
+     return 1
+   fi
+   # 新版已经通过健康检查，事务旧载荷这时才允许删除（F-002 两阶段提交）。
+-  payload_commit_old
++  # R03：带上本笔事务的标记（activate_staged 用 "new $$" 登记），
++  # 这样并发事务后写进来的 pending 不会被误当成自己的。
++  if payload_commit_old "new $$"; then
++    upd_payload_committed
++  else
++    printf '事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试\n'
++  fi
+   printf '更新完成：%s\n' "$(payload_version)"
+   [ "$UPD_WAS_RUNNING" = "1" ] && printf '服务健康检查通过\n' || printf '保留了更新前的停止状态\n'
+   log_to "$LOGDIR/update.log" "更新成功 $_tag"
+diff --git a/module/module.prop b/module/module.prop
+index c2f0483..650270b 100644
+--- a/module/module.prop
++++ b/module/module.prop
+@@ -1,7 +1,7 @@
+ id=agent2api
+ name=Agent2API 服务端 (arm64)
+-version=v3.3.0-beta.7 (magisk.31)
+-versionCode=2026110331
++version=v3.3.0-beta.7 (magisk.32)
++versionCode=2026110332
+ author=aimod-cc / Magisk 移植
+-description=本机自建 musl 静态载荷 v3.3.0-beta.7｜不依赖 glibc 与系统 DNS，无 DNS 采样、无 nsswitch 覆盖；分级兜底+验活；状态卡实时显示。
++description=模块 v3.3.0-beta.7（内置 musl 静态载荷 v3.3.0-beta.6）｜不依赖 glibc 与系统 DNS，无 DNS 采样、无 nsswitch 覆盖；分级兜底+验活；状态卡实时显示。
+ updateJson=
+diff --git a/module/post-fs-data.sh b/module/post-fs-data.sh
+index e51ea8a..07fc88b 100644
+--- a/module/post-fs-data.sh
++++ b/module/post-fs-data.sh
+@@ -57,8 +57,13 @@ if [ ! -e "$APP_HOME/zoneinfo" ]; then
+   done
+ fi
+ sweep_stale_dirs
+-# 载荷切换已完成且当前版本完整时，才删掉事务旧载荷（F-002 的两阶段提交）。
+-payload_commit_old
++# R01：这个时刻服务还没起来，一份"健康检查证据"都没有。在这里提交（删掉上一
++# 事务留下的唯一可回滚副本）等于把"新载荷能跑"当成已知事实 —— 新载荷要是
++# 起不来，回滚材料已经被自己删了。pending 原样保留，交给 supervise.sh 在首次
++# 健康检查通过后提交。
++if [ -s "$RUNDIR/update.pending" ]; then
++  log_to "$SUPLOG" "保留事务旧载荷，等启动健康检查通过后再提交：$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
++fi
+ 
+ # glibc 运行时文件。
+ # 为什么放在 post-fs-data 而不是等 service.sh：glibc 一打开 resolv.conf 就
+diff --git a/module/seed/VERSION b/module/seed/VERSION
+index 62e0d30..913b7c3 100644
+--- a/module/seed/VERSION
++++ b/module/seed/VERSION
+@@ -1,4 +1,7 @@
+-ver=3.3.0-beta.7
++# 这里写的是 seed/agent2api-server 自报的版本，必须与实际二进制一致。
++# 二进制没有重编时不能跟着模块版本一起跳号，否则 a2a status 和
++# payload_install_from 的版本比较全部建立在假数据上（R18）。
++ver=3.3.0-beta.6
+ built=2026-11-01T09:44:00Z
+ arch=aarch64
+ source=84593320z/agent2api-musl (CI musl)

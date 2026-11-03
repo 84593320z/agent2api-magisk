@@ -354,10 +354,25 @@ cmd_rollback() {
     say "回滚或服务恢复失败，请查看日志并执行 a2a doctor"
     return 1
   fi
+  # R03：趁还在锁内记下本笔事务的 pending 标记（activate_staged 写成
+  # "rollback $$ <old>"），再走 rollback_finish 释放锁。释放之后光看全局
+  # pending 不安全——并发事务可能已经写进自己的标记。
+  _rb_tag=""
+  if [ -s "$RUNDIR/update.pending" ]; then
+    _rb_tag=$(awk '{print $1" "$2}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
+  fi
   rollback_finish 0 || return 1
   # 回滚后的版本已经通过健康检查（或本来就没在跑），这时才允许删除
-  # 事务旧载荷（F-002 两阶段提交的提交点）。
-  payload_commit_old
+  # 事务旧载荷（F-002 两阶段提交的提交点）。锁已释放，重取一次再按标记提交。
+  if [ -n "$_rb_tag" ]; then
+    if update_lock_acquire "$RUNDIR/update.lock.d" 30; then
+      payload_commit_old "$_rb_tag" \
+        || say "事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试"
+      update_lock_release "$RUNDIR/update.lock.d"
+    else
+      say "暂时拿不到更新锁，事务旧载荷留待下次启动提交"
+    fi
+  fi
   [ "$_was_running" != "1" ] || say "服务已恢复"
   return 0
 }

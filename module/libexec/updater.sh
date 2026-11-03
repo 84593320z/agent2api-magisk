@@ -233,9 +233,18 @@ upd_payload_after_move() {
   UPD_ACTIVATE_AFTER=$2
 }
 upd_payload_commit() {
+  # R01：这里只承认「新载荷已就位」，绝不提前清事务身份。
+  # UPD_ACTIVATE_BEFORE 指向被移开的旧载荷目录，是健康检查失败或收到信号时
+  # 唯一能恢复现场的证据。旧实现在健康检查之前就把它清空，于是
+  #   1) 健康失败后 upd_on_signal / 回滚拿不到旧载荷，只能退回 backup/prev；
+  #   2) 开机时也没法判断这笔事务还欠一个提交点。
   UPD_INSTALLED=1
+}
+upd_payload_committed() {
+  # 真正的提交点：新载荷已通过健康检查，旧载荷已删除或已确认留待重试。
   UPD_ACTIVATE_BEFORE=""
   UPD_ACTIVATE_AFTER=""
+  UPD_COMMITTED=1
 }
 
 upd_finish_service() {
@@ -423,16 +432,39 @@ upd_do_update() {
     printf '新版健康检查失败，正在回滚并强制重启旧版…\n'
     payload_rollback || printf '回滚失败，请执行 a2a doctor\n'
     if [ "$UPD_WAS_RUNNING" = "1" ]; then svc_restart; fi
-    if [ "$UPD_WAS_RUNNING" = "1" ] && svc_wait_health 45; then
-      printf '旧版已恢复并通过健康检查\n'
+    _upd_rb_ok=1
+    if [ "$UPD_WAS_RUNNING" = "1" ]; then
+      if svc_wait_health 45; then
+        printf '旧版已恢复并通过健康检查\n'
+      else
+        printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
+        _upd_rb_ok=0
+      fi
+    fi
+    # R04：回滚成功后 pending 仍指着刚才失败的那一版。旧版已恢复可用，
+    # 这笔事务的「旧载荷」（即失败的 v2）就该提交掉；否则 pending 永远悬空，
+    # 下一次开机由守护拿着旧标记去提交，删的是别的代次的目录。
+    if [ "$_upd_rb_ok" = "1" ] && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+      if payload_commit_old "rollback $$"; then
+        upd_payload_committed
+      else
+        printf '失败版本暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+      fi
     else
-      printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
+      printf '旧版尚未确认健康，保留事务现场：%s\n' \
+        "$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
     fi
     upd_transaction_finish 1
     return 1
   fi
   # 新版已经通过健康检查，事务旧载荷这时才允许删除（F-002 两阶段提交）。
-  payload_commit_old
+  # R03：带上本笔事务的标记（activate_staged 用 "new $$" 登记），
+  # 这样并发事务后写进来的 pending 不会被误当成自己的。
+  if payload_commit_old "new $$"; then
+    upd_payload_committed
+  else
+    printf '事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+  fi
   printf '更新完成：%s\n' "$(payload_version)"
   [ "$UPD_WAS_RUNNING" = "1" ] && printf '服务健康检查通过\n' || printf '保留了更新前的停止状态\n'
   log_to "$LOGDIR/update.log" "更新成功 $_tag"

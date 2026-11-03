@@ -57,8 +57,13 @@ if [ ! -e "$APP_HOME/zoneinfo" ]; then
   done
 fi
 sweep_stale_dirs
-# 载荷切换已完成且当前版本完整时，才删掉事务旧载荷（F-002 的两阶段提交）。
-payload_commit_old
+# R01：这个时刻服务还没起来，一份"健康检查证据"都没有。在这里提交（删掉上一
+# 事务留下的唯一可回滚副本）等于把"新载荷能跑"当成已知事实 —— 新载荷要是
+# 起不来，回滚材料已经被自己删了。pending 原样保留，交给 supervise.sh 在首次
+# 健康检查通过后提交。
+if [ -s "$RUNDIR/update.pending" ]; then
+  log_to "$SUPLOG" "保留事务旧载荷，等启动健康检查通过后再提交：$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
+fi
 
 # glibc 运行时文件。
 # 为什么放在 post-fs-data 而不是等 service.sh：glibc 一打开 resolv.conf 就

@@ -24,15 +24,20 @@ PRINT_ONLY=0
 
 ensure_layout
 
-if [ ! -x "$LOADER" ]; then
-  log_to "$SUPLOG" "启动失败：loader 不存在或不可执行：$LOADER"
-  echo "启动失败：缺少运行时 $LOADER，请重装模块" >&2
-  exit 78
-fi
 if [ ! -f "$SERVER_BIN" ]; then
   log_to "$SUPLOG" "启动失败：服务端二进制不存在：$SERVER_BIN"
   echo "启动失败：缺少 $SERVER_BIN，请重装模块" >&2
   exit 78
+fi
+# R05：先判定静态/动态，再决定要不要 loader。静态（musl）载荷没有 PT_INTERP，
+# 本来就不需要 lib/ld-linux-aarch64.so.1；旧顺序在静态包上直接 78 退出，
+# 而同一个包 payload_validate 是通过的，两条判定互相打架。
+if ! payload_is_static; then
+  if [ ! -x "$LOADER" ]; then
+    log_to "$SUPLOG" "启动失败：loader 不存在或不可执行：$LOADER"
+    echo "启动失败：缺少运行时 $LOADER，请重装模块" >&2
+    exit 78
+  fi
 fi
 
 # ---------------------------------------------------------------------------

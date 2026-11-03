@@ -53,7 +53,12 @@ svc_health_urls() { # $1=端口；一行一个候选 URL
   _hu_port="$1"
   _hu_host=$(cfg_get host 127.0.0.1)
   case "$_hu_host" in
-    ''|0.0.0.0|"*"|::|"[::]") printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
+    '') printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
+    0.0.0.0|"*"|::|"[::]")
+      # R12：host=:: 时服务端常常只监听 [::]:port（Android 上 v6-only 很常见），
+      # 只试 127.0.0.1 会把一个健康的实例判成死，每 30 秒无意义地重启一次。
+      printf 'http://[::1]:%s/health\n' "$_hu_port"
+      printf 'http://127.0.0.1:%s/health\n' "$_hu_port" ;;
     ::1|"[::1]") printf 'http://[::1]:%s/health\n' "$_hu_port" ;;
     *:*)
       _hu_host=${_hu_host#\[}; _hu_host=${_hu_host%\]}
@@ -81,7 +86,12 @@ svc_http_health() { # $1=单次超时秒；同时核对进程身份、socket 归
   # 每次健康检查多花几毫秒，还得保证 $CACERT 一直存在。
   _rc=1
   for _url in $(svc_health_urls "$_port"); do
-    _code=$("$CURL" -sS -o "$_body" -w '%{http_code}' --max-time "$_t" "$_url" 2>/dev/null)
+    # R12：回环请求绝不能被 http_proxy 劫持（代理回 502 会把健康实例判死）。
+    _code=$("$CURL" -sS --noproxy '*' -o "$_body" -w '%{http_code}' --max-time "$_t" "$_url" 2>/dev/null)
+    _crc=$?
+    # R13：只看状态码不够。连接被中途截断时 curl 返回 18/56，而 -w 仍可能打印
+    # 200，于是坏实例被当成健康的；必须同时要求 curl 退出码为 0。
+    [ "$_crc" -eq 0 ] || continue
     [ "$_code" = "200" ] || continue
     grep -Eq '"status"[[:space:]]*:[[:space:]]*"(ok|degraded)"' "$_body" 2>/dev/null || continue
     _rc=0
@@ -156,10 +166,18 @@ svc_start() {
   # 会把 cmd_rollback / upd_do_update 装的事务恢复处理器一起清掉，
   # 之后收到 TERM 就没人收尾，留下半截事务。
   # 锁的活性由 stale owner / 僵死 reaping 回收保证。
-  update_lock_acquire "$RUNDIR/service.lock.d" || return 1
+  # R07：临界区内可能被 TERM 打断，信号处理器会重入 svc_start/svc_stop。
+  # 同一进程已经持锁时必须按「已持有」处理：再去 acquire 必然失败，直接
+  # return 1 会让外层半途退出，update / service 两把 owner 一起残留。
+  _svc_owned=0
+  if update_lock_is_self "$RUNDIR/service.lock.d"; then
+    _svc_owned=1
+  else
+    update_lock_acquire "$RUNDIR/service.lock.d" || return 1
+  fi
   svc_start_impl
   _rc=$?
-  update_lock_release "$RUNDIR/service.lock.d"
+  [ "$_svc_owned" = "1" ] || update_lock_release "$RUNDIR/service.lock.d"
   UPDATE_LOCK_TOKEN=$_svc_outer_token
   UPDATE_LOCK_PATH=$_svc_outer_path
   return "$_rc"
@@ -216,15 +234,22 @@ svc_stop_impl() {
   _stop_oticks=$(printf '%s\n' "$_stop_owner" | awk '{print $2}')
   if [ -n "$_stop_opid" ] && [ -n "$_stop_oticks" ] \
      && { ! pid_alive "$_stop_opid" || [ "$(proc_start_ticks "$_stop_opid" 2>/dev/null)" != "$_stop_oticks" ]; }; then
-    update_lock_acquire "$RUNDIR/lock" 2 || return 1
-    _stop_held_token=$UPDATE_LOCK_TOKEN
-    _stop_held_path=$UPDATE_LOCK_PATH
-    rm -f "$RUNDIR/lock/owner" 2>/dev/null || return 1
-    UPDATE_LOCK_TOKEN=""
-    UPDATE_LOCK_PATH=""
-    rmdir "$RUNDIR/lock" 2>/dev/null
-    UPDATE_LOCK_TOKEN=$_stop_held_token
-    UPDATE_LOCK_PATH=$_stop_held_path
+    # R06：外层身份必须在取内层锁之前存好。旧顺序是 acquire 之后才存，
+    # 存进去的已是内层 token；恢复后外层 service.lock.d 的 owner 再也匹配不上，
+    # svc_stop 报成功却留下 service owner，下一次安装直接「另一个事务正在运行」。
+    _stop_outer_token=${UPDATE_LOCK_TOKEN:-}
+    _stop_outer_path=${UPDATE_LOCK_PATH:-}
+    if update_lock_is_self "$RUNDIR/lock"; then
+      : # 已经是本进程的实例锁：不重复取，也不要重复放
+    else
+      update_lock_acquire "$RUNDIR/lock" 2 || return 1
+      rm -f "$RUNDIR/lock/owner" 2>/dev/null
+      UPDATE_LOCK_TOKEN=""
+      UPDATE_LOCK_PATH=""
+      rmdir "$RUNDIR/lock" 2>/dev/null
+    fi
+    UPDATE_LOCK_TOKEN=$_stop_outer_token
+    UPDATE_LOCK_PATH=$_stop_outer_path
   fi
   rm -f "$RUNDIR/server.pid" "$RUNDIR/server.start" "$RUNDIR/supervisor.pid" "$RUNDIR/supervisor.start" "$RUNDIR/stop" 2>/dev/null
   return 0
@@ -233,11 +258,16 @@ svc_stop_impl() {
 svc_stop() {
   _svc_outer_token=${UPDATE_LOCK_TOKEN:-}
   _svc_outer_path=${UPDATE_LOCK_PATH:-}
-  # 同 svc_start：不覆盖调用者的信号处理器。
-  update_lock_acquire "$RUNDIR/service.lock.d" || return 1
+  # 同 svc_start：不覆盖调用者的信号处理器，且允许同进程重入。
+  _svc_owned=0
+  if update_lock_is_self "$RUNDIR/service.lock.d"; then
+    _svc_owned=1
+  else
+    update_lock_acquire "$RUNDIR/service.lock.d" || return 1
+  fi
   svc_stop_impl
   _rc=$?
-  update_lock_release "$RUNDIR/service.lock.d"
+  [ "$_svc_owned" = "1" ] || update_lock_release "$RUNDIR/service.lock.d"
   UPDATE_LOCK_TOKEN=$_svc_outer_token
   UPDATE_LOCK_PATH=$_svc_outer_path
   return "$_rc"

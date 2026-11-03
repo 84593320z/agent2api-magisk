@@ -11,14 +11,69 @@
 
 最新构建在 **Releases** 页面（手机上直接点链接就能下）：
 
-- [agent2api-magisk-v3.3.0-beta.7-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7/agent2api-magisk-v3.3.0-beta.7-arm64.zip) —— Magisk / KernelSU 模块包（musl 静态载荷）
+- [agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.32/agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip) —— Magisk / KernelSU 模块包（musl 静态载荷）
+- [agent2api-magisk-v3.3.0-beta.7-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7/agent2api-magisk-v3.3.0-beta.7-arm64.zip) —— 上一版（magisk.31），保留备用
 - [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 手机端 APK
 
 ---
 
-## 这一版（v3.3.0-beta.7 / magisk.31）改了什么
+## 这一版（v3.3.0-beta.7 / magisk.32）改了什么
 
-上一版（magisk.30）做了一次完整源码审计，19 项缺陷全部修掉并逐项复测。按影响排序：
+magisk.31 发布后又做了一次**独立复审**：把"上次说已经修好的 19 项"逐条重新验证，结论是
+**13 项真解决了、6 项只是部分修复**，另外查出 **19 组新问题**（R01–R19：6 高 / 11 中 / 2 低）。
+这一版就是照这份复审报告逐条改的，不掺优化、不绕道。
+
+复审判定"部分修复"的 6 项：F-002（健康前删旧载荷）、F-011（DNS 原子写与整文件回滚）、
+F-012（健康检查地址）、F-013（wake lock 释放）、F-014（静态/glibc 载荷契约）、F-018（zoneinfo 切换）。
+
+**致命级（会导致数据或版本不可恢复）**
+
+1. **健康前就删掉旧载荷**（R01）。`payload_activate_staged` 切换完立刻调 `upd_payload_commit`，那函数把 `UPD_ACTIVATE_BEFORE/AFTER` 清空；`post-fs-data.sh` 又在**没有任何健康证据**时就调 `payload_commit_old` 把旧目录删了。新版本还没跑过一次，唯一的回滚副本已经没了。现在 hook 拆成两段：`upd_payload_commit` 只认"新载荷已就位"，新增 `upd_payload_committed` 才清事务身份；开机只记录 pending 不提交；真正的提交点挪到守护**首次健康通过**（进程 + 端口 + HTTP 三项）之后。
+2. **pending 写失败、删失败都当成功**（R02）。marker 被外来者建成目录时 `printf >` 静默失败，函数照样 `return 0`；提交阶段 `rm -rf` 删不掉也报成功，随后 marker 消失，这笔旧载荷彻底失记、永远清不掉。现在 pending 走"先写 `.tmp.$$` 再 `mv -f`"，失败就清 tmp、清 active、打印原因并 `return 1`；删除失败保留 marker 等下次重试。
+3. **回滚解锁后裸读全局 pending，跨代误删**（R03）。`cmd_rollback` 在 `rollback_finish 0` 里释放锁之后才调 `payload_commit_old`，而它读的是全局 `update.pending`——这中间另一笔事务刚写进自己的标记，删的就是别人的旧版。现在 `payload_commit_old` 接受 `"tag pid"` 做比对，不符一个字节都不动；回滚改为**趁锁内**取标记、释放后重取锁 30 秒再按标记提交，拿不到锁就留给下次开机。
+4. **回滚失败只恢复文件，运行实例与 pending 不收敛**（R04）。文件回退了、服务也重启了，但 `update.pending` 还指着刚失败的那一版，下一轮开机照样去删错代次。现在引入 `_upd_rb_ok`：旧版真健康且当前载荷校验通过，才用 `"rollback $$"` 把失败版本提交掉；否则打印"旧版尚未确认健康，保留事务现场"并两边都留着。
+5. **静态无 lib 载荷"校验通过却装不上、起不来"**（R05）。`payload_validate` 早就为静态载荷放宽了，但下游还有五处按"必有 `lib/`"硬失败：`payload_fix_perms` 直接 `chmod "$_d/lib"`；`launch.sh` 在判静态之前就 `[ ! -x "$LOADER" ] && exit 78`；`customize.sh` 的 seed 清单、无 seed 分支、`install_payload_perms`、链接器自检、`_patch_bad` 各有一条。现在五处全按实际布局分叉，安装期用 `payload_seed_is_static()` 粗判（读二进制里有没有 `ld-linux` 字串），静态包不再要求 loader/libc。
+6. **TERM 重入破坏更新恢复与锁身份**（R07）。`svc_start`/`svc_stop` 在临界区里收到 TERM，handler 重入再调一次同函数；此刻本进程已持锁，`update_lock_acquire` 必然失败直接 `return 1`，外层半途退出；即便不退出，内层 `update_lock_release` 又会用一个被覆盖的全局 token 把外层身份冲掉。新增 `update_lock_is_self()`（按 owner 的 pid + `/proc` 启动代次判定），重入时按"自己已持有"走完不重复取放；释放改按 pid + 启动代次而不是全局 token。
+7. **恢复时"移开坏 current"失败会被忽略，old 被嵌进坏目录**（R09）。`mv … 2>/dev/null` 失败也继续往下 `mv "$_old" "$PAYLOAD"`，目标已存在时把 old 塞进坏目录内部，于是 current 仍然坏、唯一回滚副本被毁，函数还 `return 0`。现在移开失败就跳过并记日志，换上去之后追加 `payload_validate` 复核，复核不过把刚移开的放回原位。
+
+**中危（会在特定设备/时序上反复出问题）**
+
+8. **stale supervisor 清理覆盖 service 锁 token**（R06）。`svc_stop_impl` 是 acquire 实例锁**之后**才保存 token，存进去的已是内层 token，恢复后外层 `service.lock.d` 再也对不上，`svc_stop` 报成功却留下 service owner，下次安装直接"另一个事务正在运行"。
+9. **死 reaping 快照后盲删同名新活代次**（R08）。回收僵死 reaping 是"读→判死→`rm -f`"，中间没有二次确认；窗口里新一代回收者刚建好同名文件就被删掉。现在删前重读内容逐字比对，不一致就重试。
+10. **zoneinfo flag 窗口、辅助文件半新半旧**（R10）。`install_cleanup` 只在 `_ZONE_COMMITTED=1` 时删现目录、只在现目录不存在时才 mv 回；进程死在"新目录已发布、flag 还没置"的窗口里就两边都不动，`VERSION`/`tzdata.zi` 跟着半新半旧。现在失败即整体回退，不看 flag。
+11. **真实换行仍能往配置里追加第二键**（R11）。改用 `ENVIRON` 只挡住了 `\n` 字面量，**真实换行/回车**仍会原样写进文件把一行变两行；含空格或 `#` 的值不加引号还会被 `cfg_get` 当行尾注释截断。现在入口拒一切控制字符，并按内容自动加引号。
+12. **健康检查被继承的代理打死，`::` 通配地址只试 v4**（R12）。`host=::` 与 `0.0.0.0` 同归一支只试 `127.0.0.1`，而 Android 上服务端常只监听 `[::]:port`，v6-only 环境下一个健康实例每 30 秒被判死一次；回环请求还会走 `http_proxy`，代理回 502 就判死。现在通配地址先试 `[::1]` 再试 `127.0.0.1`，健康请求统一 `--noproxy '*'`。
+13. **DNS 验活接受 curl 失败后的 200**（R13）。`_dl_code=$(curl …)` 只留 `-w` 输出、丢掉退出码，连接被截断（rc=18/56）时响应头已到、仍打印 200，坏解析链被判可用并写进 `dns.lastgood`，之后每次开机优先用它。现在同时判 curl 退出码，dns 与 health 两侧都改。
+14. **DNS 备份失败仍切换、成功路径残留备份**（R14）。备份 `cp` 不看结果，一旦四级候选全不可用，"整文件还原"走不了，只能退到"仅回填 nameserver"，`search`/`ndots` 整段丢失；成功路径又忘了删备份，每次生效都在 tmp 留一份整文件副本。
+15. **退避/开机等待后不重验停止与门禁**（R15）。退避最长 300 秒，醒来直接落到统一拉起入口；期间用户点了停止、关了自启、断网或掉到电量门限以下，仍会多拉起一次。现在睡醒三重复核：stop 标记 → autostart → `gates_ok`。
+16. **wake lock 在退避/端口冲突期间持有，恢复启动又不及时取**（R16）。熔断、退避、端口冲突三处等待期间没有子进程却继续持锁；恢复启动只靠每 4 轮一次的维护去 `take_wake`。现在三处等待前统一 `release_wake`，拉起前按 `keep_awake` 立即 `take_wake`。
+17. **70 秒不健康自然死亡仍清零失败计数**（R17）。死亡分支按"存活 < 60 秒才计失败"，存活 60–119 秒的自然死亡直接 `FAILS=0`；一个每 70 秒死一次的服务永远停在 0，3 次退避与 6 次熔断等于没有。现在无条件 `FAILS++`，只有巡检确认连续健康满 120 秒才清零。
+
+**低危（元数据与路径推导）**
+
+18. **seed 版本写 beta.7 而二进制是 beta.6**（R18）。`seed/VERSION` 跟着模块跳号，但 `seed/agent2api-server` 的 SHA-256 仍是 beta.6 那一份、二进制内唯一版本串也是 `3.3.0-beta.6`，`payload_install_from` 的版本比较与 `a2a status` 全建立在假数据上。现在 `VERSION` 写回 `3.3.0-beta.6` 并加注释说明，`module.prop` 的 `description` 分开表述"模块版本 / 内置载荷版本"。
+19. **boot-start 模块目录推导少一层**（R19）。脚本住在 `<模块根>/libexec/`，`${_self%/*}` 只得到 `libexec`，`module.prop` 不在这层，于是每次靠 `/data/adb/modules/agent2api` 硬兜底。现在先上溯一级找 `module.prop`，找不到才退标准路径。
+
+**没修、但已经看到的**（不在复审报告范围内，按"只修报告"原则留给你决定）
+
+- `control.sh` 的 `svc_start_impl` 在 `setsid` 前 `rm -f "$RUNDIR/stop"`，会抹掉用户刚点的停止标记。
+- `boot-start.sh` 的开机等待段只复核 `autostart`，没复核 stop 标记与门禁。
+
+**验证方式**（两个套件都在 `test/` 里，可复跑）
+
+- `test/verify_fixes.py` —— 函数级隔离复验，**32 项断言全绿**。函数体从源码原样切片，只替换操作系统边界；健康与 DNS 用**真实 curl** 打**真实回环 HTTP 服务**（含 `[::1]`），另把 `http_proxy` 指到返回 502 的端口验证不依赖代理。
+- `test/verify_loop.py` —— 主循环集成复验，**8 个场景全绿**。`supervise.sh` 的 `while` 主循环与启动准备段整段切片，虚拟时钟驱动：快崩熔断、70 秒自然死亡、退避期关自启/掉门禁/写停止标记、端口占用、wake 释放。
+- 20 个 Shell 入口 `sh -n` 全过。
+
+> **仍然没有真机回归**：以上都在 Windows + msys `sh` 沙箱里跑，msys `sh` 不等于 Android BusyBox `ash`。
+> 安装、开机拉起、在线更新、回滚这条完整链仍需上机确认；R05（静态载荷启动）、R12（v6-only socket）、
+> R16（wake lock sysfs 实效）三处尤其依赖真实设备。
+
+---
+
+## 上一版（v3.3.0-beta.7 / magisk.31）改了什么
+
+这一版做了一次完整源码审计，19 项缺陷全部修掉并逐项复测。按影响排序：
 
 **启动与守护**
 
@@ -59,7 +114,7 @@
 
 | 产物 | 说明 | 怎么得到 |
 |---|---|---|
-| `agent2api-magisk-vX.Y.Z-arm64.zip` | Magisk / KernelSU 模块包（模块壳 + 内置服务端） | `python pack.py` → `dist/` |
+| `agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip` | Magisk / KernelSU 模块包（模块壳 + 内置服务端） | `python pack.py` → `dist/` |
 | `Agent2API-3.1.2-mod.apk` | 改造过的手机端 APK | `apk-mod/` 里的流程（见下） |
 | `docs/*.md` | 审计报告与修复自查报告 | — |
 
@@ -101,13 +156,19 @@ apk-mod/               手机端 APK 改造
   a2a-mod.jks          APK 签名密钥库（口令 a2a-mod-2026）
   README-mod.md        APK 侧的详细说明与验证记录
 docs/                  审计 / 修复报告
-  2026-11-03-源码审计-Agent2API-Android17.md   上一版的完整源码审计（19 项发现）
-  fix-verification-2026-11-03.md              19 项修复的逐项复测记录
-  fix-verify-2026-11-03.json                  复测原始输出
+  2026-11-03-源码审计-Agent2API-Android17.md   第一轮完整源码审计（19 项发现）
+  fix-verification-2026-11-03.md              第一轮 19 项修复的逐项复测记录
+  fix-verify-2026-11-03.json                  第一轮复测原始输出
+  2026-11-03_Agent2API-magisk31-独立复审.md    独立复审：13 项真解决 / 6 项部分修复 + 19 组新问题
+  2026-11-03_Agent2API-magisk32-19组修复报告.md 本轮按复审报告逐条修复的正式报告与复验证据
 test/run.sh            离线桩测试（不需要真机）
-test/fix_verify.py     本次 19 项修复的逐项复测夹具（Windows + msys sh 下跑通）
-pack.py                打包脚本（自动从 module.prop 取版本号）
+test/fix_verify.py     第一轮 19 项修复的复测夹具（历史保留）
+test/verify_fixes.py   本轮 R01–R19 函数级隔离复验（32 项断言，需要 msys sh 或系统 sh）
+test/verify_loop.py    本轮 R01/R15/R16/R17 主循环集成复验（8 个场景）
+pack.py                打包脚本（自动从 module.prop 取版本号，文件名带 magisk.NN）
 ```
+
+两个复验脚本的中间产物（夹具、用例、原始输出）都写在各自的 `out/` 目录里，不进版本库。
 
 ---
 
@@ -162,18 +223,23 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
   里能匹配到 `apps`/`background` 等分组时生效；部分设备（cgroup v2 统一层级、厂商改写）不适用，属降级不影响运行。
 - **Wi-Fi 判定只认 `wlan0/wlan1/swlan0` 的 IPv4**：纯 IPv6 网络或厂商自定义接口名会判成"不在 Wi-Fi"，
   `wifi_only=1` 时会被暂停。
-- **本版没有真机回归**：19 项修复是在 Windows + msys `sh` 沙箱里用桩驱动源码函数验证的
-  （`test/fix_verify.py`，21 项断言全绿），Android 侧仍需实机验证启动 / 守活 / 升级回滚。
+- **本版仍然没有真机回归**：修复是在 Windows + msys `sh` 沙箱里用源码切片 + 桩驱动验证的
+  （`test/verify_fixes.py` 32 项、`test/verify_loop.py` 8 个场景，全绿），Android 侧仍需实机验证
+  启动 / 守活 / 升级回滚。msys `sh` 不等于 Android BusyBox `ash`。
 
 ---
 
 ## 构建
 
 ```bash
-python pack.py          # → dist/agent2api-magisk-vX.Y.Z-arm64.zip
+python pack.py          # → dist/agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip
 dash test/run.sh        # 离线桩测试，不需要真机
-python test/fix_verify.py   # 19 项修复复测（需要 msys sh；会写 fixverify/ 沙箱）
+python test/verify_fixes.py   # R01–R19 函数级复验（32 项；需要 msys sh 或设 A2A_SH）
+python test/verify_loop.py    # 主循环集成复验（8 个场景；夹具由上一个脚本生成，先跑它）
 ```
+
+两个复验脚本都按自身位置定位 `../module`，默认把中间产物写到 `test/verify_fixes/out/`、
+`test/verify_loop/out/`；可用环境变量 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖。
 
 APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 
