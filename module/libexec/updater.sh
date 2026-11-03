@@ -1,0 +1,441 @@
+#!/system/bin/sh
+# Agent2API 上游载荷升级：校验下载、事务替换、失败恢复。上层自更新始终禁用。
+
+REPO_SLUG=$(cfg_get update_repo "aimod-cc/Agent2API")
+ASSET_NAME=$(cfg_get update_asset "agent2api-server-linux-arm64.tar.gz")
+case "$REPO_SLUG" in */*) ;; *) REPO_SLUG="aimod-cc/Agent2API" ;; esac
+case "$ASSET_NAME" in *.tar.gz) ;; *) ASSET_NAME="agent2api-server-linux-arm64.tar.gz" ;; esac
+UPD_LOCK="$RUNDIR/update.lock.d"
+UPD_ACTIVE="$RUNDIR/update.active"
+UPD_ABORT=0
+UPD_TMP=""
+UPD_WAS_RUNNING=0
+UPD_INSTALLED=0
+UPD_ACTIVATE_BEFORE=""
+UPD_ACTIVATE_AFTER=""
+UPD_ACTIVE_WRITTEN=0
+UPD_LOCK_HELD=0
+
+mirror_url() {
+  _mu_cfg=$(cfg_get github_mirror)
+  case "$_mu_cfg" in
+    ghfast) printf 'https://ghfast.top/%s' "$1" ;;
+    gh-proxy) printf 'https://mirror.ghproxy.com/%s' "$1" ;;
+    ghproxy) printf 'https://ghproxy.net/%s' "$1" ;;
+    gh-proxy-com) printf 'https://gh-proxy.com/%s' "$1" ;;
+    https://*)
+      # 自定义加速前缀：<前缀><原始 URL>。旧实现取的是从未传入的 $2，
+      # 结果自定义镜像被静默忽略，流量仍然直连 github。
+      _mu_base="${_mu_cfg%/}"
+      printf '%s/%s' "$_mu_base" "$1"
+      ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+upd_curl() {
+  _ca=""; [ -s "$CACERT" ] && _ca="--cacert $CACERT"
+  _ua='agent2api-magisk/1.1'
+  # 三级降级：自带 curl → 系统 curl → busybox wget。
+  # wb2api v1.4.4 的 updater.sh 就是这么排的（bin/curl → curl → bin/wget → wget → busybox wget）：
+  # 模块里的静态 curl 万一被杀毒/清理工具删掉或架构不对，"在线升级"不该整条死掉。
+  # 只有"跑不起来"（126/127）才降级，网络错误必须原样上报，不能被降级掩盖成成功。
+  if [ -x "$CURL" ]; then
+    "$CURL" -sS --proto '=https' --tlsv1.2 --user-agent "$_ua" \
+      --connect-timeout 15 --speed-time 45 --speed-limit 1024 $_ca "$@" && return 0
+    _uc=$?
+    [ "$_uc" = "126" ] || [ "$_uc" = "127" ] || return "$_uc"
+  fi
+  if command -v curl >/dev/null 2>&1; then
+    curl -sS --proto '=https' --tlsv1.2 --user-agent "$_ua" \
+      --connect-timeout 15 --speed-time 45 --speed-limit 1024 "$@" && return 0
+    _uc=$?
+    [ "$_uc" = "126" ] || [ "$_uc" = "127" ] || return "$_uc"
+  fi
+  # 最后一位只认"-o 文件"这一种用法（本模块所有调用点都是这样）
+  _wo=""; _wu=""
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -o) _wo="${2:-}"; shift 2 ;;
+      --max-time|--connect-timeout|--user-agent|-U|--speed-time|--speed-limit) shift 2 ;;
+      -*) shift ;;
+      *) _wu="$1"; shift ;;
+    esac
+  done
+  [ -n "$_wu" ] || return 1
+  for _bb in /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox; do
+    [ -x "$_bb" ] || continue
+    if [ -n "$_wo" ]; then
+      "$_bb" wget -q -O "$_wo" "$_wu" && return 0
+    else
+      "$_bb" wget -q -O - "$_wu" && return 0
+    fi
+  done
+  return 1
+}
+
+upd_latest_tag() {
+  case "${1:-beta}" in
+    beta) _api='releases?per_page=100' ;;
+    stable) _api='releases/latest' ;;
+    *) printf '%s' "$1"; return 0 ;;
+  esac
+  _json="$TMPD/releases.json"
+  _api_url="https://api.github.com/repos/$REPO_SLUG/$_api"
+  # 直连优先。国内直连 api.github.com 基本必失败，于是"不挂 VPN 就无法在线升级"。
+  # 失败且配了加速镜像时，再用镜像拉一次"版本号列表"（只读元数据，风险最小）；
+  # 包体与 sha256 仍然必须走官方，这里不放松任何校验。
+  if ! upd_curl --max-time 45 -fL "$_api_url" -o "$_json" 2>/dev/null; then
+    if [ "$(cfg_get update_mirror_api 1)" = "1" ] \
+       && [ -n "$(cfg_get github_mirror)" ]; then
+      _api_mirror=$(mirror_url "$_api_url")
+      log_to "$LOGDIR/update.log" "release 直连失败，改走镜像：$_api_mirror"
+      upd_curl --max-time 45 -fL "$_api_mirror" -o "$_json" 2>/dev/null || {
+        log_to "$LOGDIR/update.log" "release 查询失败（镜像也失败）：$_api"
+        return 1
+      }
+    else
+      log_to "$LOGDIR/update.log" "release 查询失败：$_api"
+      return 1
+    fi
+  fi
+  if [ "${1:-beta}" = "beta" ]; then
+    # GitHub 列表按发布时间，不是版本号。只接受规范 vX.Y.Z[-beta.N]，显式取最大值。
+    awk -F'"' '
+      # awk 的函数语法，不是 Shell function/bashism。
+      function better(a, b,    ca, cb, pa, pb, aa, bb, i, an, bn, xa, xb) {
+        # 先去掉 v 前缀：aa[1] 若是 "v3"，aa[1]+0 恒为 0，
+        # 主版本号比较等于失效，v4 会被 v3 压住。
+        sub(/^v/,"",a); sub(/^v/,"",b)
+        # 必须先用 "-" 把主版本和预发布段拆开再按 "." 切：
+        # 直接 split(a,aa,".") 时 "3.3.0-beta.10" 会切成
+        # 3 / 3 / 0-beta / 10 —— 预发布号落到第四段，前三段里只剩
+        # "0-beta"，于是 beta.10 和 beta.6 被当成同一个版本。
+        if(index(a,"-")>0){ca=substr(a,1,index(a,"-")-1);pa=substr(a,index(a,"-")+1)}
+        else{ca=a;pa=""}
+        if(index(b,"-")>0){cb=substr(b,1,index(b,"-")-1);pb=substr(b,index(b,"-")+1)}
+        else{cb=b;pb=""}
+        split(ca,aa,"."); split(cb,bb,".")
+        for(i=1;i<=3;i++){an=aa[i]+0;bn=bb[i]+0;if(an!=bn)return an>bn}
+        # 正式版 > 预发布版
+        if(pa==""&&pb!="")return 1
+        if(pa!=""&&pb=="")return 0
+        if(pa==pb)return 0
+        split(pa,xa,"."); split(pb,xb,".")
+        if(xa[1]!=xb[1])return xa[1]>xb[1]
+        # beta.10 > beta.6：按数字比，不能按字符串比
+        for(i=2;i<=4;i++){an=xa[i]+0;bn=xb[i]+0;if(an!=bn)return an>bn}
+        return 0
+      }
+      /"tag_name"[[:space:]]*:/ {
+        for(i=1;i<=NF;i++)if($i=="tag_name"){
+          t=$(i+2)
+          if(t ~ /^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z]+(\.[0-9]+)*)?$/ && (best==""||better(t,best)))best=t
+        }
+      }
+      END {if(best!="")print best;else exit 1}
+    ' "$_json"
+  else
+    awk -F'"' '/"tag_name"[[:space:]]*:/ {
+      for (i = 1; i <= NF; i++) if ($i == "tag_name") { print $(i + 2); exit }
+    }' "$_json"
+  fi
+}
+
+upd_valid_tag() {
+  case "$1" in
+    v[0-9A-Za-z][0-9A-Za-z._-]*) case "$1" in *..*|*/*|*\\*) return 1 ;; *) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+upd_asset_url() {
+  upd_valid_tag "$1" || return 1
+  case "${2:-}" in ""|.sha256) ;;
+    *) return 1 ;;
+  esac
+  printf 'https://github.com/%s/releases/download/%s/%s%s' \
+    "$REPO_SLUG" "$1" "$ASSET_NAME" "${2:-}"
+}
+
+upd_download() { # $1=url $2=dest —— 先直连，失败再走镜像
+  if upd_curl -fL --max-time 900 --retry 2 --retry-delay 3 --retry-all-errors "$1" -o "$2" 2>/dev/null; then
+    printf '  直连下载完成\n'
+    return 0
+  fi
+  _m=$(mirror_url "$1")
+  if [ -n "$_m" ] && [ "$_m" != "$1" ]; then
+    printf '  直连不可用，改用镜像重试…\n'
+    upd_curl -fL --max-time 900 --retry 3 --retry-delay 5 --retry-all-errors "$_m" -o "$2"
+    return $?
+  fi
+  return 1
+}
+
+upd_verify_sha256() {
+  _expect=$(awk 'NR == 1 {print tolower($1)}' "$1" 2>/dev/null)
+  case "$_expect" in *[!0-9a-f]*|'')
+    printf '  上游 sha256 文件格式无效\n' >&2; return 1 ;;
+  esac
+  if [ "${#_expect}" -ne 64 ]; then
+    printf '  上游 sha256 长度无效：%s\n' "${#_expect}" >&2; return 1
+  fi
+  _got=$(sha256_of "$2")
+  if [ -z "$_got" ]; then
+    printf '  本机没有可用的 SHA-256 工具，拒绝跳过完整性校验\n' >&2
+    return 1
+  fi
+  if [ "$_expect" = "$(printf '%s' "$_got" | tr 'A-F' 'a-f')" ]; then
+    printf '  SHA-256 校验通过\n'
+    return 0
+  fi
+  printf '  SHA-256 不匹配：期望 %s，实际 %s\n' "$_expect" "$_got" >&2
+  return 1
+}
+
+# 先看 tar 清单再解包：禁止绝对路径、..、任何软/硬链接。
+upd_tar_safe() {
+  tar -tf "$1" 2>/dev/null >"$TMPD/tar.list" || return 1
+  awk 'BEGIN { ok = 0 }
+    /^\// || /^\.\// || /(^|\/)\.\.($|\/)/ { exit 1 }
+    /(^|\/)agent2api-server$/ { ok = 1 }
+    END { if (!ok) exit 1 }' "$TMPD/tar.list" || return 1
+  tar -tvf "$1" 2>/dev/null | awk 'substr($0,1,1) == "l" || / -> | link to / { bad=1 } END {exit bad?1:0}' || return 1
+}
+
+upd_cleanup() {
+  trap - TERM INT HUP
+  [ -n "$UPD_TMP" ] && rm -rf "$UPD_TMP" 2>/dev/null
+  UPD_TMP=""
+}
+
+# 先撤信号 trap，再释放事务资源；清理由唯一出口完成，不重复回滚或删新锁。
+upd_transaction_finish() { # $1=返回码
+  _utf_rc=${1:-0}
+  trap - TERM INT HUP
+  upd_cleanup
+  rm -f "$UPD_ACTIVE" 2>/dev/null
+  UPD_ACTIVE_WRITTEN=0
+  if [ "$UPD_LOCK_HELD" = "1" ]; then
+    update_lock_release "$UPD_LOCK"
+    UPD_LOCK_HELD=0
+  fi
+  return "$_utf_rc"
+}
+
+upd_payload_before_move() {
+  UPD_ACTIVATE_BEFORE=$1
+  UPD_ACTIVATE_AFTER=$2
+}
+upd_payload_after_move() {
+  UPD_INSTALLED=1
+  UPD_ACTIVATE_BEFORE=$1
+  UPD_ACTIVATE_AFTER=$2
+}
+upd_payload_commit() {
+  UPD_INSTALLED=1
+  UPD_ACTIVATE_BEFORE=""
+  UPD_ACTIVATE_AFTER=""
+}
+
+upd_finish_service() {
+  svc_stop || return 1
+  if [ "$UPD_WAS_RUNNING" = "1" ]; then
+    svc_start || return 1
+    svc_wait_health 45
+    return $?
+  fi
+  return 0
+}
+
+upd_recover_activation() {
+  _ura_before=$UPD_ACTIVATE_BEFORE
+  _ura_after=$UPD_ACTIVATE_AFTER
+  trap - TERM INT HUP
+  log_to "$LOGDIR/update.log" "更新在载荷切换窗口中断，恢复现场"
+  case "$_ura_before" in
+    "$APP_HOME"/payload.new.old.*|"$APP_HOME"/payload.rollback.old.*)
+      [ -d "$_ura_before" ] || {
+        log_to "$LOGDIR/update.log" "事务旧载荷已不存在，改用完整备份恢复"
+        payload_rollback || return 1
+        return 0
+      }
+      # 新载荷可能完整、嵌套、或根本未落地。必须显式移走，禁止目录嵌套 mv。
+      if [ -e "$PAYLOAD" ]; then
+        _ura_bad="$APP_HOME/payload.interrupted.$$"
+        rm -rf "$_ura_bad" 2>/dev/null
+        if ! mv "$PAYLOAD" "$_ura_bad" 2>/dev/null; then
+          log_to "$LOGDIR/update.log" "无法移开中断载荷，保留旧版在 $_ura_before"
+          return 1
+        fi
+      fi
+      if [ ! -e "$PAYLOAD" ]; then
+        mv "$_ura_before" "$PAYLOAD" 2>/dev/null || {
+          log_to "$LOGDIR/update.log" "恢复旧载荷失败，旧版仍在 $_ura_before"
+          return 1
+        }
+      fi
+      ;;
+    *) payload_recover_interrupted || return 1 ;;
+  esac
+  payload_validate "$PAYLOAD" >/dev/null 2>&1 || {
+    log_to "$LOGDIR/update.log" "恢复后的载荷不完整"
+    return 1
+  }
+  live_link_refresh
+}
+
+upd_on_signal() {
+  trap - TERM INT HUP
+  UPD_ABORT=1
+  log_to "$LOGDIR/update.log" "更新被信号中断，尝试恢复旧载荷"
+  if [ -n "$UPD_ACTIVATE_BEFORE" ]; then
+    upd_recover_activation
+    upd_finish_service
+  elif [ "$UPD_INSTALLED" = "1" ]; then
+    # 当前安装器只保留一份完整 prev 备份；已完成的切换也统一走同一代次恢复。
+    payload_rollback
+    upd_finish_service
+  fi
+  upd_transaction_finish 1
+  # 信号/失败收尾必须终止顶层事务。旧实现只 return，回到 upd_do_update
+  # 后脚本继续往下跑（还会继续安装、还可能以 0 退出），等于"报中断但没停"。
+  exit 1
+}
+
+upd_fail() {
+  printf '%s\n' "$*" >&2
+  upd_on_signal
+  return 1
+}
+
+upd_do_update() {
+  _chan="${1:-beta}"; _force="${2:-0}"
+  case "$_chan" in beta|stable) ;; *) upd_valid_tag "$_chan" || { printf '更新通道/tag 无效：%s\n' "$_chan" >&2; return 1; } ;; esac
+  mkdir -p "$LOGDIR" "$TMPD" 2>/dev/null
+  update_lock_acquire "$UPD_LOCK" 900 || {
+    printf '另一个更新/安装任务正在执行\n'; return 1
+  }
+  UPD_LOCK_HELD=1
+  trap 'upd_on_signal' TERM INT HUP
+  printf '%s\n' "$$" >"$UPD_ACTIVE" || {
+    printf '无法写入更新状态\n'; upd_transaction_finish 1; return 1;
+  }
+  UPD_ACTIVE_WRITTEN=1
+  log_to "$LOGDIR/update.log" "开始更新 chan=$_chan force=$_force"
+
+  if [ -n "${3:-}" ]; then
+    _tag="${LOCAL_TAG:-$(payload_version)}"
+    case "$_tag" in v*) ;; *) _tag="v$_tag" ;; esac
+    printf '本地包更新：%s（版本标签 %s）\n' "$3" "$_tag"
+  else
+    printf '正在查询上游版本（%s）…\n' "$_chan"
+    _tag=$(upd_latest_tag "$_chan")
+    if [ -z "$_tag" ]; then
+      printf '版本查询失败，请检查网络\n'; upd_transaction_finish 1; return 1
+    fi
+  fi
+  upd_valid_tag "$_tag" || { printf '上游 tag 无效：%s\n' "$_tag"; upd_transaction_finish 1; return 1; }
+  printf '上游版本：%s\n当前版本：%s\n' "$_tag" "$(payload_version)"
+  _ver="${_tag#v}"
+  if [ -z "${3:-}" ] && [ "$_ver" = "$(payload_version)" ] && [ "$_force" != "1" ]; then
+    printf '已经是最新版本\n'; upd_transaction_finish 0; return 0
+  fi
+  _tar="$TMPD/agent2api.tar.gz"; _sha="$TMPD/agent2api.sha256"
+  if [ -n "${3:-}" ]; then
+    cp -f "$3" "$_tar" || { upd_fail '复制本地包失败'; return 1; }
+    if [ -n "${4:-}" ]; then
+      printf '%s  %s\n' "$4" "$ASSET_NAME" >"$_sha" || { upd_fail '无法写入校验值'; return 1; }
+    elif [ -f "$3.sha256" ]; then
+      cp -f "$3.sha256" "$_sha"
+    else
+      upd_fail '本地包缺少校验值：用 --sha <64位hex> 指定，或把同名 .sha256 放在旁边'; return 1
+    fi
+  else
+    _url=$(upd_asset_url "$_tag") || { upd_transaction_finish 1; return 1; }
+    _sha_url=$(upd_asset_url "$_tag" .sha256) || { upd_transaction_finish 1; return 1; }
+  fi
+  UPD_TMP="$TMPD/upd.$$"
+  rm -rf "$UPD_TMP"; mkdir -p "$UPD_TMP" || { upd_transaction_finish 1; return 1; }
+  if [ -z "${3:-}" ]; then
+    printf '下载载荷…\n'
+    upd_download "$_url" "$_tar" || { upd_fail '下载失败'; return 1; }
+  fi
+  _size=$(wc -c <"$_tar" 2>/dev/null | tr -d ' ')
+  case "$_size" in ''|*[!0-9]*) _size=0 ;; esac
+  if [ "$_size" -lt 1000000 ] || [ "$_size" -gt 104857600 ]; then
+    upd_fail "包体大小异常：$_size 字节"; return 1
+  fi
+  printf '下载校验文件…\n'
+  # 默认哈希必须直连官方 GitHub；加速镜像只承载 tar，不能同时决定哈希与包。
+  # 可选 update_pin 是受信 digest，设置后以 pin 为准，适合发布渠道独立校验。
+  _pin=$(cfg_get update_pin "")
+  if [ -n "${3:-}" ]; then
+    : # 本地包：校验文件已在上面就位
+  elif [ -n "$_pin" ]; then
+    printf '%s  %s\n' "$_pin" "$ASSET_NAME" >"$_sha" || { upd_fail '无法写入固定哈希'; return 1; }
+  elif ! upd_curl -fL --max-time 90 --retry 2 --retry-all-errors "$_sha_url" -o "$_sha"; then
+    # github.com 与 api.github.com 是两个独立域名：很多网络里 API 通、下载域名不通。
+    # 允许用**同一个镜像**再取一次 sha256 —— 此时 tar 本来就走这个镜像，
+    # 信任边界没有变化。要更严格就把开关关掉，改用 update_pin 固定 digest。
+    if [ "$(cfg_get update_sha_via_mirror 0)" = "1" ]; then
+      _mir=$(mirror_url "$_sha_url")
+      if [ "$_mir" = "$_sha_url" ]; then
+        upd_fail '官方 sha256 下载失败（未配置 github_mirror，无法走镜像）'; return 1
+      fi
+      printf '  官方 sha256 不可达，改用镜像重试…
+'
+      upd_curl -fL --max-time 90 --retry 2 --retry-all-errors "$_mir" -o "$_sha" || {
+        upd_fail '镜像 sha256 下载也失败，拒绝跳过完整性校验'; return 1;
+      }
+    else
+      upd_fail '官方 sha256 下载失败，拒绝用镜像自证完整性（可设 update_sha_via_mirror=1 或 update_pin）'; return 1
+    fi
+  fi
+  upd_verify_sha256 "$_sha" "$_tar" || { upd_fail 'SHA-256 校验失败'; return 1; }
+  upd_tar_safe "$_tar" || { upd_fail 'tar 包含危险路径、链接或缺少服务端'; return 1; }
+  tar -xzf "$_tar" -C "$UPD_TMP" || { upd_fail '解包失败'; return 1; }
+  _root="$UPD_TMP"
+  [ -f "$_root/agent2api-server" ] || _root=$(find "$UPD_TMP" -name agent2api-server -type f 2>/dev/null | head -n 1)
+  case "$_root" in */agent2api-server) _root="${_root%/*}" ;; esac
+  if [ -z "$_root" ] || [ ! -f "$_root/agent2api-server" ]; then
+    upd_fail '压缩包中找不到 agent2api-server'; return 1
+  fi
+  # 静态载荷不需要 glibc：给它塞 lib 只会让后续 payload_validate 与
+  # loader_smoke 的判断自相矛盾（静态包被判成"缺运行时"）。
+  if [ ! -d "$_root/lib" ] && ! payload_dir_is_static "$_root"; then
+    cp -R "$PAYLOAD/lib" "$_root/lib" && payload_fix_perms "$_root" || { upd_fail '运行时继承失败'; return 1; }
+  fi
+  {
+    printf 'ver=%s\n' "$_ver"
+    printf 'built=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date)"
+    printf 'source=%s\n' "$REPO_SLUG"
+    printf 'arch=arm64\n'
+  } >"$_root/VERSION" || { upd_fail '无法写入载荷版本'; return 1; }
+
+  svc_is_running && UPD_WAS_RUNNING=1
+  printf '安装新载荷并校验…\n'
+  payload_install_from "$_root" 1 || { upd_fail '新载荷安装失败，已恢复旧版'; return 1; }
+  if [ "$UPD_INSTALLED" != "1" ]; then
+    upd_fail '载荷提交状态缺失，恢复旧版'; return 1
+  fi
+  if ! upd_finish_service; then
+    printf '新版健康检查失败，正在回滚并强制重启旧版…\n'
+    payload_rollback || printf '回滚失败，请执行 a2a doctor\n'
+    if [ "$UPD_WAS_RUNNING" = "1" ]; then svc_restart; fi
+    if [ "$UPD_WAS_RUNNING" = "1" ] && svc_wait_health 45; then
+      printf '旧版已恢复并通过健康检查\n'
+    else
+      printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
+    fi
+    upd_transaction_finish 1
+    return 1
+  fi
+  # 新版已经通过健康检查，事务旧载荷这时才允许删除（F-002 两阶段提交）。
+  payload_commit_old
+  printf '更新完成：%s\n' "$(payload_version)"
+  [ "$UPD_WAS_RUNNING" = "1" ] && printf '服务健康检查通过\n' || printf '保留了更新前的停止状态\n'
+  log_to "$LOGDIR/update.log" "更新成功 $_tag"
+  upd_transaction_finish 0
+  return 0
+}

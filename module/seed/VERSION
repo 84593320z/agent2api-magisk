@@ -1,0 +1,4 @@
+ver=3.3.0-beta.7
+built=2026-11-01T09:44:00Z
+arch=aarch64
+source=84593320z/agent2api-musl (CI musl)

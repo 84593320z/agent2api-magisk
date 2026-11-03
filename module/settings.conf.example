@@ -1,0 +1,115 @@
+# ============================================================================
+# Agent2API 模块设置
+#
+# 改完保存即可，不用重装：守护进程每轮循环都会重新读这个文件。
+# 想立刻生效：su -c 'sh /data/adb/agent2api/bin/a2a restart'
+# 语法：KEY=VALUE，一行一个；# 之后是注释（前面要有空格才不会吃掉值里的 #）。
+# ============================================================================
+
+# ---------- 模块行为 ----------
+# 开机自动启动（1=开，0=关）
+autostart=1
+# 开机后延迟多少秒再拉起，给系统和网络留时间，避免开机卡顿
+boot_delay=8
+# 崩溃自动拉起（1=开）。关掉就变成"死了就死了"
+watchdog=1
+# 单个日志文件上限（KB），超出自动轮转，最多留 3 份历史
+log_max_kb=8192
+# 内存保护等级：0=不动系统设置；1=把进程 oom_score_adj 调到 -900（抗 lmkd，但极端内存压力下可能拖累系统，谨慎开）
+oom_protect=0
+# 常驻唤醒锁（1=持有 PARTIAL_WAKE_LOCK，避免息屏后网络被挂起；费电）
+keep_awake=0
+# 只在 Wi-Fi 下运行（1=切到移动网络自动停服，回到 Wi-Fi 自动恢复）
+wifi_only=0
+# 电量低于该百分比且没在充电时自动停服；0=关闭该功能
+battery_floor=0
+# 启动前最多等网络多少秒（等不到也照常启动，避免一直不启动）
+net_wait=45
+# 自动读取 persist.sys.timezone，使用随包 IANA zoneinfo（含夏令时/历史规则）
+auto_tz=1
+# 手动指定 POSIX TZ 串或 TZDIR 下的 IANA 名称；留空使用系统时区
+tz=
+# 卸载模块时是否连数据一起删（1=删库跑路，0=保留，重装后数据还在）
+purge_on_uninstall=0
+# 将守护进程迁出应用后台 cgroup，降低 Android 后台杀进程概率
+cgroup_escape=1
+# 将上游调试请求记录文件替换成 /dev/null 软链（不保存请求正文）
+privacy_last_request=1
+# 自动修复面板插件/代理内核的 Linux 动态解释器路径
+plugin_interp=1
+
+# ---------- 服务端 ----------
+# 默认仅本机访问，避免局域网设备抢走首次管理员注册。
+# 确需局域网访问时先启动并完成本机注册，再改为 0.0.0.0 并重启。
+host=127.0.0.1
+# 网关端口（/v1 与 /health 永远走这个；面板也走这个，除非另设 panel_port）
+port=3065
+# 独立面板端口，留空表示与 port 共用。
+# 上游要求两者必须不同，填成相同值会被本模块按“共用端口”处理。
+panel_port=
+# 面板管理员账号，留空 = 首次打开面板时自行注册（更安全，推荐）
+admin_user=
+admin_password=
+# 访问 /v1 需要的 API Key，留空则由面板生成/管理
+gateway_key=
+# 允许无 Key 访问（0=否，强烈建议保持 0；1=内网裸奔）
+allow_no_key=0
+# 面板验证码（1=开）
+captcha=1
+# 详细日志（0=正常，1=啰嗦）
+verbose=0
+
+# ---------- DNS ----------
+# auto=自动抓手机当前 DNS 并写入 glibc 的 /etc/resolv.conf
+# system=只读系统现有的 resolv.conf
+# static=只用下面 dns_static 里写的
+# off=完全不碰（除非你自己确定 DNS 没问题，否则不建议）
+dns_mode=auto
+dns_static=223.5.5.5 119.29.29.29 1.1.1.1
+# auto 模式活动网络无 DNS 时保留最后可用配置；仅首次无缓存才用上面的静态兜底。
+# 本模块 glibc 不走 netd；VPN 私有域名/Private DNS 主机名需用 static 填可达 DNS。
+
+# ---------- 更新 ----------
+# 加速镜像只用于 tar 下载；官方 SHA-256 始终直连 GitHub。
+# github_mirror=ghfast
+# 可选：独立受信的 agent2api-server-linux-arm64.tar.gz SHA-256，设置后覆盖官方 .sha256。
+# update_pin=
+# 优先 IPv4（1=开）。移动网络 IPv6 半通时，关掉会莫名超时
+ipv4_preferred=1
+
+# ---------- 在线升级 ----------
+# stable=只用正式版；beta=包含预发布版
+update_channel=beta
+# GitHub 加速前缀，例：https://ghfast.top/  或  https://gh-proxy.com/ （留空=直连）
+github_mirror=
+
+# ---------------------------------------------------------------------------
+# magisk.15 新增（不写就用括号里的默认值；老配置不用改）
+# ---------------------------------------------------------------------------
+# DNS 验活间隔（秒，默认 600）。dns_ensure 每级只打一次 204 探测。
+dns_verify_interval=600
+# 是否启用验活探测（默认 1）；设 0 退化成"只看系统 DNS 变没变"，不推荐
+dns_probe=1
+# 验活探测 URL（默认 http://connect.rom.miui.com/generate_204，国内可达）
+dns_probe_url=http://connect.rom.miui.com/generate_204
+# 静态兜底里的 IPv6 部分（默认 2400:3200::1 2402:4e00::），v4-only 网络自动跳过
+dns_static_v6=2400:3200::1 2402:4e00::
+
+# 抑制 AAAA 查询：auto=IPv6 不可用时自动加 no-aaaa（治部分机器内核直接拦 AAAA，
+# 导致 glibc getaddrinfo 整体报 Temporary failure in name resolution），1=总是抑制，0=从不
+dns_no_aaaa=auto
+
+# 0=静态 DNS 优先（公网 DNS 能用就一直用它，开关 VPN/切节点不重写，体感最顺）
+# 1=跟随系统采样优先（企业网、运营商劫持 DNS 的场景再用）
+dns_follow_system=0
+# 在线升级时 api.github.com 直连失败，是否允许用上面的 github_mirror 再试一次；
+# 只影响只读的版本号列表，包体与 sha256 仍强制官方（默认 1）
+update_mirror_api=1
+update_sha_via_mirror=0
+
+# 更新源：换成分支/fork 时改这里（配合自己发布的 .tar.gz + .sha256 资产），
+# 想换成上游的 musl 静态包就把 update_asset 指到对应资产名。
+update_repo=aimod-cc/Agent2API
+update_asset=agent2api-server-linux-arm64.tar.gz
+# 模块卡片描述是否跟随运行状态刷新（需要 ksud，默认 1）
+dynamic_desc=1

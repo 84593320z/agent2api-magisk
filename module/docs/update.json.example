@@ -1,0 +1,7 @@
+{
+  "version": "v3.3.0-beta.5 (magisk.2)",
+  "versionCode": 2026102902,
+  "zipUrl": "https://example.com/agent2api-magisk-v3.3.0-beta.5-magisk.2.zip",
+  "changelog": "https://example.com/agent2api-magisk-CHANGELOG.md",
+  "sha256": "PUT_THE_ZIP_SHA256_HERE"
+}

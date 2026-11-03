@@ -1,0 +1,135 @@
+#!/sbin/sh
+# ============================================================================
+# Agent2API Magisk 模块 · 安装入口
+#
+# 说明：Magisk / KernelSU / APatch 三个管理器各自实现自己的安装流程。
+#   - Magisk (v20.4+)：本文件只是转接，真正干活的是 /data/adb/magisk/util_functions.sh
+#     里的 install_module，它会依次调用 pre-install.sh、customize.sh、post-install.sh。
+#   - KernelSU / SukiSU / APatch：管理器通常在 App 侧就完成解包，不会走这里；
+#     但对 kernel-side 安装（ksud / apd 命令行）仍会执行本脚本，所以照 Magisk
+#     的 util_functions 接口尝试一遍。
+#   - 以上都拿不到时，走"兜底自解包"：直接把 zip 摊到 /data/adb/modules_update/<id>，
+#     再 source customize.sh 完成定制，重启后由管理器接管。
+#
+# 为什么这么小心：这一步失败会让"模块装不上"且日志一片空白，是这类移植最常见的
+# 翻车点，所以三条路径都要给上。
+# ============================================================================
+
+umask 022
+
+OUTFD="$2"
+ZIPFILE="$3"
+
+# --- 基础输出能力（Magisk 由 util_functions 覆盖成带格式的版本） -------------
+ui_print() { echo "$1"; }
+abort() { ui_print "! $1"; exit 1; }
+[ -n "$OUTFD" ] && ui_print_stdout="true" || ui_print_stdout="false"
+
+# --- 路径探测 ---------------------------------------------------------------
+find_util_functions() {
+  for f in \
+    /data/adb/magisk/util_functions.sh \
+    /data/adb/ksu/util_functions.sh \
+    /data/adb/susfs/util_functions.sh \
+    /data/adb/apatch/util_functions.sh \
+    /data/adb/apd/util_functions.sh
+  do
+    [ -f "$f" ] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+UF=$(find_util_functions)
+
+if [ -n "$UF" ]; then
+  ui_print "- 检测到管理器工具链: $UF"
+  # shellcheck disable=SC1090
+  . "$UF"
+  if command -v install_module >/dev/null 2>&1; then
+    if command -v post_fs_data >/dev/null 2>&1; then :; fi
+    # install_module 的返回值就是整个安装事务的结果。不能在这里固定 exit 0，
+    # 否则 customize.sh 的 abort 会被管理器误报为成功。仅在工具链缺少该函数
+    # 时才继续走下面的自解包 fallback；已经调用过就不再重跑第二套安装。
+    install_module
+    _install_rc=$?
+    if [ "$_install_rc" -ne 0 ]; then
+      ui_print "! 管理器工具链安装失败（exit=$_install_rc）"
+      exit "$_install_rc"
+    fi
+    exit 0
+  fi
+  ui_print "! 该工具链没有 install_module，改走兜底解包"
+fi
+
+# --- 兜底：自解包 -----------------------------------------------------------
+ui_print "- 走兜底解包流程"
+
+TMPD=/data/local/tmp/agent2api_install.$$
+rm -rf "$TMPD"
+mkdir -p "$TMPD" || abort "无法创建临时目录 $TMPD"
+
+UNZIP=""
+# unzip 本身就是命令，不能再拼一次子命令；只有 busybox 需要 "busybox unzip"。
+# 旧实现把两者都拼成 "<cmd> unzip"，于是执行 unzip unzip -o ... 必然失败。
+for u in unzip busybox /data/adb/magisk/busybox; do
+  case "$u" in
+    unzip) command -v unzip >/dev/null 2>&1 && { UNZIP="unzip"; break; } ;;
+    busybox) command -v busybox >/dev/null 2>&1 && { UNZIP="busybox unzip"; break; } ;;
+    *) [ -x "$u" ] && { UNZIP="$u unzip"; break; } ;;
+  esac
+done
+[ -n "$UNZIP" ] || abort "找不到 unzip，请改用 Magisk 管理器 App 安装"
+
+# shellcheck disable=SC2086
+$UNZIP -o "$ZIPFILE" -d "$TMPD" >/dev/null 2>&1 || abort "解包失败：$ZIPFILE"
+
+MODID=$(sed -n 's/^id=//p' "$TMPD/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
+[ -n "$MODID" ] || abort "module.prop 里没有 id 字段"
+
+MODPATH="/data/adb/modules_update/$MODID"
+rm -rf "$MODPATH"
+mkdir -p "$MODPATH" || abort "无法创建 $MODPATH"
+cp -R "$TMPD"/. "$MODPATH"/ || abort "复制模块文件失败"
+rm -rf "$MODPATH/META-INF"
+
+# 让 customize.sh 看到与 Magisk 一致的环境
+export MODPATH
+export TMPDIR="$TMPD"
+export ZIPFILE
+export OUTFD
+export API
+API=$(getprop ro.build.version.sdk 2>/dev/null)
+export ARCH
+ARCH=$(getprop ro.product.cpu.abi 2>/dev/null)
+case "$ARCH" in
+  arm64*) ARCH=arm64 ;;
+  armeabi*) ARCH=arm ;;
+  x86_64*) ARCH=x86_64 ;;
+  x86*) ARCH=x86 ;;
+  *) ARCH=arm64 ;;
+esac
+export IS64BIT=true
+[ "$ARCH" = "arm" ] && IS64BIT=false
+export BOOTMODE=true
+export MAGISK_VER=""
+export MAGISK_VER_CODE=0
+
+# customize.sh 里会用到的 Magisk 辅助函数，兜底实现
+set_perm() {
+  chown "$2:$3" "$1" 2>/dev/null
+  chmod "$4" "$1" 2>/dev/null
+}
+set_perm_recursive() {
+  chown -R "$2:$3" "$1" 2>/dev/null
+  find "$1" -type d -exec chmod "$4" {} + 2>/dev/null
+  find "$1" -type f -exec chmod "$5" {} + 2>/dev/null
+}
+
+if [ -f "$MODPATH/customize.sh" ]; then
+  # shellcheck disable=SC1091
+  MODPATH="$MODPATH" . "$MODPATH/customize.sh" || abort "customize.sh 执行失败"
+fi
+
+rm -rf "$TMPD"
+ui_print "- 安装完成，重启后生效"
+exit 0

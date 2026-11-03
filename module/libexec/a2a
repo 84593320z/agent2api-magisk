@@ -1,0 +1,563 @@
+#!/system/bin/sh
+# ============================================================================
+# a2a —— Agent2API Magisk 模块命令行
+#
+#   a2a status            看运行状态
+#   a2a start / stop      启动 / 停止
+#   a2a restart           重启
+#   a2a logs [行数] [流]  看日志（流：server / sup / app / all，默认 all 30 行）
+#   a2a update [--beta] [--force]   在线升级载荷（带校验与自动回滚）
+#   a2a rollback          回滚到上一个版本
+#   a2a dns [refresh|probe]         看 / 刷新 / 测试 DNS
+#   a2a doctor            全身体检（出问题先跑这个）
+#   a2a url [--port|--ports]  打印面板地址 / 有效面板端口 / 面板+网关端口
+#   a2a config [键] [值]   查看 / 修改设置
+#   a2a version           版本信息
+# ============================================================================
+
+MODDIR="${MODDIR:-/data/adb/modules/agent2api}"
+if [ ! -f "$MODDIR/libexec/common.sh" ]; then
+  printf '找不到模块：%s/libexec/common.sh\n' "$MODDIR" >&2
+  exit 1
+fi
+
+. "$MODDIR/libexec/common.sh"
+. "$MODDIR/libexec/control.sh"
+. "$MODDIR/libexec/dns.sh"
+. "$MODDIR/libexec/timezone.sh"
+. "$MODDIR/libexec/payload.sh"   # payload_* 与 lib_verify/lib_restore：status/version/rollback/update 都要用
+
+module_version() { sed -n 's/^version=//p' "$MODDIR/module.prop" 2>/dev/null | head -n 1; }
+state_get() { sed -n "s/^$1=//p" "$RUNDIR/state" 2>/dev/null | head -n 1; }
+
+human_uptime() {
+  _s="$1"
+  case "$_s" in ''|*[!0-9]*) _s=0 ;; esac
+  _d=$((_s / 86400)); _h=$(((_s % 86400) / 3600)); _m=$(((_s % 3600) / 60)); _ss=$((_s % 60))
+  if [ "$_d" -gt 0 ]; then printf '%dd%dh%dm' "$_d" "$_h" "$_m"
+  elif [ "$_h" -gt 0 ]; then printf '%dh%dm' "$_h" "$_m"
+  elif [ "$_m" -gt 0 ]; then printf '%dm%ds' "$_m" "$_ss"
+  else printf '%ds' "$_ss"; fi
+}
+
+ck() { printf '  [%-4s] %s\n' "$1" "$2"; }
+
+panel_urls() {
+  # 面板可能被 panel_port 拆到独立端口；健康检查/网关仍走 port。
+  _port=$(panel_port_effective)
+  printf '  http://127.0.0.1:%s/m.html\n' "$_port"
+  if [ "$(cfg_get host 127.0.0.1)" = "0.0.0.0" ]; then
+    _ip=$(local_ip 2>/dev/null)
+    [ -n "$_ip" ] && printf '  http://%s:%s/m.html   (局域网)\n' "$_ip" "$_port"
+  fi
+  return 0
+}
+
+cmd_status() {
+  _mv=$(module_version)
+  _pv=$(payload_version 2>/dev/null)
+  _sup=$(svc_supervisor_pid 2>/dev/null)
+  _srv=$(svc_server_pid 2>/dev/null)
+  _port=$(port_normalize "$(cfg_get port 3065)") || _port=3065
+
+  say "======= Agent2API ======="
+  say " 模块版本 : ${_mv:-unknown}"
+  say " 载荷版本 : ${_pv:-<未安装>}"
+
+  if [ -n "$_sup" ] && pid_is_supervisor "$_sup"; then
+    _up=""
+    if [ -n "$_srv" ] && pid_is_server "$_srv"; then
+      _s=$(proc_uptime "$_srv" 2>/dev/null)
+      _up="，已运行 $(human_uptime "${_s:-0}")"
+    fi
+    say " 状态     : 运行中（supervisor=$_sup${_srv:+, server=$_srv}$_up）"
+  else
+    _st=$(state_get status)
+    say " 状态     : 未运行（上次状态：${_st:-unknown}）"
+  fi
+
+  if port_listen "$_port"; then
+    say " 端口     : $_port [LISTEN]"
+  else
+    say " 端口     : $_port [未监听]"
+  fi
+  _pport=$(panel_port_effective)
+  if [ "$_pport" != "$_port" ]; then
+    if port_listen "$_pport"; then
+      say " 面板端口 : $_pport [LISTEN]"
+    else
+      say " 面板端口 : $_pport [未监听]"
+    fi
+  fi
+
+  _rs=$(state_get restarts)
+  say " 重启次数 : ${_rs:-0}"
+  say " 面板地址 :"
+  panel_urls
+
+  _d=$(dns_probe 2>/dev/null)
+  say " DNS      : 配置=${_d%%\|*} 系统实际=${_d##*\|}"
+  # a2a 自己的进程里没有 TZ（只有 launch.sh 那个进程导了），原来恒显示"跟随系统"，
+  # 改成：环境变量没有就看配置，配置也没有才说跟随系统，并带上系统属性。
+  _tz_view="${TZ:-$(cfg_get tz "")}"
+  [ -n "$_tz_view" ] || _tz_view="跟随系统（$(getprop persist.sys.timezone 2>/dev/null)）"
+  say " 时区     : $_tz_view"
+  say " 数据目录 : $DATADIR"
+  say " 日志目录 : $LOGDIR"
+}
+
+cmd_start() { cmd_ensure_payload && svc_start; }
+
+cmd_stop() {
+  svc_stop && say "已停止" || { say "停止未完成，请查看 $SUPLOG"; return 1; }
+}
+
+cmd_restart() { svc_restart; }
+
+cmd_logs() {
+  # 参数可以任意顺序：数字是行数，单词是日志流（app / server / sup / all）。
+  # 以前只认行数，README 写的 `a2a logs sup` 会被当成非法数字静默回落 30，
+  # 等于承诺了一个不存在的开关。
+  _n=30
+  _which=all
+  for _a in "$@"; do
+    case "$_a" in
+      ''|*[!0-9]*) _which="$_a" ;;
+      *) _n="$_a" ;;
+    esac
+  done
+  case "$_n" in ''|*[!0-9]*) _n=30 ;; esac
+  case "$_which" in
+    app|application)      _which=app ;;
+    server|srv|srvlog)    _which=server ;;
+    sup|supervisor|supd)  _which=sup ;;
+    *)                    _which=all ;;
+  esac
+
+  # 只打印真实存在的日志。app.log 在 Android 上根本不会出现：上游只在
+  # Windows 服务形态（bin/agent2api-server.rs 的 #[cfg(windows)] 分支）里
+  # 打开文件通道，headless 的 console_line 只写 stderr，也就是 server.log。
+  _first=1
+  if { [ "$_which" = all ] || [ "$_which" = app ]; } && [ -f "$APPLOG" ]; then
+    say "---- app.log（上游应用日志，最后 $_n 行）----"
+    tail -n "$_n" "$APPLOG"
+    _first=0
+  fi
+  if [ "$_which" = all ] || [ "$_which" = server ]; then
+    [ "$_first" = 1 ] || say ""
+    say "---- server.log（上游日志 + 启动器 stdout/stderr，最后 $_n 行）----"
+    if [ -f "$SRVLOG" ]; then tail -n "$_n" "$SRVLOG"; else say "（还没有 $SRVLOG）"; fi
+    _first=0
+  fi
+  if [ "$_which" = all ] || [ "$_which" = sup ]; then
+    [ "$_first" = 1 ] || say ""
+    say "---- supervisor.log（守护进程，最后 $_n 行）----"
+    if [ -f "$SUPLOG" ]; then tail -n "$_n" "$SUPLOG"; else say "（还没有 $SUPLOG）"; fi
+  fi
+}
+
+cmd_url() {
+  # `a2a url --port` 只输出有效面板端口，给 KernelSU WebUI 页面取真实端口用。
+  # `--ports` 一次输出 "面板端口 网关端口"，页面要同时显示两处地址。
+  if [ "${1:-}" = "--port" ]; then
+    panel_port_effective; printf '\n'; return 0
+  fi
+  if [ "${1:-}" = "--ports" ]; then
+    _gp=$(port_normalize "$(cfg_get port 3065)") || _gp=3065
+    printf '%s %s\n' "$(panel_port_effective)" "$_gp"
+    return 0
+  fi
+  panel_urls
+}
+
+cmd_version() {
+  say "模块   : $(module_version)"
+  say "载荷   : $(payload_version 2>/dev/null)"
+  say "构建   : $(sed -n 's/^built=//p' "$PAYLOAD/VERSION" 2>/dev/null | head -n 1)"
+  say "来源   : $(sed -n 's/^source=//p' "$PAYLOAD/VERSION" 2>/dev/null | head -n 1)"
+  say "架构   : $(elf_arch "$SERVER_BIN")"
+}
+
+cmd_ensure_payload() {
+  if [ ! -f "$SERVER_BIN" ] || [ ! -x "$LOADER" ]; then
+    say "载荷缺失（$PAYLOAD），请重新刷入模块 zip 恢复"
+    return 1
+  fi
+  return 0
+}
+
+cmd_desc() {
+  # 手动刷一次模块卡片文案：a2a desc [文本]
+  # payload_ver 在 payload.sh 里，a2a 平时只在 status/doctor 才加载它，
+  # 这里不加载就会打出「载荷  · 面板 …」这种空字段。
+  [ -f "$MODDIR/libexec/payload.sh" ] && . "$MODDIR/libexec/payload.sh"
+  if [ -n "${1:-}" ]; then
+    module_desc_set "$*"
+    printf '已写入：%s\n' "$*"
+    return 0
+  fi
+  rm -f "$RUNDIR/desc.last" "$RUNDIR/desc.pending" 2>/dev/null
+  _st=$(sed -n 's/^status=//p' "$RUNDIR/state" 2>/dev/null)
+  _ds="运行中"
+  case "$_st" in
+    stopped|dead) _ds="已停止" ;;
+    disabled) _ds="已禁用" ;;
+    paused) _ds="已暂停" ;;
+    backoff) _ds="退避中" ;;
+    running-unverified) _ds="运行中(未验证)" ;;
+    port-conflict) _ds="端口冲突" ;;
+    starting-unhealthy) _ds="启动中" ;;
+  esac
+  _pv_desc=$(payload_version 2>/dev/null)
+  module_desc_set "$_ds · 端口 $(port_normalize "$(cfg_get port 3065)") · 载荷 ${_pv_desc:-?} · 面板 $(panel_port_effective 2>/dev/null)"
+  _new=$(grep -m1 '^description=' "$MODDIR/module.prop" 2>/dev/null | cut -d= -f2-)
+  printf '模块卡片已刷新：%s\n' "${_new:-（写入失败，检查 module.prop 权限）}"
+}
+
+cmd_dns() {
+  case "${1:-show}" in
+    refresh)
+      dns_write "$(cfg_get dns_mode auto)"
+      d=$(dns_probe 2>/dev/null)
+      say "已刷新：配置=${d%%\|*} 当前 glibc 文件=${d##*\|}（非 netd/Private DNS 状态）"
+      ;;
+    probe)
+      say "DNS 解析连通性测试："
+      # 只用国内可达的目标做连通性判据：api.github.com 在墙内必然失败，
+      # 旧实现让“DNS 明明没问题”也永远报红，误导成“必须挂 VPN”。
+      for _u in https://www.baidu.com/ https://api.deepseek.com/; do
+        _r=$("$CURL" -sS -o /dev/null -w '%{http_code} %{time_total}s' \
+             --max-time 12 --cacert "$CACERT" "$_u" 2>&1)
+        say "  $_u -> $_r"
+      done
+      ;;
+    *)
+      say "glibc 的 /etc/resolv.conf："
+      [ -f "$DNS_CACHE" ] && sed -n '1,10p' "$DNS_CACHE"
+      _d=$(dns_probe 2>/dev/null)
+      say ""
+      say "配置首选=${_d%%\|*}   当前 glibc 文件=${_d##*\|}"
+      say "注意：这是本模块私有 DNS 文件，不代表 Android netd/Private DNS 状态。"
+      ;;
+  esac
+}
+
+cmd_config() {
+  if [ ! -f "$SETTINGS" ]; then
+    say "配置文件不存在：$SETTINGS"
+    return 1
+  fi
+  if [ "$#" -eq 0 ]; then
+    while IFS= read -r _line; do
+      case "$_line" in
+        ''|'#'*) continue ;;
+      esac
+      say "$_line"
+    done <"$SETTINGS"
+    return 0
+  fi
+  _k="$1"
+  if [ "$#" -eq 1 ]; then
+    say "$(cfg_get "$_k" '<未设置>')"
+    return 0
+  fi
+  if [ "$#" -ne 2 ]; then
+    say "用法：a2a config [键] [值]（空字符串可清空可空配置）"
+    return 2
+  fi
+  case "$_k" in
+    port|panel_port)
+      _raw="$2"
+      if [ -n "$_raw" ]; then
+        _port=$(port_normalize "$_raw") || {
+          say "非法端口：$_raw（必须是 1..65535 的十进制数字）"
+          return 2
+        }
+      elif [ "$_k" = "panel_port" ]; then
+        _port=""
+      else
+        say "代理端口不能为空（可清空的是 panel_port）"
+        return 2
+      fi
+      cfg_set "$_k" "$_port" || { say "设置失败：配置未修改，请检查键名和存储空间"; return 1; }
+      say "已设置 $_k=$_port"
+      say "重启服务生效：a2a restart"
+      return 0
+      ;;
+  esac
+  cfg_set "$_k" "$2" || { say "设置失败：配置未修改，请检查键名和存储空间"; return 1; }
+  say "已设置 $_k=$2"
+  say "重启服务生效：a2a restart"
+}
+
+cmd_update() {
+  . "$MODDIR/libexec/payload.sh"
+  . "$MODDIR/libexec/updater.sh"
+  _chan=$(cfg_get update_channel beta)
+  _force=0
+  _file=""
+  _sha=""
+  LOCAL_TAG=""
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --beta)   _chan=beta ;;
+      --stable) _chan=stable ;;
+      --force)  _force=1 ;;
+      --file)   shift; _file="${1:-}" ;;
+      --sha)    shift; _sha="${1:-}" ;;
+      --tag)    shift; LOCAL_TAG="${1:-}" ;;
+    esac
+    shift
+  done
+  if [ -n "$_file" ] && [ ! -f "$_file" ]; then
+    printf '找不到本地包：%s\n' "$_file" >&2; return 1
+  fi
+  [ -n "$_file" ] && _force=1
+  upd_do_update "$_chan" "$_force" "$_file" "$_sha"
+}
+
+rollback_finish() {
+  _rbf_rc=${1:-0}
+  trap - HUP INT TERM
+  if [ "$_rbf_rc" -ne 0 ] && [ "${_rb_activated:-0}" = "1" ]; then
+    # 切换后的信号/重启失败也要恢复同一事务旧载荷，不继续执行启动操作。
+    if [ -d "${_rb_old:-}" ]; then
+      [ ! -e "$PAYLOAD" ] || mv "$PAYLOAD" "$APP_HOME/payload.rollback.interrupted.$$" 2>/dev/null
+      [ -e "$PAYLOAD" ] || mv "$_rb_old" "$PAYLOAD" 2>/dev/null
+    fi
+    payload_validate "$PAYLOAD" >/dev/null 2>&1 || payload_rollback >/dev/null 2>&1
+  fi
+  update_lock_release "$RUNDIR/update.lock.d"
+  return "$_rbf_rc"
+}
+
+cmd_rollback() {
+  _was_running=0
+  svc_is_running && _was_running=1
+  trap 'rollback_finish 130; exit 130' HUP INT TERM
+  update_lock_acquire "$RUNDIR/update.lock.d" || { trap - HUP INT TERM; return 1; }
+  # 信号只恢复本次 rollback 的旧目录，不能误用 updater 的事务状态。
+  upd_payload_before_move() { _rb_old=$1; }
+  upd_payload_after_move() { _rb_old=$1; _rb_activated=1; }
+  upd_payload_commit() { :; }
+  _rc=0
+  _rb_activated=0
+  _rb_old=""
+  payload_rollback || _rc=$?
+  if [ "$_rc" -eq 0 ] && [ "$_was_running" = "1" ]; then
+    say "重启服务..."
+    svc_restart >/dev/null 2>&1 || _rc=$?
+    if [ "$_rc" -eq 0 ]; then svc_wait_health 60 || _rc=$?; fi
+  fi
+  if [ "$_rc" -ne 0 ]; then
+    rollback_finish 1
+    say "回滚或服务恢复失败，请查看日志并执行 a2a doctor"
+    return 1
+  fi
+  rollback_finish 0 || return 1
+  # 回滚后的版本已经通过健康检查（或本来就没在跑），这时才允许删除
+  # 事务旧载荷（F-002 两阶段提交的提交点）。
+  payload_commit_old
+  [ "$_was_running" != "1" ] || say "服务已恢复"
+  return 0
+}
+
+cmd_doctor() {
+  say "======= 体检 ======="
+
+  # 1. 设备 / 权限
+  if [ "$(id -u 2>/dev/null)" = "0" ]; then
+    ck OK "root 权限正常"
+  else
+    ck FAIL "不是 root（请用 su -c 执行）"
+  fi
+  _abi=$(getprop ro.product.cpu.abi 2>/dev/null)
+  case "$_abi" in
+    arm64*) ck OK "设备架构 $_abi" ;;
+    *)      ck FAIL "设备架构 $_abi，本模块只支持 arm64" ;;
+  esac
+  ck OK "Android SDK $(getprop ro.build.version.sdk 2>/dev/null) / $(getprop ro.build.version.release 2>/dev/null)"
+  if [ -d /data/adb/magisk ]; then
+    ck OK "Magisk 环境存在"
+  elif [ -d /data/adb/ksu ]; then
+    ck OK "KernelSU 环境存在"
+  elif [ -d /data/adb/apatch ] || [ -d /data/adb/apd ]; then
+    ck OK "APatch 环境存在"
+  else
+    ck WARN "没检测到 Magisk/KSU/APatch 目录（可能路径不同）"
+  fi
+
+  # 2. 载荷完整性
+  if [ -f "$SERVER_BIN" ]; then
+    _a=$(elf_arch "$SERVER_BIN")
+    if [ "$_a" = "aarch64" ]; then
+      ck OK "服务端二进制 $(du -h "$SERVER_BIN" 2>/dev/null | cut -f1) aarch64"
+    else
+      ck FAIL "服务端架构异常：$_a"
+    fi
+  else
+    ck FAIL "服务端不存在：$SERVER_BIN"
+  fi
+
+  _miss=""
+  for _l in ld-linux-aarch64.so.1 libc.so.6 libm.so.6 libgcc_s.so.1 libdl.so.2 libpthread.so.0 librt.so.1 libresolv.so.2 libnss_dns.so.2 libnss_files.so.2; do
+    [ -f "$PLIB/$_l" ] || _miss="$_miss $_l"
+  done
+  if [ -z "$_miss" ]; then
+    ck OK "glibc 运行时齐全（10 个）"
+  else
+    ck FAIL "运行时缺文件：$_miss"
+  fi
+
+  [ -d "$PAYLOAD/ui" ] && ck OK "面板静态资源存在" || ck FAIL "缺少 $PAYLOAD/ui"
+  _tzname=$(getprop persist.sys.timezone 2>/dev/null)
+  if [ -n "$_tzname" ] && zone_file_valid "$_tzname"; then
+    ck OK "IANA 时区 $_tzname（含 DST 规则）"
+  elif [ -n "$_tzname" ]; then
+    ck FAIL "时区数据缺失或名称不安全：$TZROOT/$_tzname"
+  else
+    ck WARN "系统未提供有效时区名，将使用固定 UTC offset fallback（无 DST）"
+  fi
+
+  # 3. 能不能真的跑起来（最关键的实测）
+  if [ -x "$LOADER" ]; then
+    if _v=$("$LOADER" --version 2>&1 | head -n 1); then
+      ck OK "动态链接器可执行：$_v"
+    else
+      ck FAIL "动态链接器无法执行（内核/架构不匹配？）"
+    fi
+  else
+    ck FAIL "动态链接器不存在或不可执行"
+  fi
+
+  # 4. 新架构的私有运行时文件与二进制路径补丁
+  for _f in "$DNSFILE" "$NSSFILE" "$GAIFILE"; do
+    [ -r "$_f" ] && ck OK "运行时文件 $_f" || ck FAIL "缺少 $_f"
+  done
+  [ -x "$LDSO_LINK" ] && ck OK "插件解释器 $LDSO_LINK" || ck WARN "插件解释器软链不可用"
+  for _f in "$PLIB/libc.so.6" "$CURL"; do
+    if [ -f "$_f" ] && grep -q '/data/a2a/resolv' "$_f" 2>/dev/null; then
+      ck OK "路径重定向 $(basename "$_f")"
+    else
+      ck FAIL "未做 DNS 路径重定向：$_f"
+    fi
+  done
+  _d=$(dns_probe 2>/dev/null)
+  if [ "${_d##*\|}" != "none" ]; then
+    ck OK "glibc DNS=${_d##*\|}（配置=${_d%%\|*}）"
+  elif [ "${_d%%\|*}" != "none" ]; then
+    # 缓存有、落盘读不到：这是权限/路径问题，必须显式报出来，别显示成 OK。
+    ck FAIL "glibc DNS 落盘与缓存不一致：配置=${_d%%\|*} 文件=${_d##*\|}"
+  else
+    ck FAIL "glibc DNS 配置为空（$DNS_CACHE / $DNSFILE）"
+  fi
+  if svc_http_health 3; then ck OK "PID+socket归属+/health(ok|degraded) 联合检查通过"; else
+    _hrc=$?; [ "$_hrc" = "2" ] && ck WARN "curl 不可用，无法做联合健康检查" || ck WARN "联合健康检查尚未通过（不会把别的进程认成本服务）"
+  fi
+
+  # 4.5 内核版本 & Android 12+ 的"幽灵进程杀手"
+  #      后者会把从 shell/adb 派生的后台子进程当"幽灵"批量干掉，
+  #      表现就是"跑一阵子自己没了"。根上解决是关掉那个开关。
+  _kver=$(uname -r 2>/dev/null)
+  _kmaj=$(printf '%s' "$_kver" | cut -d. -f1 | tr -cd '0-9')
+  _kmin=$(printf '%s' "$_kver" | cut -d. -f2 | tr -cd '0-9')
+  [ -n "$_kmaj" ] || _kmaj=0
+  [ -n "$_kmin" ] || _kmin=0
+  if [ "$_kmaj" -gt 4 ] || { [ "$_kmaj" -eq 4 ] && [ "$_kmin" -ge 9 ]; }; then
+    ck OK "内核 $_kver"
+  else
+    ck WARN "内核 $_kver 偏老，glibc 2.36 会退化到兼容路径（能跑，个别调用慢一点）"
+  fi
+
+  _phantom=$(settings get global settings_enable_monitor_phantom_procs 2>/dev/null)
+  if [ "$_phantom" = "1" ]; then
+    ck WARN "系统的幽灵进程杀手是开着的（Android 12+ 会顺手杀后台子进程）。关掉：settings put global settings_enable_monitor_phantom_procs false"
+  else
+    ck OK "幽灵进程杀手没开（后台进程不会被系统顺手清掉）"
+  fi
+
+  # 5. 运行状态
+  if svc_is_running; then
+    ck OK "守护进程在跑（pid=$(svc_supervisor_pid)）"
+  else
+    ck WARN "守护进程没在跑（a2a start）"
+  fi
+  _port=$(port_normalize "$(cfg_get port 3065)") || _port=3065
+  if port_listen "$_port"; then
+    _who=$(port_owner "$_port" 2>/dev/null)
+    ck OK "网关端口 $_port 处于 LISTEN（pid=${_who:-未知}）"
+  else
+    ck WARN "网关端口 $_port 没有监听"
+  fi
+  _pport=$(panel_port_effective)
+  if [ "$_pport" != "$_port" ]; then
+    if port_listen "$_pport"; then
+      _pwho=$(port_owner "$_pport" 2>/dev/null)
+      ck OK "面板端口 $_pport 处于 LISTEN（pid=${_pwho:-未知}）"
+    else
+      ck WARN "配置了独立面板端口 $_pport，但没有监听"
+    fi
+  fi
+
+  # 6. 资源
+  # 不用 NR==2 取第 4 列：busybox df 遇到长设备名会折行，第 2 行可能只有
+  # 半行数据，列就错位了。改成取最后一行、倒数第 3 个字段 —— 标准 df 里
+  # 它就是 Available，折行的情况下同样成立。
+  _avail=$(df -k /data 2>/dev/null | awk 'NF>=4 {v=$(NF-2)} END{print v}')
+  case "$_avail" in
+    ''|*[!0-9]*) _avail=0 ;;
+  esac
+  if [ "$_avail" -gt 51200 ]; then
+    ck OK "剩余空间 $((_avail / 1024)) MB"
+  elif [ "$_avail" -gt 10240 ]; then
+    ck WARN "剩余空间偏少 $((_avail / 1024)) MB（升级需要 ~40MB）"
+  else
+    ck FAIL "剩余空间不足 $((_avail / 1024)) MB"
+  fi
+
+  _lvl=$(battery_level 2>/dev/null)
+  if is_charging; then
+    ck OK "电量 ${_lvl:-?}%（充电中）"
+  else
+    ck OK "电量 ${_lvl:-?}%（未充电）"
+  fi
+
+  say ""
+  say "面板地址："
+  panel_urls
+  say ""
+  say "如果上面有 FAIL：先看 $SRVLOG 最后 50 行，再来找我。"
+}
+
+cmd_help() {
+  # 打印文件头的注释块：从第 3 行开始，跳过首尾的 ==== 分隔线，
+  # 遇到第一行不是注释就停。以前写死 sed -n '3,18p'，文件头一长一短
+  # 就把 MODDIR=... 那行代码也打出来。
+  awk 'NR < 3 { next }
+       /^# =+$/ { if (seen) exit; seen = 1; next }
+       /^#/ { sub(/^# ?/, ""); print; next }
+       { exit }' "$0"
+}
+
+case "${1:-status}" in
+  status)   cmd_status ;;
+  start)    cmd_start ;;
+  stop)     cmd_stop ;;
+  restart)  cmd_restart ;;
+  logs)     shift; cmd_logs "$@" ;;
+  update)   shift; cmd_update "$@" ;;
+  rollback) cmd_rollback ;;
+  desc)     shift; cmd_desc "$@" ;;
+  dns)      shift; cmd_dns "$@" ;;
+  doctor)   cmd_doctor ;;
+  url)      shift; cmd_url "$@" ;;
+  version|-v) cmd_version ;;
+  config)   shift; cmd_config "$@" ;;
+  help|-h|--help) cmd_help ;;
+  *)
+    say "未知命令：$1"
+    say ""
+    cmd_help
+    exit 1
+    ;;
+esac

@@ -1,121 +1,323 @@
 #!/system/bin/sh
-# Magisk 安装时的定制脚本（由 Magisk 安装器 source 执行，不要加 exit）
-
-ui_print "- Agent2API 网关（arm64 / glibc chroot）"
-ui_print "- 程序：rootfs/opt/agent2api/agent2api-server"
-ui_print "- 数据：/data/adb/agent2api（升级模块不会丢）"
-
-# 目录与权限
-set_perm_recursive "$MODPATH" 0 0 0755 0644
-set_perm "$MODPATH/rootfs/opt/agent2api/agent2api-server" 0 0 0755
-set_perm "$MODPATH/rootfs/lib/ld-linux-aarch64.so.1" 0 0 0755
-set_perm "$MODPATH/service.sh" 0 0 0755
-set_perm "$MODPATH/post-fs-data.sh" 0 0 0755
-set_perm "$MODPATH/uninstall.sh" 0 0 0755
-set_perm "$MODPATH/action.sh" 0 0 0755
-set_perm "$MODPATH/bin/ctl" 0 0 0755
-set_perm "$MODPATH/bin/lib.sh" 0 0 0755
-# 只读加固的 bind 占位文件（rootfs 挂成只读后没法现场创建）
-set_perm "$MODPATH/rootfs/bin/busybox" 0 0 0644
-set_perm "$MODPATH/rootfs/dev/null" 0 0 0644
-set_perm "$MODPATH/rootfs/dev/zero" 0 0 0644
-set_perm "$MODPATH/rootfs/dev/random" 0 0 0644
-set_perm "$MODPATH/rootfs/dev/urandom" 0 0 0644
-
-# /etc/localtime 兜底：TZ 环境变量正常时不看它，但用户把 TZ_NAME 写错
-# （Asia/Shanghia 之类）时 chrono/glibc 会退回 /etc/localtime —— 没有这个文件
-# 就静默变 UTC，报表时间整体错 8 小时。指向 rootfs 内的 tzdata，符号链接目标
-# 在 chroot 里依然有效。
-if [ -f "$MODPATH/rootfs/usr/share/zoneinfo/Asia/Shanghai" ]; then
-  rm -f "$MODPATH/rootfs/etc/localtime" 2>/dev/null
-  ln -s /usr/share/zoneinfo/Asia/Shanghai "$MODPATH/rootfs/etc/localtime" 2>/dev/null
-fi
-
-# 首装判定：首装才发默认配置、才解除 disable；
-# 升级场景必须尊重用户上一次的停用意图（v3.1.0 的 rm -f disable 会把
-# 用户手动 ctl stop 的服务在升级重启后悄悄拉起来，覆盖用户意图）
+# ============================================================================
+# Agent2API 模块 · 安装脚本（customize.sh）
 #
-# v3.1.2 修复：FRESH 的语义是「这次是不是全新安装」，不是「数据目录有没有被初始化过」。
-# 卸载会故意保留 /data/adb/agent2api（含 .installed 与 disable），于是「卸载→重装」
-# 会被误判成升级（FRESH=0），disable 残留 → 守护每次开机第一行就退出，
-# 模块显示已安装、status 全是"未运行"，重刷重启都没用，只能手动 ctl start。
-# 判据：模块目录还在 = 升级；模块目录没了 = 全新安装。
-MARKER=/data/adb/agent2api/.installed
-FRESH=1
-if [ -f "$MARKER" ] && [ -d /data/adb/modules/agent2api ]; then
-  FRESH=0
+# Magisk / KernelSU / APatch 都会设置 MODPATH；update-binary 的兜底路径也会。
+# 安装顺序固定为：源文件预检 -> 暂存与自检 -> 配置/工具 -> zoneinfo -> payload。
+# payload 是最后一个可能失败的持久数据提交；zoneinfo 已切换而 payload 失败时，
+# EXIT 清理会恢复旧 zoneinfo，避免新 payload 与旧时区库（或反向）混用。
+# ============================================================================
+
+MODID=agent2api
+APP_HOME=/data/adb/agent2api
+PAYLOAD="$APP_HOME/payload"
+PLIB="$PAYLOAD/lib"
+CFGDIR="$APP_HOME/etc"
+BINDIR="$APP_HOME/bin"
+LOGDIR="$APP_HOME/logs"
+DATADIR="$APP_HOME/data"
+RUNDIR="$APP_HOME/run"
+TMPD="$APP_HOME/tmp"
+HOMEDIR="$APP_HOME/home"
+BACKUPDIR="$APP_HOME/backup"
+DLDIR="$APP_HOME/download"
+A2A_LIVE=/data/a2a
+SERVER_BIN="$PAYLOAD/agent2api-server"
+LOADER="$PLIB/ld-linux-aarch64.so.1"
+SETTINGS="$CFGDIR/settings.conf"
+CURL="$BINDIR/curl"
+CACERT="$BINDIR/cacert.pem"
+
+if [ -z "${MODPATH:-}" ]; then
+  MODPATH=$(cd "$(dirname "$0")" 2>/dev/null && pwd)
 fi
 
-mkdir -p /data/adb/agent2api/logs /data/adb/agent2api/data 2>/dev/null
-if [ "$FRESH" = "1" ] && [ ! -f /data/adb/agent2api/env.sh ]; then
-  cp -f "$MODPATH/config/default.env" /data/adb/agent2api/env.sh
-  chmod 0600 /data/adb/agent2api/env.sh
-fi
-
-# 升级覆盖前先停掉旧进程：老二进制还在跑时替换文件，chmod 会 EBUSY
-# 先记录升级前服务是否在跑：安装器自己调 ctl stop 会落下 disable 标记，
-# 若升级前正在运行，升级后应恢复自启（否则"运行中升级→重启后服务消失"）
-_WAS_RUNNING=0
-_SP=$(cat /data/adb/agent2api/supervisor.pid 2>/dev/null)
-if [ -n "$_SP" ] && [ -r "/proc/$_SP/cmdline" ]; then
-  if tr '\0' ' ' < "/proc/$_SP/cmdline" 2>/dev/null | grep -qF "service.sh --loop"; then
-    _WAS_RUNNING=1
-  fi
-fi
-if [ -x "$MODPATH/bin/ctl" ]; then
-  sh "$MODPATH/bin/ctl" stop >/dev/null 2>&1
-  sleep 1
-fi
-{ [ "$FRESH" = "1" ] || [ "$_WAS_RUNNING" = "1" ]; } && rm -f /data/adb/agent2api/disable
-
-# 点分数字版本比较（纯 shell，安装器环境没有 awk 也不能依赖）：
-# _ver_gt A B → A>B 时返回 0；支持 v 前缀与 -beta 后缀
-_ver_gt() {
-  _a=${1#v}; _b=${2#v}
-  _a=${_a%%-*}; _b=${_b%%-*}
-  while :; do
-    _x=${_a%%.*}; _y=${_b%%.*}
-    [ -n "$_x" ] || _x=0
-    [ -n "$_y" ] || _y=0
-    _x=$(printf '%s' "$_x" | sed 's/^0*//'); [ -n "$_x" ] || _x=0
-    _y=$(printf '%s' "$_y" | sed 's/^0*//'); [ -n "$_y" ] || _y=0
-    if [ "$_x" -gt "$_y" ]; then return 0; fi
-    if [ "$_x" -lt "$_y" ]; then return 1; fi
-    case "$_a" in *.*) _a=${_a#*.} ;; *) _a= ;; esac
-    case "$_b" in *.*) _b=${_b#*.} ;; *) _b= ;; esac
-    [ -z "$_a" ] && [ -z "$_b" ] && return 1
-    [ -z "$_a" ] && _a=0
-    [ -z "$_b" ] && _b=0
-  done
+command -v ui_print >/dev/null 2>&1 || ui_print() { echo "$1"; }
+command -v abort >/dev/null 2>&1 || abort() { echo "! $1"; exit 1; }
+command -v set_perm_recursive >/dev/null 2>&1 || set_perm_recursive() {
+  chown -R "$2:$3" "$1" 2>/dev/null || return 1
+  chmod_tree "$1" "$4" "$5"
 }
 
-# 在线更新层仲裁：模块包内置的服务端版本更高（说明底座更新带上了新载荷）时，
-# 停用旧的在线更新层，避免"新底座 + 旧载荷"的倒挂
-if [ -f /data/adb/agent2api/update/version ] && [ -f "$MODPATH/rootfs/opt/agent2api/VERSION" ]; then
-  _bundled=$(cat "$MODPATH/rootfs/opt/agent2api/VERSION" 2>/dev/null)
-  _ovl=$(cat /data/adb/agent2api/update/version 2>/dev/null)
-  if [ -n "$_bundled" ] && _ver_gt "$_bundled" "$_ovl"; then
-    mv /data/adb/agent2api/update /data/adb/agent2api/update.superseded 2>/dev/null
-    ui_print "- 内置服务端（$_bundled）高于在线更新层（$_ovl），已停用旧更新层"
+ui_print " "
+ui_print "=================================="
+ui_print " Agent2API 服务端 · Android 模块"
+ui_print "=================================="
+
+[ -n "${ARCH:-}" ] || ARCH=$(getprop ro.product.cpu.abi 2>/dev/null)
+case "$ARCH" in
+  arm64*|aarch64*) : ;;
+  *) abort "只支持 arm64（当前 $ARCH）。模块内置的是 aarch64 的 glibc 运行时。" ;;
+esac
+ui_print "- 架构检查通过：$ARCH"
+
+_ENV="未知"
+if [ "${KSU:-}" = "true" ] || [ -d /data/adb/ksu ]; then
+  _ENV="KernelSU ${KSU_VER:-}"
+elif [ -d /data/adb/apatch ] || [ -d /data/adb/apd ]; then
+  _ENV="APatch"
+elif [ -d /data/adb/magisk ]; then
+  _ENV="Magisk ${MAGISK_VER:-}"
+fi
+ui_print "- 运行环境：$_ENV"
+ui_print "- 安装路径：$APP_HOME（数据保留，模块升级不动它）"
+
+# ---------------------------------------------------------------------------
+# 1) 任何持久写入之前，先检查所有安装源。zoneinfo 的元数据和关键时区都是
+#    必需输入；curl/CA/公共库也不再因文件缺失而静默跳过一个坏安装。
+# ---------------------------------------------------------------------------
+for _required in \
+  libexec/common.sh libexec/payload.sh libexec/dns.sh libexec/a2a \
+  settings.conf.example tools/curl tools/cacert.pem \
+  zoneinfo/VERSION zoneinfo/UTC zoneinfo/Etc/UTC \
+  zoneinfo/Asia/Shanghai zoneinfo/tzdata.zi
+do
+  [ -s "$MODPATH/$_required" ] || abort "模块包不完整：缺少或空文件 $_required"
+done
+
+SEED="$MODPATH/seed"
+HAVE_SEED=0
+[ -d "$SEED" ] && HAVE_SEED=1
+if [ "$HAVE_SEED" = "1" ]; then
+  for _required in VERSION agent2api-server lib/ld-linux-aarch64.so.1 \
+                   lib/libc.so.6 ui/index.html
+  do
+    [ -s "$SEED/$_required" ] || abort "模块包不完整：缺少或空文件 seed/$_required"
+  done
+else
+  # 精简包只能用于已有完整安装，不能在首次安装时伪造成功。
+  [ -s "$SERVER_BIN" ] && [ -s "$LOADER" ] && [ -s "$PAYLOAD/ui/index.html" ] \
+    || abort "模块包不完整：缺少 seed/ 目录，系统里也没有可用的载荷"
+fi
+
+# ---------------------------------------------------------------------------
+# 2) 只创建运行目录，不预建空 payload；首次安装由载荷事务自行创建它。
+# ---------------------------------------------------------------------------
+ui_print "- 准备运行目录"
+for d in "$APP_HOME" "$BINDIR" "$CFGDIR" "$DATADIR" \
+         "$LOGDIR" "$RUNDIR" "$TMPD" "$HOMEDIR" "$BACKUPDIR" "$DLDIR" \
+         "$A2A_LIVE"; do
+  mkdir -p "$d" 2>/dev/null || abort "无法创建 $d"
+done
+chmod 700 "$CFGDIR" "$DATADIR" 2>/dev/null || abort "无法设置配置/数据目录权限"
+chmod 755 "$APP_HOME" "$BINDIR" "$LOGDIR" "$RUNDIR" \
+          "$TMPD" "$HOMEDIR" "$BACKUPDIR" "$DLDIR" "$A2A_LIVE" 2>/dev/null \
+  || abort "无法设置运行目录权限"
+# 残留载荷清理推迟到取得 update.lock.d 之后（见下方）：提前删会把并发事务刚建好的
+# payload.new.<pid> 当成垃圾清掉，对方事务就会半途而废。
+
+. "$MODPATH/libexec/common.sh" || abort "无法加载 libexec/common.sh"
+. "$MODPATH/libexec/payload.sh" || abort "无法加载 libexec/payload.sh"
+
+# 沿用公共安装/更新锁；整个脚本只有这一处加锁。
+update_lock_acquire "$RUNDIR/update.lock.d" || abort "另一个安装/更新事务正在运行，请稍后重试"
+# 拿到锁之后再清残留：此时不可能有别人在写 payload.new.*。
+rm -rf "$APP_HOME"/payload.new.* "$APP_HOME"/payload.broken.* 2>/dev/null
+_INSTALL_TRANSACTION="$APP_HOME/.install.$$"
+_ZONE_OLD="$APP_HOME/zoneinfo.old.$$"
+_ZONE_COMMITTED=0
+_ZONE_OLD_PRESENT=0
+_INSTALL_SUCCESS=0
+install_cleanup() {
+  # 只要旧时区库已经被移开，就必须还原——不管新库有没有"提交"过。
+  # 旧实现只在 _ZONE_COMMITTED=1 时还原，于是"移开旧库、新库还没 rename
+  # 进来"这个窗口里被中断，两处都不存在，zoneinfo 直接丢失。
+  if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_ZONE_OLD_PRESENT" = "1" ] && [ -d "$_ZONE_OLD" ]; then
+    if [ "$_ZONE_COMMITTED" = "1" ] && [ -e "$APP_HOME/zoneinfo" ]; then
+      rm -rf "$APP_HOME/zoneinfo" 2>/dev/null
+    fi
+    if [ ! -e "$APP_HOME/zoneinfo" ]; then
+      mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
+    fi
+  fi
+  rm -rf "$_INSTALL_TRANSACTION" 2>/dev/null
+  update_lock_release "$RUNDIR/update.lock.d"
+}
+trap 'install_cleanup' EXIT
+trap 'exit 1' HUP INT TERM
+
+# ---------------------------------------------------------------------------
+# 3) 在独立事务目录暂存全部新文件。权限和 loader 自检均针对暂存副本，
+#    因而失败时现有 payload、zoneinfo、curl 和配置尚未被替换。
+# ---------------------------------------------------------------------------
+rm -rf "$_INSTALL_TRANSACTION" "$_ZONE_OLD" 2>/dev/null
+mkdir -p "$_INSTALL_TRANSACTION/payload" "$_INSTALL_TRANSACTION/zoneinfo" \
+         "$_INSTALL_TRANSACTION/tools" 2>/dev/null || abort "无法创建安装暂存目录"
+_PAYLOAD_STAGE="$_INSTALL_TRANSACTION/payload"
+_ZONE_STAGE="$_INSTALL_TRANSACTION/zoneinfo"
+_TOOLS_STAGE="$_INSTALL_TRANSACTION/tools"
+_SETTINGS_STAGE="$_INSTALL_TRANSACTION/settings.conf"
+
+cp -R "$MODPATH/zoneinfo"/. "$_ZONE_STAGE"/ 2>/dev/null || abort "时区数据库暂存失败"
+chmod_tree "$_ZONE_STAGE" 755 644 || abort "时区数据库权限设置失败"
+for _required in VERSION UTC Etc/UTC Asia/Shanghai tzdata.zi; do
+  [ -s "$_ZONE_STAGE/$_required" ] || abort "时区数据库暂存后缺少 $_required"
+done
+
+cp -f "$MODPATH/tools/curl" "$_TOOLS_STAGE/curl" 2>/dev/null || abort "静态 curl 暂存失败"
+chmod 755 "$_TOOLS_STAGE/curl" 2>/dev/null || abort "静态 curl 权限设置失败"
+cp -f "$MODPATH/tools/cacert.pem" "$_TOOLS_STAGE/cacert.pem" 2>/dev/null || abort "CA 证书暂存失败"
+chmod 644 "$_TOOLS_STAGE/cacert.pem" 2>/dev/null || abort "CA 证书权限设置失败"
+{
+  printf '#!/system/bin/sh\n'
+  printf 'exec sh /data/adb/modules/%s/libexec/a2a "$@"\n' "$MODID"
+} >"$_TOOLS_STAGE/a2a" 2>/dev/null || abort "a2a 命令暂存失败"
+chmod 755 "$_TOOLS_STAGE/a2a" 2>/dev/null || abort "a2a 命令权限设置失败"
+if [ ! -f "$SETTINGS" ]; then
+  cp -f "$MODPATH/settings.conf.example" "$_SETTINGS_STAGE" 2>/dev/null || abort "默认配置暂存失败"
+  chmod 600 "$_SETTINGS_STAGE" 2>/dev/null || abort "默认配置权限设置失败"
+fi
+
+install_payload_perms() {
+  chmod_tree "$1" 755 644 || return 1
+  chmod 755 "$1/agent2api-server" "$1/lib" "$1/lib/ld-linux-aarch64.so.1" 2>/dev/null || return 1
+  for _f in "$1/lib/"*.so*; do
+    [ -e "$_f" ] || continue
+    chmod 755 "$_f" 2>/dev/null || return 1
+  done
+  return 0
+}
+
+if [ "$HAVE_SEED" = "1" ]; then
+  ui_print "- 暂存并校验载荷（约 26MB，稍等）"
+  _err=$(payload_validate "$SEED" 2>&1) || abort "种子载荷校验失败：$_err"
+  cp -R "$SEED"/. "$_PAYLOAD_STAGE"/ 2>/dev/null || abort "载荷暂存失败（可能空间不足）"
+  _err=$(payload_validate "$_PAYLOAD_STAGE" 2>&1) || abort "暂存载荷校验失败：$_err"
+  _CHECK_PAYLOAD="$_PAYLOAD_STAGE"
+else
+  payload_validate "$PAYLOAD" >/dev/null 2>&1 || abort "现有载荷不完整，且安装包没有 seed/"
+  ui_print "- 包里没有 seed/，保留系统里已装的载荷：$(payload_version)"
+  _CHECK_PAYLOAD="$PAYLOAD"
+fi
+# payload_fix_perms 保持公共库语义；这里的额外显式检查覆盖其历史兼容忽略项。
+payload_fix_perms "$_CHECK_PAYLOAD" || abort "载荷权限设置失败"
+install_payload_perms "$_CHECK_PAYLOAD" || abort "载荷权限设置失败"
+
+# 模块脚本权限同样 fail-closed；不能把 chmod/chown 失败当成提示继续。
+set_perm_recursive "$MODPATH" 0 0 0755 0644 || abort "模块目录权限设置失败"
+for f in customize.sh post-fs-data.sh service.sh uninstall.sh action.sh boot-completed.sh hotinstall.sh; do
+  if [ -f "$MODPATH/$f" ]; then
+    chmod 755 "$MODPATH/$f" 2>/dev/null || abort "模块脚本权限设置失败：$f"
+  fi
+done
+chmod 755 "$MODPATH/libexec" "$MODPATH/libexec/"* 2>/dev/null || abort "libexec 权限设置失败"
+
+ui_print "- 自检：动态链接器"
+_CHECK_LOADER="$_CHECK_PAYLOAD/lib/ld-linux-aarch64.so.1"
+[ -x "$_CHECK_LOADER" ] || abort "动态链接器没有执行权限"
+if _ld_output=$("$_CHECK_LOADER" --version 2>&1); then
+  _LDV=$(printf '%s\n' "$_ld_output" | head -n 1)
+  [ -n "$_LDV" ] || abort "动态链接器自检没有返回版本信息"
+  ui_print "  $_LDV"
+else
+  abort "动态链接器无法执行，安装已终止"
+fi
+ui_print "- 自检：服务端架构"
+_SA=$(elf_arch "$_CHECK_PAYLOAD/agent2api-server" 2>/dev/null)
+[ "$_SA" = "aarch64" ] || abort "服务端架构异常：$_SA"
+ui_print "  aarch64 OK"
+
+_patch_bad=""
+for _f in "$_CHECK_PAYLOAD/lib/libc.so.6" "$_TOOLS_STAGE/curl"; do
+  if ! grep -q '/data/a2a/resolv' "$_f" 2>/dev/null; then
+    _patch_bad="$_patch_bad $(basename "$_f")"
+  fi
+done
+[ -z "$_patch_bad" ] || abort "这些文件没有做路径重定向：$_patch_bad"
+ui_print "  二进制路径重定向 OK（glibc/curl 都指向 $A2A_LIVE）"
+
+. "$MODPATH/libexec/dns.sh" || abort "无法加载 libexec/dns.sh"
+dns_bootstrap || ui_print "  ! DNS/NSS 写入有失败项，开机后会自动重试，可用 a2a doctor 检查"
+ui_print "- DNS/NSS 运行时目标：$A2A_LIVE"
+
+# ---------------------------------------------------------------------------
+# 4) 持久提交。所有可预检工作已经完成；先提交小型辅助文件，再切 zoneinfo，
+#    最后调用公共载荷事务。payload 失败由 install_cleanup 回滚 zoneinfo。
+# ---------------------------------------------------------------------------
+if [ -f "$SETTINGS" ]; then
+  ui_print "- 保留已有配置 $SETTINGS"
+else
+  mv -f "$_SETTINGS_STAGE" "$SETTINGS" 2>/dev/null || abort "无法提交默认配置"
+  ui_print "- 默认配置已生成"
+fi
+mv -f "$_TOOLS_STAGE/curl" "$CURL" 2>/dev/null || abort "静态 curl 提交失败"
+mv -f "$_TOOLS_STAGE/cacert.pem" "$CACERT" 2>/dev/null || abort "CA 证书提交失败"
+mv -f "$_TOOLS_STAGE/a2a" "$BINDIR/a2a" 2>/dev/null || abort "a2a 命令提交失败"
+ui_print "- 静态 curl 与 CA 证书已就绪"
+
+if [ -e "$APP_HOME/zoneinfo" ]; then
+  mv -f "$APP_HOME/zoneinfo" "$_ZONE_OLD" 2>/dev/null || abort "无法暂存旧时区数据库"
+  _ZONE_OLD_PRESENT=1
+fi
+if ! mv -f "$_ZONE_STAGE" "$APP_HOME/zoneinfo" 2>/dev/null; then
+  if [ "$_ZONE_OLD_PRESENT" = "1" ]; then
+    mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
+  fi
+  abort "时区数据库切换失败"
+fi
+_ZONE_COMMITTED=1
+ui_print "- IANA 时区规则已暂存切换（含夏令时）"
+
+if [ "$HAVE_SEED" = "1" ]; then
+  # 直接在安装脚本进程执行，不能放进命令替换子 shell：
+  # 子 shell 会丢 UPDATE_LOCK_TOKEN，EXIT 清理就无法按 owner 安全释放锁。
+  _PI_LOG="$_INSTALL_TRANSACTION/payload-install.log"
+  if payload_install_from "$_PAYLOAD_STAGE" 0 >"$_PI_LOG" 2>&1; then
+    while IFS= read -r _l; do [ -n "$_l" ] && ui_print "  $_l"; done <"$_PI_LOG"
+    ui_print "  载荷版本：$(payload_version)"
+  else
+    while IFS= read -r _l; do [ -n "$_l" ] && ui_print "  ! $_l"; done <"$_PI_LOG"
+    abort "载荷安装失败：见上一行的具体原因（若提示空间不足，请清理 /data）"
   fi
 fi
-
-# 旧版本目录下遗留的挂载点必须卸掉：Magisk 升级要删除
-# /data/adb/modules/agent2api，里面的 proc / bind 挂载会让 rm 报 EBUSY，
-# 留下一个"新包已装、旧目录还在"的半更新状态。
-# v3.1.1 起 rootfs 自身会挂只读 bind，unmount 列表按路径匹配天然把它盖住
-# （sort -r 保证深的挂载点先卸，rootfs 自身的 bind 最后卸）。
-OLDROOT=/data/adb/modules/agent2api/rootfs
-if [ -d "$OLDROOT" ]; then
-  for _mp in $(grep -F " $OLDROOT" /proc/mounts 2>/dev/null | cut -d' ' -f2 | sort -r); do
-    umount "$_mp" 2>/dev/null || umount -l "$_mp" 2>/dev/null
-  done
+# 报成功之前把已经落盘的东西刷到闪存：安装器退出后管理器可能立刻杀掉进程，
+# 不 sync 的话极少数机器上会出现"装完重启，载荷又变回旧的"。
+sync 2>/dev/null
+_INSTALL_SUCCESS=1
+rm -rf "$_ZONE_OLD" 2>/dev/null
+live_link_refresh || ui_print "  ! 动态链接器软链刷新失败，开机后会自动重试"
+if lib_snapshot_save; then
+  ui_print "  运行时快照已保存（自愈用）"
+else
+  ui_print "  ! 运行时快照保存失败（不影响使用，只是丢掉自愈能力）"
 fi
 
-touch "$MARKER"
+# 只有全部持久提交成功后才清理模块包内大件。
+[ -d "$SEED" ] && rm -rf "$SEED" 2>/dev/null
+[ -d "$MODPATH/tools" ] && rm -rf "$MODPATH/tools" 2>/dev/null
+[ -d "$MODPATH/zoneinfo" ] && rm -rf "$MODPATH/zoneinfo" 2>/dev/null
 
-ui_print "- 安装完成，重启后自动启动"
-ui_print "- 管理命令：sh /data/adb/modules/agent2api/bin/ctl status|doctor|restart|update check|log"
-ui_print "- v3.1.2：日志轮转/只读加固/孤儿进程/守护拉起/内存看门狗/端口冲突诊断 一批修复"
-ui_print "- 本包：env.sh 可设 AGENT2API_REPO=owner/name 自定义更新仓库"
-ui_print "-       （上游被封/搬家时切换，删除该行即回默认仓库）"
+{
+  printf '[%s] 安装完成\n' "$(date '+%Y-%m-%d %H:%M:%S' 2>/dev/null || date)"
+  printf '  环境      : %s\n' "$_ENV"
+  printf '  ARCH/ABI  : %s / %s\n' "${ARCH:-?}" "$(getprop ro.product.cpu.abi 2>/dev/null)"
+  printf '  SDK       : %s\n' "$(getprop ro.build.version.sdk 2>/dev/null)"
+  printf '  载荷版本  : %s\n' "$(payload_version 2>/dev/null)"
+  printf '  链接器    : %s\n' "$_LDV"
+  printf '  模块路径  : %s\n' "$MODPATH"
+} >>"$INSTLOG" 2>/dev/null
+rotate_log "$INSTLOG" 256
+
+if [ "${KSU:-}" = "true" ] && [ ! -f "$CFGDIR/no_hot_install" ]; then
+  export MODULE_HOT_INSTALL_REQUEST=true
+  export MODULE_HOT_RUN_SCRIPT=hotinstall.sh
+  ui_print "- 已申请 KernelSU 热安装（装完立即可用，不用重启）"
+fi
+
+ui_print " "
+ui_print "=================================="
+ui_print " 安装完成"
+ui_print "=================================="
+_INSTALL_PORT=$(port_normalize "$(cfg_get port 3065)") || _INSTALL_PORT=3065
+_INSTALL_PANEL=$(panel_port_effective)
+ui_print " 面板: http://127.0.0.1:${_INSTALL_PANEL}/m.html"
+[ "$_INSTALL_PANEL" != "$_INSTALL_PORT" ] && \
+  ui_print " 网关: http://127.0.0.1:${_INSTALL_PORT}/v1 （面板已拆到 $_INSTALL_PANEL）"
+ui_print " 手机: 打开浏览器访问上面的地址，或在模块 App 里点【打开】"
+ui_print " "
+ui_print " 出问题先跑：su -c 'sh /data/adb/agent2api/bin/a2a doctor'"
+ui_print " 看日志   ：su -c 'sh /data/adb/agent2api/bin/a2a logs 50'"
+ui_print " "
+ui_print " 服务会等系统启动完成 + 网络就绪后自动拉起（约 10~60 秒）"
+ui_print " 不想自动启动：a2a config autostart 0"
+ui_print "=================================="

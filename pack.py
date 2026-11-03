@@ -21,14 +21,19 @@ with open(os.path.join(SRC, "module.prop"), encoding="utf-8") as _fh:
         if _line.startswith("version="):
             _VER = _line.strip().split("=", 1)[1]
             break
-OUT = os.path.join(HERE, "dist", "agent2api-magisk-%s-arm64.zip" % _VER)
+# 版本串里带 " (magisk.31)" 这类后缀，文件名只取第一段，避免出现空格和括号
+_SLUG = _VER.split()[0]
+OUT = os.path.join(HERE, "dist", "agent2api-magisk-%s-arm64.zip" % _SLUG)
 
 # 必须是 0755 的：安装/运行脚本 + 两个原生可执行文件
 EXEC_FILES = {
-    "customize.sh", "post-fs-data.sh", "service.sh", "uninstall.sh", "action.sh",
-    "bin/ctl", "bin/lib.sh",
-    "rootfs/opt/agent2api/agent2api-server",
-    "rootfs/lib/ld-linux-aarch64.so.1",
+    "customize.sh", "post-fs-data.sh", "service.sh", "boot-completed.sh",
+    "uninstall.sh", "action.sh", "hotinstall.sh",
+    "META-INF/com/google/android/update-binary",
+    "seed/agent2api-server",
+    "seed/lib/ld-linux-aarch64.so.1",
+    "tools/curl",
+    "tools/a2a",
 }
 
 # 这些不该进包（开发产物 / 本机残留）
@@ -43,6 +48,12 @@ def mode_for(rel, is_dir):
     if is_dir:
         return 0o40755
     if rel in EXEC_FILES:
+        return 0o100755
+    # libexec/ 下全是 shell 库与子命令，必须 0755；tools/ 是随包的可执行文件
+    if rel.split("/")[0] in ("libexec", "tools"):
+        return 0o100755
+    # seed/lib/ 是随包的 glibc 运行时（换回动态载荷时才用得上）
+    if rel.startswith("seed/lib/"):
         return 0o100755
     return 0o100644
 
@@ -76,8 +87,10 @@ def main():
 
     # 必备文件检查
     must = ["module.prop", "customize.sh", "service.sh", "post-fs-data.sh",
-            "uninstall.sh", "action.sh", "bin/ctl", "bin/lib.sh",
-            "rootfs/opt/agent2api/agent2api-server", "rootfs/opt/agent2api/VERSION"]
+            "uninstall.sh", "action.sh", "libexec/common.sh", "libexec/dns.sh",
+            "libexec/control.sh", "libexec/supervise.sh", "libexec/payload.sh",
+            "libexec/boot-start.sh", "seed/agent2api-server", "seed/VERSION",
+            "META-INF/com/google/android/update-binary"]
     have = {e[0] for e in entries}
     for m in must:
         if m not in have:

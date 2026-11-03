@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0f14">
+<title>Agent2API · 模块状态</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 18px 48px;
+    background: #0b0f14; color: #d7dde5;
+    font: 15px/1.65 -apple-system, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+  }
+  .wrap { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: .5px; }
+  .sub { color: #7d8896; font-size: 13px; margin-bottom: 22px; }
+  .card {
+    background: #121821; border: 1px solid #1e2836; border-radius: 14px;
+    padding: 16px 18px; margin-bottom: 14px;
+  }
+  .card h2 { font-size: 14px; margin: 0 0 10px; color: #8fa3bb; font-weight: 600; letter-spacing: .3px; }
+  /* KernelSU WebUI 里主框架从 https://mui.kernelsu.org 直接点击 <a href="http://...">
+     跳本地 http 会被 WebView 拦掉（表现是"网页无法打开"）。所以按钮用 <button>
+     配合 JS 赋 location.href 跳转，脚本发起的导航不受这条策略限制。 */
+  .btn {
+    -webkit-appearance: none; appearance: none;
+    display: block; width: 100%; box-sizing: border-box;
+    text-align: center; text-decoration: none; border: 0; cursor: pointer;
+    font: inherit; font-weight: 600;
+    padding: 13px 16px; border-radius: 11px; color: #06121f;
+    background: linear-gradient(135deg,#5eead4,#38bdf8);
+  }
+  .btn.ghost { background: #1a2431; color: #cfe1f5; box-shadow: inset 0 0 0 1px #2b3a4d; margin-top: 10px; }
+  .btn:active { filter: brightness(.92); }
+  code, pre { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
+  pre {
+    background: #0a0e13; border: 1px solid #1b2431; border-radius: 10px;
+    padding: 11px 12px; overflow-x: auto; color: #a9c1d9; margin: 8px 0 0;
+  }
+  ol { margin: 6px 0 0; padding-left: 20px; }
+  li { margin: 5px 0; }
+  .hint { color: #7d8896; font-size: 12.5px; margin-top: 10px; }
+  .warn { color: #f5c26b; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Agent2API · Magisk 模块</h1>
+  <div class="sub">服务端跑在本机。面板端口可能与网关端口不同（见 <code>panel_port</code>），这个页面只是块"指路牌"。</div>
+
+  <div class="card">
+    <h2>打开面板</h2>
+    <button type="button" class="btn" id="panel" data-target="m.html">手机面板 m.html</button>
+    <button type="button" class="btn ghost" id="desk" data-target="./">完整面板</button>
+    <div class="hint" id="port-hint">如果是从电脑访问，把 <code>127.0.0.1</code> 换成手机局域网 IP。</div>
+    <div class="hint" id="port-now"></div>
+  </div>
+
+      <div class="card" id="live">
+        <h2>实时状态 <span id="live-ts" style="font-weight:400;color:#5d6b7d;font-size:12px"></span></h2>
+        <div id="live-body" style="display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13.5px">
+          <div class="hint" style="grid-column:1 / -1">正在读取 status.json …</div>
+        </div>
+        <pre id="live-log" style="max-height:190px;white-space:pre-wrap">（日志读取中）</pre>
+        <div class="hint">数据来自模块目录 <code>webroot/status.json</code> 与 <code>webroot/lastlog.txt</code>，5 秒刷新；守护进程没起来时读不到属正常。</div>
+      </div>
+    
+  <div class="card">
+    <h2>常用命令（需 root shell）</h2>
+    <pre>sh /data/adb/agent2api/bin/a2a status      # 运行状态
+sh /data/adb/agent2api/bin/a2a doctor      # 全项体检
+sh /data/adb/agent2api/bin/a2a logs        # 看日志
+sh /data/adb/agent2api/bin/a2a update      # 在线升级到最新版
+sh /data/adb/agent2api/bin/a2a rollback    # 升级失败回滚
+sh /data/adb/agent2api/bin/a2a restart     # 重启服务端</pre>
+    <div class="hint warn">配置在 <code>/data/adb/agent2api/etc/settings.conf</code>，改完 <code>a2a restart</code> 生效。</div>
+  </div>
+
+  <div class="card">
+    <h2>首次使用</h2>
+    <ol>
+      <li>打开面板，注册管理员账号（第一个注册的人就是管理员）</li>
+      <li>在面板里配置上游账号、生成 API Key</li>
+      <li>客户端把 Base URL 指向 <code>http://手机IP:<span id="gw-port">3065</span>/v1</code></li>
+    </ol>
+  </div>
+</div>
+<script>
+  // 面板端口可能被用户改过：优先读查询参数，其次用页面自身的端口。
+  // 注意不能用 location.hostname：KernelSU 的 WebUI 用虚拟域名
+  // https://mui.kernelsu.org 承载本页，拿到的 host 是 mui.kernelsu.org，
+  // 拼出来的 http://mui.kernelsu.org:3065 根本不存在 —— 这正是面板按钮
+  // 报"网页无法打开"的原因。WebUI 场景一律固定 127.0.0.1。
+  (function () {
+    var qs = new URLSearchParams(location.search);
+    var host = qs.get('host') || '';
+    var isKsuWebui = /(^|\.)mui\.kernelsu\.org$/i.test(location.hostname);
+    if (!host) host = isKsuWebui ? '127.0.0.1' : (location.hostname || '127.0.0.1');
+    if (host === 'localhost') host = '127.0.0.1';
+    // 端口不能只用 location.port：WebUI 里它是空的，而 panel_port 可以
+    // 把面板拆到独立端口。KernelSU 注入了 ksu.exec(cmd, opts, callback)，
+    // 回调拿到 (code, stdout, stderr)，用它向模块问一次真实端口。
+    var port = qs.get('port') || String(location.port || '') || '3065';
+    var gwPort = qs.get('gw') || String(location.port || '') || '3065';
+    var now = document.getElementById('port-now');
+    var gwEl = document.getElementById('gw-port');
+    var resolved = false, pending = false, waiters = [];
+
+    function go(path) {
+      location.href = 'http://' + host + ':' + port + path;
+    }
+
+    function askKsuPort(done) {
+      // 端口只问一次：页面加载和点按钮可能同时触发，串行化避免回调互相覆盖。
+      if (resolved) { done(); return; }
+      waiters.push(done);
+      if (pending) return;
+      pending = true;
+      if (!isKsuWebui || !window.ksu || typeof window.ksu.exec !== 'function') {
+        settle();
+        return;
+      }
+      var timer = setTimeout(settle, 2000);
+      window.__a2aPanelPort = function (code, out) {
+        var parts = String(out || '').replace(/\s+/g, ' ').replace(/^ | $/g, '').split(' ');
+        if (Number(code) === 0 && /^[0-9]{1,5}$/.test(parts[0] || '')) {
+          port = parts[0];
+          if (/^[0-9]{1,5}$/.test(parts[1] || '')) gwPort = parts[1];
+        }
+        settle();
+      };
+      function settle() {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        var list = waiters;
+        waiters = [];
+        for (var i = 0; i < list.length; i++) list[i]();
+      }
+      try {
+        window.ksu.exec('sh /data/adb/agent2api/bin/a2a url --ports', '{}', '__a2aPanelPort');
+      } catch (e) {
+        settle();
+      }
+    }
+
+    function refreshHint() {
+      if (now) now.textContent = '面板端口 ' + port + (gwPort === port ? '（与网关同端口）' : ' · 网关端口 ' + gwPort);
+      if (gwEl) gwEl.textContent = gwPort;
+    }
+
+    function openPanel(path) {
+      askKsuPort(function () {
+        refreshHint();
+        go(path);
+      });
+    }
+
+    document.getElementById('panel').addEventListener('click', function () { openPanel('/m.html'); });
+    document.getElementById('desk').addEventListener('click', function () { openPanel('/'); });
+    askKsuPort(refreshHint);
+  })();
+</script>
+<script>
+      // 实时状态：直接读模块目录下的静态文件，不依赖 ksu.exec，任何浏览器都能看。
+      (function () {
+        var body = document.getElementById('live-body');
+        var logEl = document.getElementById('live-log');
+        var tsEl = document.getElementById('live-ts');
+        var LABEL = {
+          'running': '运行中', 'running-unverified': '运行中（未验证）', 'stopped': '已停止',
+          'dead': '异常退出', 'disabled': '已禁用', 'paused': '已暂停', 'backoff': '退避重启中',
+          'port-conflict': '端口被占用', 'starting-unhealthy': '启动中'
+        };
+        function fmt(sec) {
+          sec = Number(sec) || 0;
+          var m = Math.floor(sec / 60), h = Math.floor(m / 60);
+          if (h > 0) return h + ' 小时 ' + (m % 60) + ' 分';
+          if (m > 0) return m + ' 分 ' + (sec % 60) + ' 秒';
+          return sec + ' 秒';
+        }
+        function row(k, v) { return '<div style="color:#7d8896">' + k + '</div><div>' + v + '</div>'; }
+        function load() {
+          fetch('status.json?t=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (s) {
+              var html = '';
+              html += row('状态', '<b>' + (LABEL[s.status] || s.status || '未知') + '</b>');
+              html += row('端口', (s.port || '?') +
+                (s.panel_port && String(s.panel_port) !== String(s.port) ? '（面板 ' + s.panel_port + '）' : ''));
+              html += row('载荷', s.version || '?');
+              html += row('运行时长', fmt(s.uptime));
+              html += row('PID', (s.supervisor_pid || '-') + ' → ' + (s.server_pid || '-'));
+              html += row('重启 / 失败', (s.restarts || 0) + ' / ' + (s.fails || 0));
+              body.innerHTML = html;
+              if (tsEl) tsEl.textContent = s.ts ? '更新于 ' + new Date(Number(s.ts) * 1000).toLocaleTimeString() : '';
+            })
+            .catch(function (e) {
+              body.innerHTML = '<div class="hint" style="grid-column:1 / -1">读不到 status.json（' + e.message +
+                '）。守护进程没在跑、或模块目录不可读时属正常，用下面的命令看详情。</div>';
+              if (tsEl) tsEl.textContent = '';
+            });
+          fetch('lastlog.txt?t=' + Date.now(), { cache: 'no-store' })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+            .then(function (t) { logEl.textContent = t && t.trim() ? t : '（空）'; })
+            .catch(function () { logEl.textContent = '（读不到 lastlog.txt）'; });
+        }
+        load();
+        setInterval(load, 5000);
+      })();
+    </script>
+    </body>
+</html>
