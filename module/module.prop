@@ -1,7 +1,7 @@
 id=agent2api
 name=Agent2API 服务端 (arm64)
-version=v3.4.0 (magisk.35)
-versionCode=2026110435
+version=v3.4.1 (magisk.36)
+versionCode=2026110436
 author=aimod-cc / Magisk 移植
-description=模块 v3.4.0（内置 musl 静态载荷 v3.4.0）｜同步上游 v3.4.0：载荷由 84593320z/agent2api-musl CI 按 v3.4.0 tag 构建。上一版 localfix-20261104 的全部修复保留；magisk.35 另含审计/复审 RR-01..RR-12 的 12 项修复。
+description=模块 v3.4.1（内置 glibc 动态载荷 v3.4.1）｜官方 arm64 服务端与面板 UI，同步手机端 3.4.1；保留本地复审修复：事务/数据恢复幂等、失败停服保现场、完整 DNS 身份、前端读写屏障与严格回显。
 updateJson=

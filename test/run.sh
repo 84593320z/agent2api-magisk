@@ -48,10 +48,13 @@ for f in \
   "$SRC/action.sh" \
   "$SRC/boot-completed.sh" \
   "$SRC/hotinstall.sh" \
-  "$HERE/txn_test.sh"
+  "$HERE/txn_test.sh" \
+  "$HERE/recovery_boundary_cases.sh" \
+  "$HERE/dns_identity_test.sh"
 do
   if [ ! -f "$f" ]; then
-    echo "  SKIP（文件不存在）: $f"
+    echo "  FAIL（文件不存在）: $f"
+    FAIL=1
     continue
   fi
   if sh -n "$f" 2>/dev/null; then
@@ -73,6 +76,15 @@ else
   FAIL=1
 fi
 
+echo
+echo "== 2b. DNS 完整身份行为回归 =="
+if "$SH_BIN" "$HERE/dns_identity_test.sh"; then
+  echo "  ok   dns_identity_test.sh"
+else
+  echo "  FAIL dns_identity_test.sh"
+  FAIL=1
+fi
+
 # 可选：Python verify 套件。--full 是验收模式：缺 python 或缺少套件文件都算失败，
 # 不再静默 SKIP（旧的 `--full` 在没装 python 的机器上会“全绿”，不能作为验收证据）。
 if [ "${1:-}" = "--full" ]; then
@@ -88,7 +100,7 @@ if [ "${1:-}" = "--full" ]; then
     FAIL=1
   fi
   if [ -n "$PY" ]; then
-    for v in verify_fixes.py verify_loop.py verify_paths.py verify_frontend.py repack_test.py sign_test.py; do
+    for v in verify_fixes.py verify_loop.py verify_paths.py recovery_boundary_test.py verify_frontend.py repack_test.py sign_test.py; do
       if [ -f "$HERE/$v" ]; then
         if PYTHONIOENCODING=utf-8 "$PY" "$HERE/$v"; then
           echo "  ok   $v"

@@ -1,0 +1,747 @@
+{
+  "node": "v24.22.2",
+  "root": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair",
+  "inputs": [
+    {
+      "path": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair\\apk-mod\\src\\components\\GatewaySwitches.tsx",
+      "sha256": "ed1ab239da41fc68d1e53a0eaafbb93a793c2356231df056e1b53fb35d5ab79a"
+    },
+    {
+      "path": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair\\apk-mod\\src\\api\\switches.ts",
+      "sha256": "30c4176553d54efadba09c5b49156c97a9c262bb183685584f1ef52d307bb4ea"
+    }
+  ],
+  "total": 182,
+  "passed": 182,
+  "failed": 0,
+  "results": [
+    {
+      "name": "RR08 replaces missing keys and disables unknown [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued before PUT after completed PUT [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued during PUT after completed PUT [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "late GET cannot restore value after failed PUT [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "GET responses are ordered by latest request [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "different-key PUTs are globally serial and preserve pending intent [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "failed write does not stop serial queue [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "pending intent survives missing read endpoint [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "duplicate same-key event is ignored without losing pending ownership [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {} [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":false} [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":\"true\"} [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API valid echo confirms component target [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "RR08 replaces missing keys and disables unknown [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued before PUT after completed PUT [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued during PUT after completed PUT [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "late GET cannot restore value after failed PUT [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "GET responses are ordered by latest request [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "different-key PUTs are globally serial and preserve pending intent [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "failed write does not stop serial queue [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "pending intent survives missing read endpoint [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "duplicate same-key event is ignored without losing pending ownership [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {} [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":false} [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":\"true\"} [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "actual API valid echo confirms component target [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "already queued GET updater rechecks write-intent barrier on commit",
+      "pass": true
+    },
+    {
+      "name": "GET updater queued during PUT rechecks write-settlement barrier",
+      "pass": true
+    },
+    {
+      "name": "queued older GET updater loses to a later GET before commit",
+      "pass": true
+    },
+    {
+      "name": "deferred earlier PUT cannot overwrite a later failed pending key",
+      "pass": true
+    },
+    {
+      "name": "later confirmed endpoint response may resolve another failed key",
+      "pass": true
+    },
+    {
+      "name": "unmounted component ignores late GET and PUT state updates",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation sanitize=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation sanitize=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation developerRoleCompat=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation developerRoleCompat=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation cors=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation cors=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation debug=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation debug=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation captcha=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation captcha=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation modelsDev=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation modelsDev=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation failoverBackoff=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation failoverBackoff=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation sink=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation sink=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation breaker=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":true}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":0}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":\"false\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo []",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation breaker=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":false}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":1}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":\"true\"}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":null}",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo null",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo []",
+      "pass": true
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":false,\"next\":false}",
+      "pass": true
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":false,\"next\":true}",
+      "pass": true
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":true,\"next\":false}",
+      "pass": true
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":true,\"next\":true}",
+      "pass": true
+    },
+    {
+      "name": "fetchSwitches deduplicates routing and preserves partial unknown",
+      "pass": true
+    },
+    {
+      "name": "unknown switch and invalid requested type reject before HTTP",
+      "pass": true
+    }
+  ]
+}

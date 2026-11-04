@@ -1,0 +1,133 @@
+PASS refresh cross-netid cache-only rejected
+PASS refresh failure preserves old identity
+PASS refresh failure has no new lastgood
+PASS refresh failure preserves exact old cache
+PASS refresh failure has no success timestamp
+PASS same-netid iface rejected
+PASS same-netid iface no live publication
+PASS same-netid iface metadata unchanged
+PASS same-netid vpn rejected
+PASS same-netid vpn no live publication
+PASS same-netid vpn metadata unchanged
+PASS same-netid both rejected
+PASS same-netid both no live publication
+PASS same-netid both metadata unchanged
+PASS legacy full-identity cache restores absent live
+PASS legacy recovery content
+PASS legacy cache upgraded to atomic full identity
+PASS new format same identity cache recovery
+PASS new format recovered nameserver
+PASS embedded identity rejects prewritten new metadata
+PASS direct ensure succeeds
+PASS direct ensure synchronizes all metadata
+PASS direct ensure content-bound identity
+PASS direct ensure lastgood identity
+PASS follow_system=default status
+PASS follow_system=default priority
+PASS follow_system=0 status
+PASS follow_system=0 priority
+PASS follow_system=1 status
+PASS follow_system=1 priority
+PASS follow_system=2 status
+PASS follow_system=2 priority
+PASS liveness reports failure
+PASS liveness preserves original metadata
+PASS liveness preserves original cache bytes
+PASS liveness no new lastgood identity
+PASS liveness clears publish lock
+PASS liveness restores live bytes
+PASS live_copy reports failure
+PASS live_copy preserves original metadata
+PASS live_copy preserves original cache bytes
+PASS live_copy no new lastgood identity
+PASS live_copy clears publish lock
+PASS live_copy restores live bytes
+PASS live_rename reports failure
+PASS live_rename preserves original metadata
+PASS live_rename preserves original cache bytes
+PASS live_rename no new lastgood identity
+PASS live_rename clears publish lock
+PASS live_chmod reports failure
+PASS live_chmod preserves original metadata
+PASS live_chmod preserves original cache bytes
+PASS live_chmod no new lastgood identity
+PASS live_chmod clears publish lock
+PASS live_chmod restores live bytes
+PASS cache_copy reports failure
+PASS cache_copy preserves original metadata
+PASS cache_copy preserves original cache bytes
+PASS cache_copy no new lastgood identity
+PASS cache_copy clears publish lock
+PASS cache_copy restores live bytes
+PASS cache_rename reports failure
+PASS cache_rename preserves original metadata
+PASS cache_rename preserves original cache bytes
+PASS cache_rename no new lastgood identity
+PASS cache_rename clears publish lock
+PASS cache_rename restores live bytes
+PASS cache_chmod reports failure
+PASS cache_chmod preserves original metadata
+PASS cache_chmod preserves original cache bytes
+PASS cache_chmod no new lastgood identity
+PASS cache_chmod clears publish lock
+PASS cache_chmod restores live bytes
+PASS metadata_copy reports failure
+PASS metadata_copy preserves original metadata
+PASS metadata_copy preserves original cache bytes
+PASS metadata_copy no new lastgood identity
+PASS metadata_copy clears publish lock
+PASS metadata_copy restores live bytes
+PASS metadata_rename reports failure
+PASS metadata_rename preserves original metadata
+PASS metadata_rename preserves original cache bytes
+PASS metadata_rename no new lastgood identity
+PASS metadata_rename clears publish lock
+PASS metadata_rename restores live bytes
+PASS metadata_chmod reports failure
+PASS metadata_chmod preserves original metadata
+PASS metadata_chmod preserves original cache bytes
+PASS metadata_chmod no new lastgood identity
+PASS metadata_chmod clears publish lock
+PASS metadata_chmod restores live bytes
+PASS identity_drift reports failure
+PASS identity_drift preserves original metadata
+PASS identity_drift preserves original cache bytes
+PASS identity_drift no new lastgood identity
+PASS identity_drift clears publish lock
+PASS identity_drift restores live bytes
+PASS cache with incomplete identity rejected
+PASS unusable cache rejected
+PASS dns_write auto cross-identity cache rejected
+PASS dns_write failure preserves metadata
+PASS dns_write auto same-identity recovery
+PASS dns_write recovery metadata
+PASS real bootstrap static publication succeeds
+PASS bootstrap shares identity publication
+PASS bootstrap bound cache content
+PASS dns_write cache failure is nonzero
+PASS dns_write cache failure preserves identity
+PASS lastgood mirror failure does not undo successful publication
+PASS lastgood embeds successful identity
+PASS lastgood contains only filtered published addresses
+PASS new lastgood identity overrides stale mirror on recovery
+PASS lastgood restores validated address
+PASS lastgood header rejects relabeled split mirror
+PASS lastgood rename failure preserves DNS success
+PASS lastgood rename leaves exact old content
+PASS lastgood rename leaves exact old mirror
+PASS lastgood rename successful cache remains bound
+PASS lastgood chmod failure preserves DNS success
+PASS lastgood chmod leaves exact old content
+PASS lastgood chmod leaves exact old mirror
+PASS lastgood chmod successful cache remains bound
+PASS second metadata rename failure returns nonzero
+PASS partially advanced metadata rolled back
+PASS partially advanced metadata leaves old cache
+PASS dead publisher lock recovered
+PASS dead publisher recovery binds new identity
+PASS active publisher lock rejects concurrent publication
+PASS active publisher lock leaves metadata unchanged
+PASS active publisher lock leaves cache unchanged
+
+130 checked / 130 passed / 0 failed
+Evidence directory: /e/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/dns/regression-final2

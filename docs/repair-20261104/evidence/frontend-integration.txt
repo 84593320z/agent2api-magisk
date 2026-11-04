@@ -1,0 +1,199 @@
+  ok   required source: apk-mod\src\components\GatewaySwitches.tsx
+  ok   required source: apk-mod\src\api\switches.ts
+  ok   required source: apk-mod\src\pages\SettingsPage.tsx
+  ok   required source: apk-mod\a2a-mobile-mod.patch
+  ok   required source: test\verify_frontend_runtime.mjs
+  ok   SettingsPage uses split GatewaySwitches component
+  ok   patch new-file snapshot matches: api/switches.ts
+  ok   patch new-file snapshot matches: components/GatewaySwitches.tsx
+  ok   patch new-file snapshot matches: lib/discover.ts
+  ok   Node runtime available (NODE_BINARY or PATH)
+
+Executing real component/API runtime regression:
+ok   RR08 replaces missing keys and disables unknown [immediate updater]
+ok   reject GET issued before PUT after completed PUT [immediate updater]
+ok   reject GET issued during PUT after completed PUT [immediate updater]
+ok   late GET cannot restore value after failed PUT [immediate updater]
+ok   GET responses are ordered by latest request [immediate updater]
+ok   different-key PUTs are globally serial and preserve pending intent [immediate updater]
+ok   failed write does not stop serial queue [immediate updater]
+ok   pending intent survives missing read endpoint [immediate updater]
+ok   duplicate same-key event is ignored without losing pending ownership [immediate updater]
+ok   actual API invalid echo becomes unknown in component {} [immediate updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":false} [immediate updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":"true"} [immediate updater]
+ok   actual API valid echo confirms component target [immediate updater]
+ok   RR08 replaces missing keys and disables unknown [deferred React updater]
+ok   reject GET issued before PUT after completed PUT [deferred React updater]
+ok   reject GET issued during PUT after completed PUT [deferred React updater]
+ok   late GET cannot restore value after failed PUT [deferred React updater]
+ok   GET responses are ordered by latest request [deferred React updater]
+ok   different-key PUTs are globally serial and preserve pending intent [deferred React updater]
+ok   failed write does not stop serial queue [deferred React updater]
+ok   pending intent survives missing read endpoint [deferred React updater]
+ok   duplicate same-key event is ignored without losing pending ownership [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {} [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":false} [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":"true"} [deferred React updater]
+ok   actual API valid echo confirms component target [deferred React updater]
+ok   already queued GET updater rechecks write-intent barrier on commit
+ok   GET updater queued during PUT rechecks write-settlement barrier
+ok   queued older GET updater loses to a later GET before commit
+ok   deferred earlier PUT cannot overwrite a later failed pending key
+ok   later confirmed endpoint response may resolve another failed key
+ok   unmounted component ignores late GET and PUT state updates
+ok   API strict confirmation sanitize=false
+ok   API rejects sanitize=false echo {}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":true}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":0}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":"false"}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":null}
+ok   API rejects sanitize=false echo null
+ok   API rejects sanitize=false echo []
+ok   API strict confirmation sanitize=true
+ok   API rejects sanitize=true echo {}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":false}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":1}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":"true"}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":null}
+ok   API rejects sanitize=true echo null
+ok   API rejects sanitize=true echo []
+ok   API strict confirmation developerRoleCompat=false
+ok   API rejects developerRoleCompat=false echo {}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":true}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":0}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":"false"}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":null}
+ok   API rejects developerRoleCompat=false echo null
+ok   API rejects developerRoleCompat=false echo []
+ok   API strict confirmation developerRoleCompat=true
+ok   API rejects developerRoleCompat=true echo {}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":false}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":1}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":"true"}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":null}
+ok   API rejects developerRoleCompat=true echo null
+ok   API rejects developerRoleCompat=true echo []
+ok   API strict confirmation cors=false
+ok   API rejects cors=false echo {}
+ok   API rejects cors=false echo {"corsEnabled":true}
+ok   API rejects cors=false echo {"corsEnabled":0}
+ok   API rejects cors=false echo {"corsEnabled":"false"}
+ok   API rejects cors=false echo {"corsEnabled":null}
+ok   API rejects cors=false echo null
+ok   API rejects cors=false echo []
+ok   API strict confirmation cors=true
+ok   API rejects cors=true echo {}
+ok   API rejects cors=true echo {"corsEnabled":false}
+ok   API rejects cors=true echo {"corsEnabled":1}
+ok   API rejects cors=true echo {"corsEnabled":"true"}
+ok   API rejects cors=true echo {"corsEnabled":null}
+ok   API rejects cors=true echo null
+ok   API rejects cors=true echo []
+ok   API strict confirmation debug=false
+ok   API rejects debug=false echo {}
+ok   API rejects debug=false echo {"debugMode":true}
+ok   API rejects debug=false echo {"debugMode":0}
+ok   API rejects debug=false echo {"debugMode":"false"}
+ok   API rejects debug=false echo {"debugMode":null}
+ok   API rejects debug=false echo null
+ok   API rejects debug=false echo []
+ok   API strict confirmation debug=true
+ok   API rejects debug=true echo {}
+ok   API rejects debug=true echo {"debugMode":false}
+ok   API rejects debug=true echo {"debugMode":1}
+ok   API rejects debug=true echo {"debugMode":"true"}
+ok   API rejects debug=true echo {"debugMode":null}
+ok   API rejects debug=true echo null
+ok   API rejects debug=true echo []
+ok   API strict confirmation captcha=false
+ok   API rejects captcha=false echo {}
+ok   API rejects captcha=false echo {"captchaEnabled":true}
+ok   API rejects captcha=false echo {"captchaEnabled":0}
+ok   API rejects captcha=false echo {"captchaEnabled":"false"}
+ok   API rejects captcha=false echo {"captchaEnabled":null}
+ok   API rejects captcha=false echo null
+ok   API rejects captcha=false echo []
+ok   API strict confirmation captcha=true
+ok   API rejects captcha=true echo {}
+ok   API rejects captcha=true echo {"captchaEnabled":false}
+ok   API rejects captcha=true echo {"captchaEnabled":1}
+ok   API rejects captcha=true echo {"captchaEnabled":"true"}
+ok   API rejects captcha=true echo {"captchaEnabled":null}
+ok   API rejects captcha=true echo null
+ok   API rejects captcha=true echo []
+ok   API strict confirmation modelsDev=false
+ok   API rejects modelsDev=false echo {}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":true}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":0}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":"false"}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":null}
+ok   API rejects modelsDev=false echo null
+ok   API rejects modelsDev=false echo []
+ok   API strict confirmation modelsDev=true
+ok   API rejects modelsDev=true echo {}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":false}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":1}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":"true"}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":null}
+ok   API rejects modelsDev=true echo null
+ok   API rejects modelsDev=true echo []
+ok   API strict confirmation failoverBackoff=false
+ok   API rejects failoverBackoff=false echo {}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":true}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":0}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":"false"}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":null}
+ok   API rejects failoverBackoff=false echo null
+ok   API rejects failoverBackoff=false echo []
+ok   API strict confirmation failoverBackoff=true
+ok   API rejects failoverBackoff=true echo {}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":false}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":1}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":"true"}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":null}
+ok   API rejects failoverBackoff=true echo null
+ok   API rejects failoverBackoff=true echo []
+ok   API strict confirmation sink=false
+ok   API rejects sink=false echo {}
+ok   API rejects sink=false echo {"routingSink":true}
+ok   API rejects sink=false echo {"routingSink":0}
+ok   API rejects sink=false echo {"routingSink":"false"}
+ok   API rejects sink=false echo {"routingSink":null}
+ok   API rejects sink=false echo null
+ok   API rejects sink=false echo []
+ok   API strict confirmation sink=true
+ok   API rejects sink=true echo {}
+ok   API rejects sink=true echo {"routingSink":false}
+ok   API rejects sink=true echo {"routingSink":1}
+ok   API rejects sink=true echo {"routingSink":"true"}
+ok   API rejects sink=true echo {"routingSink":null}
+ok   API rejects sink=true echo null
+ok   API rejects sink=true echo []
+ok   API strict confirmation breaker=false
+ok   API rejects breaker=false echo {}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":true}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":0}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":"false"}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":null}
+ok   API rejects breaker=false echo null
+ok   API rejects breaker=false echo []
+ok   API strict confirmation breaker=true
+ok   API rejects breaker=true echo {}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":false}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":1}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":"true"}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":null}
+ok   API rejects breaker=true echo null
+ok   API rejects breaker=true echo []
+ok   captcha current-side boolean echo {"localPanel":false,"next":false}
+ok   captcha current-side boolean echo {"localPanel":false,"next":true}
+ok   captcha current-side boolean echo {"localPanel":true,"next":false}
+ok   captcha current-side boolean echo {"localPanel":true,"next":true}
+ok   fetchSwitches deduplicates routing and preserves partial unknown
+ok   unknown switch and invalid requested type reject before HTTP
+
+=== 182 checked / 182 passed / 0 failed ===
+  ok   runtime behavior suite exits zero
+
+=== integration: 11 checked / 11 passed / 0 failed ===

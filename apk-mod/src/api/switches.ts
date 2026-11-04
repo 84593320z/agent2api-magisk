@@ -186,20 +186,21 @@ export async function fetchSwitches(signal?: AbortSignal): Promise<SwitchState> 
 /**
  * 写一个开关。返回**同端点上所有开关**的新值（响应体是整份状态）。
  *
- * 调用方负责乐观更新与失败回滚：这里只在网络/接口失败时抛错。
+ * 只有目标字段为 boolean 且严格等于请求值才算确认；缺字段、类型错误、反向回显
+ * 与网络失败一样抛错，由调用方删除乐观值并显示未知，绝不合成服务端确认。
  */
 export async function saveSwitch(id: SwitchId, next: boolean): Promise<SwitchState> {
   const def = SWITCH_DEFS.find(item => item.id === id)
-  if (!def) return {}
+  if (!def) throw new Error(`Unknown switch: ${id}`)
+  if (typeof next !== 'boolean') throw new Error(`Invalid switch value: ${id}`)
   const body = await apiCall(def.path, { method: 'PUT', body: { [def.field]: next } })
+  if (pick(body, def) !== next) throw new Error(`Switch write was not confirmed: ${id}`)
   const state: SwitchState = {}
   for (const item of SWITCH_DEFS) {
     if (item.path !== def.path) continue
     const value = pick(body, item)
     if (value !== undefined) state[item.id] = value
   }
-  // 后端回了 200 但响应体里没有这个字段（老版本）：按用户拨的值显示，别让开关弹回去
-  if (state[id] === undefined) state[id] = next
   return state
 }
 

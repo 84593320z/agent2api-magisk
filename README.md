@@ -7,60 +7,38 @@
 
 ---
 
-## 下载
+## 最新版本：v3.4.1 / magisk.36
 
-最新构建在 **Releases** 页面（手机上直接点链接就能下）：
+本轮在原仓库 `f8e474d59c885e247cbeb179cf2e8f99a4ddbbb4` 加上复审修复后升级；源码、验收证据与发布产物对应同一轮升级。
 
-- [agent2api-magisk-v3.4.0-magisk.35-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.35/agent2api-magisk-v3.4.0-magisk.35-arm64.zip) —— Magisk / KernelSU 模块包（v3.4.0 载荷 + 复审 RR-01..RR-12 修复）
-- [agent2api-magisk-v3.4.0-magisk.34-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.34/agent2api-magisk-v3.4.0-magisk.34-arm64.zip) —— 上一构建（**存在已确认缺陷，勿用**，仅留作对照）
-- [agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.33/agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip) —— 上一版（magisk.33，融合 localfix-20261104），保留备用
-- [Agent2API-3.4.0-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/apk-v3.4.0-mod/Agent2API-3.4.0-mod.apk) —— 手机端 APK（v3.4.0 源码构建，自动发现 + 9 个功能开关；硬件返回键已修）
-- [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 上一代 APK（**硬件返回键会退出、自动发现判据不全，勿用**，仅留作对照）
+- **[下载 Magisk / KernelSU 模块 v3.4.1 · magisk.36](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.4.1-magisk.36)**：`agent2api-magisk-v3.4.1-magisk.36-arm64.zip`（也可运行 `python pack.py` 生成）。
+- **[下载手机端 APK 3.4.1-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.4.1-mod)**：`Agent2API-3.4.1-mod.apk`，包名 `com.agent2api.mobile.mod`，版本 `3.4.1 / 30401`。
+- 校验清单、完整升级补丁与变更文件 ZIP 随模块 Release 附带；发布说明见 [docs/release-3.4.1.md](docs/release-3.4.1.md)。
+- 升级验收：[docs/upgrade-3.4.1/report.md](docs/upgrade-3.4.1/report.md)。
+- 上轮修复：[docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md](docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md)。
 
----
+### 服务端与面板
 
-## 这一版（v3.4.0 / magisk.35）改了什么
+使用 [aimod-cc/Agent2API v3.4.1](https://github.com/aimod-cc/Agent2API/releases/tag/v3.4.1) 的官方 `agent2api-server-linux-arm64.tar.gz`，二进制与 UI 原字节保留。上游源码提交 `3ff4b8215d0d65c3451ca74923e90964ed7dbf59`。
 
-载荷仍是上游 v3.4.0，本版只修模块壳与工具链：按独立复审报告逐条修完 **RR-01..RR-12**。
+**本版内置的是 glibc 动态 arm64 载荷，沿用仓库既有 loader 启动路径，并非 musl 静态包。** 随包 glibc 运行库保持原样；离线检查已确认所需库、符号版本及强版本化导入均有匹配。DNS 路径由已有 `libc.so.6` 的 `/data/a2a/resolv` 等长补丁处理，官方 server 自身未打补丁。
 
-- **事务/恢复**：回滚失败不再被 `|| printf` 吞掉（停服保现场、journal 记 `rollback-failed`）；按 journal 恢复前先取 update 锁；`customize` 热安装先停服再替换、装完自动拉起；数据换入判据改为 aside 存在性，不再「目标非空即完成」。
-- **守护/DNS**：巡检补提交加健康门控（健康检查失败保留唯一回滚副本）；lastgood 与 `DNS_CACHE` 都绑定网络身份，跨网不沿用旧 LAN 解析器。
-- **前端/工具**：开关页不再合并旧键（失败端点保持不可操作）；`repack.py` 拒绝同源输出并改原子替换；测试脚本 `posix()` 不再破坏 Linux 路径。
-- **签名**：新增 `apk-mod/sign-tool.sh` / `signing.md`，泄露的旧证书指纹进黑名单；**旧包请勿再用**。
+上游 3.4.1 的工具服务页、附件导入、提供商及客户端相关更新随对应服务端和前端产物同步。Windows 本地 musl cross 构建未成功，未使用失败构建的中间产物。
 
-逐条根因、改法与负向验收见 [docs/fixes-v3.4.0-20261104/report-2.md](docs/fixes-v3.4.0-20261104/report-2.md)。
+### 手机端
 
----
+从上游 v3.4.1 完整源码构建 Web、Capacitor 与 Android 原生工程，保留新版 `ToolsPage` 等功能，同时融合自动发现、返回键及 9 个网关开关。新旧 GET/PUT 竞态的 epoch 屏障、在途隔离、严格 boolean 回显验证均保留。
 
-## 手机端 APK（v3.4.0-mod）
+APK 使用已有 mod 发布证书，SHA-256 为 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。构建、签名检查和 178 个 Web 资源逐字节对照已完成；Android 设备安装、启动与网络切换验收留待实机执行。
 
-以前那个 `Agent2API-3.1.2-mod.apk` 是「官方 3.1.0 APK + 替换 `assets/public`」重打包出来的，
-两个硬伤：`@capacitor/app` 没进包（硬件返回键直接退出应用）、web 资源与原生层版本对不上。
+构建和迁移说明：[apk-mod/README-mod.md](apk-mod/README-mod.md)、[apk-mod/release-migration.md](apk-mod/release-migration.md)。
 
-这一版改成**从上游 v3.4.0 源码完整构建**（Capacitor 8 + AGP 8.13 + JDK 21 + compileSdk 36）：
+### 保留的本地复审修复
 
-- 包名 `com.agent2api.mobile.mod`（与官方 `com.agent2api.mobile` 并存），`versionName 3.4.0`；
-- 自动发现本机网关的判据改成**两段式**：`/health` 完整摘要 **或** `/api/panel/status`
-  的 `{registered:boolean}` 信封 —— 手机模块的 headless 形态在未开「允许无 Key」时只回 `{"status":"ok"}`，
-  只认第一段在真机上永远探不到自家网关；
-- 设置页 9 个网关开关与桌面面板双向同步（5 秒回读 + 写串行 + 在途值不被覆盖）；
-- 新钥匙签名（证书 SHA-256 `d0ca6713…b16f`），与泄露的旧钥匙无关；
-- 源码补丁是 `apk-mod/a2a-mobile-mod.patch`（6 文件），可 `git apply` 到 `v3.4.0` 干净树后自行构建。
-
-构建步骤、真机验证记录与已知限制见 [apk-mod/README-mod.md](apk-mod/README-mod.md)。
-
-### 上游 v3.4.0 同步内容（magisk.34 起）
-
-**同步上游 [aimod-cc/Agent2API](https://github.com/aimod-cc/Agent2API) v3.4.0 正式版**（上游 2026-11-03 发布）。
-
-- 载荷 `seed/agent2api-server` + `seed/ui` 整体换成 **v3.4.0**：由 [84593320z/agent2api-musl](https://github.com/84593320z/agent2api-musl) CI 按上游 `v3.4.0` tag 构建的 musl 静态 arm64 包（无 `PT_INTERP`，解析器路径已等长改写为 `/data/a2a/resolv`）。
-- `seed/VERSION` 同步为 `ver=3.4.0`；`module.prop` → `v3.4.0 (magisk.NN)`（当前 `magisk.35`），壳与载荷版本是对齐的。
-- magisk.34 相对上一版的模块壳脚本（libexec 全家、安装器、守护）**零改动**——localfix-20261104 的全部修复原样保留；magisk.35 的脚本改动见上一节。
-- 在线更新（`a2a update`）默认仍指上游官方 glibc 包；`seed/lib` 的 glibc 运行时保留不动，动态载荷升级路径依旧可用。
-
-上游 v3.4.0 的主要变化（摘自上游 Release）：会话图片压缩、DeepSeek(dsh) 客户端接管、Trae 模型 ID 收敛（`-solo` 后缀迁移）、路由工作台模型筛选、插件安装等待在途请求、上游请求备用入口 + DNS 容错、更新检查诊断、账号存储快照缓存、阻塞线程池、豆包生图修复等 20 项。
-
-> 从 musl 载荷包升级上来的用户：`a2a update`（在线升级）与面板更新都会走上游 glibc 包并自动分流到动态载荷模式，无需手动处理。
+- 事务/恢复：payload 与 data 全部恢复成功才重启；失败保持停止并保留 journal；丢快照和 txid 不匹配严格失败；数据恢复与 payload rename 支持再次中断后幂等重试。
+- 热安装/启动：清理孤儿服务；恢复失败阻断安装、boot 和 supervisor 后续操作；EXIT 重启受安全门控。
+- DNS：缓存与 lastgood 原子绑定 iface/VPN/netid，成功验活后再发布；拒绝跨身份缓存，发布故障恢复旧数据。
+- 前端/测试：晚 GET 不覆盖 PUT、写入只认匹配 boolean 回显；新增行为回归并修正过时静态断言。
 
 ---
 
@@ -98,7 +76,7 @@ boot-worker 统一开机入口、卸载零删除保护、DNS 三态还原、WebU
 | 产物 | 说明 | 怎么得到 |
 |---|---|---|
 | `agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip` | Magisk / KernelSU 模块包（模块壳 + 内置服务端） | `python pack.py` → `dist/` |
-| `Agent2API-3.4.0-mod.apk` | 改造过的手机端 APK（v3.4.0 源码构建） | `apk-mod/README-mod.md` 的完整 gradle 流程 |
+| `Agent2API-3.4.1-mod.apk` | 改造过的手机端 APK（v3.4.1 源码构建） | `apk-mod/README-mod.md` 的完整 gradle 流程 |
 | `docs/*.md` | 审计报告与修复自查报告 | — |
 
 ---
@@ -127,7 +105,7 @@ module/                模块源码（就是打进 zip 的东西）
     boot-start.sh      开机异步启动流程
     timezone.sh        时区兜底
     a2a                命令行入口（status/start/stop/update/rollback/dns/doctor…）
-  seed/                随包的载荷（musl 静态 agent2api-server + 面板 UI + VERSION）
+  seed/                随包的载荷（glibc 动态 agent2api-server + 运行库 + 面板 UI + VERSION）
   tools/               curl、cacert.pem
   webroot/             KernelSU 状态卡（status.json / lastlog.txt）
   zoneinfo/            时区库（约 400 个区）
@@ -172,8 +150,9 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor'    # 一键自检
 ### 2. 装手机端 APK
 
 ```bash
-adb uninstall com.agent2api.mobile.mod   # 旧包/官方包签名不同，先卸干净
-adb install -r Agent2API-3.4.0-mod.apk
+# 已安装相同 mod 发布证书的 3.4.0-mod：保留配置覆盖安装
+adb install -r Agent2API-3.4.1-mod.apk
+# 旧世代 com.agent2api.mobile 的迁移步骤见 apk-mod/release-migration.md
 ```
 
 首次启动会自动连上 `127.0.0.1:3065`；探不到就点「服务器 → 自动发现」或手填地址。
@@ -185,7 +164,7 @@ adb install -r Agent2API-3.4.0-mod.apk
 两个版本号是**独立**的：
 
 - **模块壳**：`module.prop` 的 `version`（脚本与运行时）
-- **服务端载荷**：`module/seed/VERSION`（上游 musl 静态二进制）
+- **服务端载荷**：`module/seed/VERSION`（本版为上游 glibc 动态二进制）
 
 `a2a version` 会分别列出。升级载荷有两条路：
 
@@ -201,7 +180,7 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 
 ## 已知问题
 
-- **APK 只做到「构建 + 签名 + 包内容抽检」**：3.4.0-mod 是从上游源码完整构建的（`@capacitor/app`
+- **APK 只做到「构建 + 签名 + 包内容抽检」**：3.4.1-mod 是从上游源码完整构建的（`@capacitor/app`
   已进包，硬件返回键在代码层已修），但自动发现的新判据与返回键仍需一台装了模块的真机复验一次。
   详见 `apk-mod/README-mod.md` 第 3.2 / 3.3 节。
 - **cgroup 逃逸依赖设备**：只在 `/sys/fs/cgroup/cgroup.procs` 可写、且 `/proc/self/cgroup`
@@ -209,7 +188,7 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 - **Wi-Fi 判定只认 `wlan0/wlan1/swlan0` 的 IPv4**：纯 IPv6 网络或厂商自定义接口名会判成"不在 Wi-Fi"，
   `wifi_only=1` 时会被暂停。
 - **本版仍然没有真机回归**：修复是在 Windows + msys `sh` 沙箱里用源码切片 + 桩驱动验证的
-  （`test/verify_fixes.py` 32 项、`test/verify_loop.py` 8 个场景，全绿），Android 侧仍需实机验证
+  （`test/verify_fixes.py` 37 项、`test/verify_loop.py` 8 个场景，全绿），Android 侧仍需实机验证
   启动 / 守活 / 升级回滚。msys `sh` 不等于 Android BusyBox `ash`。
 
 ---
@@ -224,9 +203,9 @@ sh test/run.sh --full   # 上一行之外，追加 Python verify 套件（需要
 
 `run.sh` 分三层：① 全部模块脚本的 `sh -n` 语法检查；② `txn_test.sh` 纯 POSIX
 故障注入测试（更新事务 journal / 中断恢复 / 回滚失败保现场 / 恢复互斥 / sweep 保护 /
-静态载荷 / DNS 网络身份与缓存恢复，共 96 项断言）；③ `--full` 时跑六组 Python 检查：
+静态载荷 / DNS 网络身份与缓存恢复，共 99 项断言，另有完整 DNS 身份 130 项与恢复边界 25 项）；③ `--full` 时跑六组 Python 检查：
 `verify_fixes.py`（R01–R19 函数级复验）、`verify_loop.py`（主循环集成复验 8 场景）、
-`verify_paths.py`（跨平台路径转换）、`verify_frontend.py`（开关页状态合并）、
+`verify_paths.py`（跨平台路径转换）、`verify_frontend.py`（11 项集成 + 182 项真实函数/组件行为）、
 `repack_test.py`（APK 重打包的输入保护与原子输出）、`sign_test.py`（签名指纹拦截）。
 `--full` 是验收模式：缺 python 或缺少套件文件都直接判失败，不会静默 SKIP。
 Python 套件可用 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖路径，
@@ -236,7 +215,7 @@ APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 
 ```bash
 git clone https://github.com/aimod-cc/Agent2API.git && cd Agent2API
-git checkout v3.4.0 && git apply /path/to/apk-mod/a2a-mobile-mod.patch
+git checkout v3.4.1 && git apply /path/to/apk-mod/a2a-mobile-mod.patch
 cd desktop-tauri/mobile
 npm ci && npm install --no-save class-variance-authority clsx tailwind-merge tw-animate-css shadcn
 mkdir -p android-www && npm run build:native && npx cap sync android

@@ -35,7 +35,10 @@ rm -rf "$RUNDIR/lock" "$RUNDIR/service.lock.d" "$RUNDIR/hot-restart.lock.d" "$RU
 # 会把缺失的 DATADIR 建成空目录，数据换入的中断现场（data 被 mv 走、
 # 快照还没换进来）就会"看起来像已完成"。boot 模式没有年龄门槛（此刻
 # 不可能有活事务），锁也已在上面清掉。
-payload_recover_interrupted boot
+if ! payload_recover_interrupted boot; then
+  log_to "$SUPLOG" "开机事务恢复失败，保留现场，停止后续目录整理"
+  exit 1
+fi
 
 ensure_layout
 

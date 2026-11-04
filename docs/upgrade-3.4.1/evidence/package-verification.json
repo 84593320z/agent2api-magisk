@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "seed_files_exact": 257,
+  "bundled_runtime_unchanged": 10,
+  "elf_dependency_validation": "PASS",
+  "module_zip": "agent2api-magisk-v3.4.1-magisk.36-arm64.zip",
+  "zip_sha256": "7432e048860ffda1c53c994d6d2b5cc17f7175bffd5d8985da8a031f2fff5e10",
+  "zip_bytes": 20168888,
+  "zip_crc": "PASS",
+  "zip_members_match_worktree": true,
+  "zip_executable_modes": "PASS",
+  "zip_fixed_timestamp": "PASS",
+  "device_execution": "not performed"
+}

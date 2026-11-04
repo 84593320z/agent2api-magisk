@@ -396,7 +396,6 @@ upd_on_signal() {
         _uos_data_ok=0
       }
     fi
-    upd_restore_service
   elif [ "$UPD_INSTALLED" = "1" ]; then
     # 当前安装器只保留一份完整 prev 备份；已完成的切换也统一走同一代次恢复。
     payload_rollback && _uos_payload_ok=1
@@ -406,12 +405,20 @@ upd_on_signal() {
         _uos_data_ok=0
       }
     fi
-    upd_restore_service
   elif [ "$UPD_WAS_RUNNING" = "1" ]; then
     # 停服后、切换前被中断（或停服/快照失败中止）：载荷与数据都没动过，
     # 只需按原状态把服务拉回来；服务本来就没停时 svc_start 会发现已在运行。
     _uos_payload_ok=1
-    upd_finish_service
+  else
+    _uos_payload_ok=1
+  fi
+  if [ "$_uos_payload_ok" = "1" ] && [ "$_uos_data_ok" = "1" ]; then
+    # 恢复两部分都成功以后才允许启动；失败时绝不在错配组合上运行。
+    upd_restore_service || log_to "$UPDLOG" "现场已恢复，但服务健康恢复失败"
+  else
+    payload_txn_reload
+    payload_txn_write rollback-failed || true
+    log_to "$UPDLOG" "回滚未完成，服务保持停止并保留 journal"
   fi
   # 恢复已同步完成（载荷就位 + 数据收尾成功/无需收尾）：事务就地终结，
   # 清 journal。任何一步失败时保留 journal（rolling-back/started 等），
@@ -638,9 +645,8 @@ upd_do_update() {
         upd_transaction_finish 1
         return 1
       fi
-      svc_restart
       _upd_rb_ok=1
-      if svc_wait_health 45; then
+      if svc_restart && svc_wait_health 45; then
         printf '旧版已恢复并通过健康检查\n'
       else
         printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'

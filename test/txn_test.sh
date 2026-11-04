@@ -389,7 +389,10 @@ hdr 'T7 DNS 缓存恢复 live 文件'
 reset_case t7
 printf 'dns_mode=auto\n' >"$SETTINGS"
 printf 'nameserver 9.9.9.9\n' >"$DNS_CACHE"
-dns_default_iface() { :; }
+printf 'wlan0' >"$DNS_ACTIVE_CACHE"; printf '0' >"$DNS_VPN_CACHE"; printf '100' >"$DNS_NETID_CACHE"
+dns_default_iface() { echo wlan0; }
+dns_vpn_active() { return 1; }
+dns_active_netid() { echo 100; }
 dns_collect_system() { return 1; }   # 采样失败
 dns_write auto >/dev/null 2>&1
 ck 'T7 返回成功' 0 $?
@@ -476,7 +479,8 @@ ck 'T10b 快照换入' old-data "$(cat "$DATADIR/agent2api.db" 2>/dev/null)"
 ckf 'T10b 移开副本已清' 0 "$APP_HOME/data.upgraded.8"
 # (c) 换入已完成：DATADIR 就是快照，只清残留，不覆盖
 printf 'old-data' >"$DATADIR/agent2api.db"
-mkdir -p "$APP_HOME/data.restore.7"; printf 'old-data' >"$APP_HOME/data.restore.7/agent2api.db"
+# 第二次 rename 已完成：restore 临时路径必然已经消失。
+rm -rf "$APP_HOME/data.restore.7"
 mkdir -p "$APP_HOME/data.upgraded.7"; printf 'new-data' >"$APP_HOME/data.upgraded.7/agent2api.db"
 payload_txn_recover_data "$APP_HOME/data.restore.7" "$APP_HOME/data.upgraded.7" >/dev/null 2>&1
 ck 'T10c 返回成功' 0 $?
@@ -509,7 +513,7 @@ ckf 'T11 健康通过后提交删除旧载荷' 0 "$APP_HOME/payload.new.old.1234
 hdr 'T12 DNS lastgood 绑定网络身份、缓存参与兜底'
 reset_case t12
 rm -f "$DNS_CACHE" "$DNS_NETID_CACHE"   # 不带上一个用例留下的缓存/身份
-printf 'dns_mode=auto\n' >"$SETTINGS"
+printf 'dns_mode=auto\ndns_follow_system=1\n' >"$SETTINGS"
 # T6 为了观察调用次数把 dns_ensure 换成了计数器 stub；这里重新载入真实实现
 # （dns.sh 只声明函数与路径常量，重载是安全的）。
 . "$SRC/libexec/dns.sh"
@@ -545,18 +549,18 @@ rm -f "$A2A_LIVE/dns.lastgood" "$A2A_LIVE/dns.lastgood.id" "$DNSFILE"
 dns_collect_system() { return 0; }
 dns_static_list() { :; }
 printf 'nameserver 9.9.9.9\n' >"$DNS_CACHE"
-printf '101' >"$DNS_NETID_CACHE"     # 缓存发布时的网络身份与当前一致
+printf 'tun0' >"$DNS_ACTIVE_CACHE"; printf '1' >"$DNS_VPN_CACHE"; printf '101' >"$DNS_NETID_CACHE"     # 完整身份一致
 dns_ensure >/dev/null 2>&1
 ck 'T12c 缓存兜底成功' 0 $?
 ck 'T12c 发布缓存里的解析器' 1 "$(grep -c '9.9.9.9' "$DNSFILE" 2>/dev/null)"
 # (d) 缓存属于别的网络：即使能连通也不许拿来兜底（RR-06/07 的边界）
 rm -f "$DNSFILE" "$A2A_LIVE/dns.lastgood" "$A2A_LIVE/dns.lastgood.id"
 printf 'nameserver 9.9.9.9\n' >"$DNS_CACHE"
-printf '100' >"$DNS_NETID_CACHE"     # 上一次是 wlan0/100，当前 tun0/101
+printf 'wlan0' >"$DNS_ACTIVE_CACHE"; printf '0' >"$DNS_VPN_CACHE"; printf '100' >"$DNS_NETID_CACHE"     # 完整旧身份
 dns_ensure >/dev/null 2>&1
 ck 'T12d 跨网缓存不兜底' 1 $?
 ck 'T12d 没有把跨网解析器写进 live' 0 "$([ -f "$DNSFILE" ] && grep -c '9.9.9.9' "$DNSFILE" 2>/dev/null || echo 0)"
-ck 'T12d 日志说明原因' 1 "$(grep -c '（100 != 101）' "$SUPLOG" 2>/dev/null)"
+ck 'T12d 日志说明原因' 1 "$(grep -c '缓存里的 DNS 完整身份缺失或属于别的网络' "$SUPLOG" 2>/dev/null)"
 
 # ============================================================================
 # T13：热安装不得在活服务上换载荷（RR-03，静态顺序断言）

@@ -1,0 +1,300 @@
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if "Windows_NT" == "Windows_NT" setlocal
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set DIRNAME=E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\ 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if "E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\" == "" set DIRNAME=. 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set APP_BASE_NAME=gradlew 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set APP_HOME=E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\ 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>for %i in ("E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\") do set APP_HOME=%~fi 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set APP_HOME=E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\ 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m" 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if defined JAVA_HOME goto findJavaFromJavaHome 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set JAVA_HOME=E:\AI\tools\jdk21\jdk-21.0.12.1+1 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set JAVA_EXE=E:\AI\tools\jdk21\jdk-21.0.12.1+1/bin/java.exe 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if exist "E:\AI\tools\jdk21\jdk-21.0.12.1+1/bin/java.exe" goto execute 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>set CLASSPATH= 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>"E:\AI\tools\jdk21\jdk-21.0.12.1+1/bin/java.exe" "-Xmx64m" "-Xms64m"   "-Dorg.gradle.appname=gradlew" -classpath "" -jar "E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android\\gradle\wrapper\gradle-wrapper.jar" --no-daemon --offline --stacktrace --console=plain -Dorg.gradle.java.home=E:/AI/tools/jdk21/jdk-21.0.12.1+1 -I E:\AI\tmp\agent2api-audit-20261104\reverify\upgrade-3.4.1\upgrade-evidence\mobile\release-build.init.gradle -PdevAppIdSuffix=.mod assembleRelease 
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+Unable to initialize metrics, ensure C:\Users\Y-H\.android is writable, details: C:\Users\Y-H\.android\analytics.settings (拒绝访问。)
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Configure project :capacitor-cordova-android-plugins
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preReleaseBuild UP-TO-DATE
+> Task :app:mergeReleaseJniLibFolders UP-TO-DATE
+> Task :capacitor-android:preBuild UP-TO-DATE
+> Task :capacitor-android:preReleaseBuild UP-TO-DATE
+> Task :capacitor-android:mergeReleaseJniLibFolders UP-TO-DATE
+> Task :capacitor-android:mergeReleaseNativeLibs NO-SOURCE
+> Task :capacitor-android:copyReleaseJniLibsProjectOnly UP-TO-DATE
+> Task :capacitor-app:preBuild UP-TO-DATE
+> Task :capacitor-app:preReleaseBuild UP-TO-DATE
+> Task :capacitor-app:mergeReleaseJniLibFolders UP-TO-DATE
+> Task :capacitor-app:mergeReleaseNativeLibs NO-SOURCE
+> Task :capacitor-app:copyReleaseJniLibsProjectOnly UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preReleaseBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseJniLibFolders UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseNativeLibs NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyReleaseJniLibsProjectOnly UP-TO-DATE
+> Task :capacitor-keyboard:preBuild UP-TO-DATE
+> Task :capacitor-keyboard:preReleaseBuild UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseJniLibFolders UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseNativeLibs NO-SOURCE
+> Task :capacitor-keyboard:copyReleaseJniLibsProjectOnly UP-TO-DATE
+> Task :app:mergeReleaseNativeLibs NO-SOURCE
+> Task :app:stripReleaseDebugSymbols NO-SOURCE
+> Task :app:extractReleaseNativeSymbolTables NO-SOURCE
+> Task :app:mergeReleaseNativeDebugMetadata NO-SOURCE
+> Task :capacitor-android:generateReleaseResValues UP-TO-DATE
+> Task :capacitor-android:generateReleaseResources UP-TO-DATE
+> Task :capacitor-android:packageReleaseResources UP-TO-DATE
+> Task :capacitor-android:processReleaseNavigationResources UP-TO-DATE
+> Task :capacitor-android:parseReleaseLocalResources UP-TO-DATE
+> Task :capacitor-android:generateReleaseRFile UP-TO-DATE
+> Task :capacitor-android:javaPreCompileRelease UP-TO-DATE
+> Task :capacitor-android:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :capacitor-android:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :capacitor-app:generateReleaseResValues UP-TO-DATE
+> Task :capacitor-app:generateReleaseResources UP-TO-DATE
+> Task :capacitor-app:packageReleaseResources UP-TO-DATE
+> Task :capacitor-app:processReleaseNavigationResources UP-TO-DATE
+> Task :capacitor-app:parseReleaseLocalResources UP-TO-DATE
+> Task :capacitor-app:generateReleaseRFile UP-TO-DATE
+> Task :capacitor-app:javaPreCompileRelease UP-TO-DATE
+> Task :capacitor-app:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :capacitor-app:bundleLibRuntimeToDirRelease UP-TO-DATE
+> Task :capacitor-keyboard:generateReleaseResValues UP-TO-DATE
+> Task :capacitor-keyboard:generateReleaseResources UP-TO-DATE
+> Task :capacitor-keyboard:packageReleaseResources UP-TO-DATE
+> Task :capacitor-keyboard:processReleaseNavigationResources UP-TO-DATE
+> Task :capacitor-keyboard:parseReleaseLocalResources UP-TO-DATE
+> Task :capacitor-keyboard:generateReleaseRFile UP-TO-DATE
+> Task :capacitor-keyboard:javaPreCompileRelease UP-TO-DATE
+> Task :capacitor-keyboard:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :capacitor-keyboard:bundleLibRuntimeToDirRelease UP-TO-DATE
+> Task :capacitor-android:bundleLibRuntimeToDirRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateReleaseResValues UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateReleaseResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:packageReleaseResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:processReleaseNavigationResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:parseReleaseLocalResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateReleaseRFile UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:javaPreCompileRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:compileReleaseJavaWithJavac NO-SOURCE
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToDirRelease UP-TO-DATE
+> Task :app:checkReleaseDuplicateClasses UP-TO-DATE
+> Task :app:javaPreCompileRelease UP-TO-DATE
+> Task :capacitor-android:writeReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-app:writeReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:writeReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-keyboard:writeReleaseAarMetadata UP-TO-DATE
+> Task :app:checkReleaseAarMetadata UP-TO-DATE
+> Task :app:processReleaseNavigationResources UP-TO-DATE
+> Task :app:compileReleaseNavigationResources UP-TO-DATE
+> Task :app:generateReleaseResValues UP-TO-DATE
+> Task :app:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :app:generateReleaseResources UP-TO-DATE
+> Task :app:mergeReleaseResources UP-TO-DATE
+> Task :app:packageReleaseResources UP-TO-DATE
+> Task :app:parseReleaseLocalResources UP-TO-DATE
+> Task :app:createReleaseCompatibleScreenManifests UP-TO-DATE
+> Task :app:extractDeepLinksRelease UP-TO-DATE
+> Task :capacitor-android:extractDeepLinksRelease UP-TO-DATE
+> Task :capacitor-android:processReleaseManifest UP-TO-DATE
+> Task :capacitor-app:extractDeepLinksRelease UP-TO-DATE
+> Task :capacitor-app:processReleaseManifest UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:extractDeepLinksRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:processReleaseManifest UP-TO-DATE
+> Task :capacitor-keyboard:extractDeepLinksRelease UP-TO-DATE
+> Task :capacitor-keyboard:processReleaseManifest UP-TO-DATE
+> Task :app:processReleaseMainManifest UP-TO-DATE
+> Task :app:processReleaseManifest UP-TO-DATE
+> Task :app:processReleaseManifestForPackage UP-TO-DATE
+> Task :capacitor-android:compileReleaseLibraryResources UP-TO-DATE
+> Task :capacitor-app:compileReleaseLibraryResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:compileReleaseLibraryResources UP-TO-DATE
+> Task :capacitor-keyboard:compileReleaseLibraryResources UP-TO-DATE
+> Task :app:processReleaseResources UP-TO-DATE
+> Task :capacitor-app:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :capacitor-keyboard:bundleLibCompileToJarRelease UP-TO-DATE
+> Task :app:compileReleaseJavaWithJavac UP-TO-DATE
+> Task :app:dexBuilderRelease UP-TO-DATE
+> Task :app:desugarReleaseFileDependencies UP-TO-DATE
+> Task :app:mergeReleaseStartupProfile UP-TO-DATE
+> Task :app:mergeExtDexRelease UP-TO-DATE
+> Task :app:mergeDexRelease UP-TO-DATE
+> Task :capacitor-android:prepareReleaseArtProfile UP-TO-DATE
+> Task :capacitor-app:prepareReleaseArtProfile UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:prepareReleaseArtProfile UP-TO-DATE
+> Task :capacitor-keyboard:prepareReleaseArtProfile UP-TO-DATE
+> Task :app:mergeReleaseArtProfile UP-TO-DATE
+> Task :capacitor-app:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :capacitor-keyboard:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :capacitor-android:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarRelease UP-TO-DATE
+> Task :app:mergeReleaseShaders UP-TO-DATE
+> Task :app:compileReleaseShaders NO-SOURCE
+> Task :app:mergeReleaseGlobalSynthetics UP-TO-DATE
+> Task :app:compileReleaseArtProfile UP-TO-DATE
+> Task :app:generateReleaseAssets UP-TO-DATE
+> Task :capacitor-android:mergeReleaseShaders UP-TO-DATE
+> Task :capacitor-android:compileReleaseShaders NO-SOURCE
+> Task :capacitor-android:generateReleaseAssets UP-TO-DATE
+> Task :capacitor-android:mergeReleaseAssets UP-TO-DATE
+> Task :capacitor-app:mergeReleaseShaders UP-TO-DATE
+> Task :capacitor-app:compileReleaseShaders NO-SOURCE
+> Task :capacitor-app:generateReleaseAssets UP-TO-DATE
+> Task :capacitor-app:mergeReleaseAssets UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseShaders UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:compileReleaseShaders NO-SOURCE
+> Task :capacitor-cordova-android-plugins:generateReleaseAssets UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseAssets UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseShaders UP-TO-DATE
+> Task :capacitor-keyboard:compileReleaseShaders NO-SOURCE
+> Task :capacitor-keyboard:generateReleaseAssets UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseAssets UP-TO-DATE
+> Task :app:mergeReleaseAssets UP-TO-DATE
+> Task :app:compressReleaseAssets UP-TO-DATE
+> Task :app:extractReleaseVersionControlInfo UP-TO-DATE
+> Task :app:extractProguardFiles UP-TO-DATE
+> Task :capacitor-android:processReleaseJavaRes NO-SOURCE
+> Task :capacitor-android:createFullJarRelease UP-TO-DATE
+> Task :capacitor-android:extractProguardFiles UP-TO-DATE
+> Task :capacitor-android:generateReleaseLintModel UP-TO-DATE
+> Task :capacitor-android:prepareLintJarForPublish UP-TO-DATE
+> Task :capacitor-app:processReleaseJavaRes NO-SOURCE
+> Task :capacitor-app:createFullJarRelease UP-TO-DATE
+> Task :capacitor-app:extractProguardFiles UP-TO-DATE
+> Task :capacitor-app:generateReleaseLintModel UP-TO-DATE
+> Task :capacitor-app:prepareLintJarForPublish UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:processReleaseJavaRes NO-SOURCE
+> Task :capacitor-cordova-android-plugins:createFullJarRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:extractProguardFiles UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateReleaseLintModel UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:prepareLintJarForPublish UP-TO-DATE
+> Task :capacitor-keyboard:processReleaseJavaRes NO-SOURCE
+> Task :capacitor-keyboard:createFullJarRelease UP-TO-DATE
+> Task :capacitor-keyboard:extractProguardFiles UP-TO-DATE
+> Task :capacitor-keyboard:generateReleaseLintModel UP-TO-DATE
+> Task :capacitor-keyboard:prepareLintJarForPublish UP-TO-DATE
+> Task :app:generateReleaseLintVitalReportModel UP-TO-DATE
+> Task :capacitor-app:checkReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-app:stripReleaseDebugSymbols NO-SOURCE
+> Task :capacitor-app:copyReleaseJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :capacitor-app:extractDeepLinksForAarRelease UP-TO-DATE
+> Task :capacitor-app:extractReleaseAnnotations UP-TO-DATE
+> Task :capacitor-app:mergeReleaseGeneratedProguardFiles UP-TO-DATE
+> Task :capacitor-app:mergeReleaseConsumerProguardFiles UP-TO-DATE
+> Task :capacitor-app:mergeReleaseJavaResource UP-TO-DATE
+> Task :capacitor-app:syncReleaseLibJars UP-TO-DATE
+> Task :capacitor-app:bundleReleaseLocalLintAar UP-TO-DATE
+> Task :capacitor-keyboard:checkReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-keyboard:stripReleaseDebugSymbols NO-SOURCE
+> Task :capacitor-keyboard:copyReleaseJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :capacitor-keyboard:extractDeepLinksForAarRelease UP-TO-DATE
+> Task :capacitor-keyboard:extractReleaseAnnotations UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseGeneratedProguardFiles UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseConsumerProguardFiles UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseJavaResource UP-TO-DATE
+> Task :capacitor-keyboard:syncReleaseLibJars UP-TO-DATE
+> Task :capacitor-keyboard:bundleReleaseLocalLintAar UP-TO-DATE
+> Task :capacitor-android:checkReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-android:stripReleaseDebugSymbols NO-SOURCE
+> Task :capacitor-android:copyReleaseJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :capacitor-android:extractDeepLinksForAarRelease UP-TO-DATE
+> Task :capacitor-android:extractReleaseAnnotations UP-TO-DATE
+> Task :capacitor-android:mergeReleaseGeneratedProguardFiles UP-TO-DATE
+> Task :capacitor-android:mergeReleaseConsumerProguardFiles UP-TO-DATE
+> Task :capacitor-android:mergeReleaseJavaResource UP-TO-DATE
+> Task :capacitor-android:syncReleaseLibJars UP-TO-DATE
+> Task :capacitor-android:bundleReleaseLocalLintAar UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:checkReleaseAarMetadata UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:stripReleaseDebugSymbols NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyReleaseJniLibsProjectAndLocalJars UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:extractDeepLinksForAarRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:extractReleaseAnnotations UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseGeneratedProguardFiles UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseConsumerProguardFiles UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseJavaResource UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:syncReleaseLibJars UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:bundleReleaseLocalLintAar UP-TO-DATE
+> Task :capacitor-android:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :capacitor-android:writeReleaseLintModelMetadata UP-TO-DATE
+> Task :capacitor-app:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :capacitor-app:writeReleaseLintModelMetadata UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:writeReleaseLintModelMetadata UP-TO-DATE
+> Task :capacitor-keyboard:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :capacitor-keyboard:writeReleaseLintModelMetadata UP-TO-DATE
+> Task :app:lintVitalAnalyzeRelease UP-TO-DATE
+> Task :capacitor-android:generateReleaseLintVitalModel UP-TO-DATE
+> Task :capacitor-app:generateReleaseLintVitalModel UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:generateReleaseLintVitalModel UP-TO-DATE
+> Task :capacitor-keyboard:generateReleaseLintVitalModel UP-TO-DATE
+> Task :app:lintVitalReportRelease UP-TO-DATE
+> Task :app:lintVitalRelease
+> Task :app:processReleaseJavaRes NO-SOURCE
+> Task :app:mergeReleaseJavaResource UP-TO-DATE
+> Task :app:optimizeReleaseResources UP-TO-DATE
+> Task :app:collectReleaseDependencies UP-TO-DATE
+> Task :app:sdkReleaseDependencyData UP-TO-DATE
+> Task :app:validateSigningRelease UP-TO-DATE
+> Task :app:writeReleaseAppMetadata UP-TO-DATE
+> Task :app:writeReleaseSigningConfigVersions UP-TO-DATE
+> Task :app:packageRelease UP-TO-DATE
+> Task :app:createReleaseApkListingFileRedirect UP-TO-DATE
+> Task :app:assembleRelease UP-TO-DATE
+> Task :capacitor-android:bundleReleaseAar UP-TO-DATE
+> Task :capacitor-android:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :capacitor-android:mergeReleaseResources UP-TO-DATE
+> Task :capacitor-android:verifyReleaseResources UP-TO-DATE
+> Task :capacitor-android:assembleRelease UP-TO-DATE
+> Task :capacitor-app:bundleReleaseAar UP-TO-DATE
+> Task :capacitor-app:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :capacitor-app:mergeReleaseResources UP-TO-DATE
+> Task :capacitor-app:verifyReleaseResources UP-TO-DATE
+> Task :capacitor-app:assembleRelease UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:bundleReleaseAar UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeReleaseResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:verifyReleaseResources UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:assembleRelease UP-TO-DATE
+> Task :capacitor-keyboard:bundleReleaseAar UP-TO-DATE
+> Task :capacitor-keyboard:mapReleaseSourceSetPaths UP-TO-DATE
+> Task :capacitor-keyboard:mergeReleaseResources UP-TO-DATE
+> Task :capacitor-keyboard:verifyReleaseResources UP-TO-DATE
+> Task :capacitor-keyboard:assembleRelease UP-TO-DATE
+
+[Incubating] Problems report is available at: file:///E:/AI/tmp/agent2api-audit-20261104/reverify/mobile-build-3.4.1/desktop-tauri/mobile/android/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 13s
+204 actionable tasks: 1 executed, 203 up-to-date
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if 0 EQU 0 goto mainEnd 
+
+E:\AI\tmp\agent2api-audit-20261104\reverify\mobile-build-3.4.1\desktop-tauri\mobile\android>if "Windows_NT" == "Windows_NT" endlocal

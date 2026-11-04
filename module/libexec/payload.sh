@@ -123,64 +123,56 @@ payload_txn_reload() {
 #                     数据，$_ptd_tmp 是唯一的升级前快照，必须真的换进去。
 # 旧实现用「$DATADIR 非空 = 已就位」判断：换入还没开始时 $DATADIR 本来就非空，
 # 于是把唯一快照删掉、回滚等于没做，还把错误的数据当成已恢复（RR-04）。
+# restored 是持久化的数据完成状态；进程重启后也不得重新复制快照。
+payload_data_mark_restored() {
+  if [ -s "$A2A_TXN_JOURNAL" ]; then
+    payload_txn_reload || return 1
+    PAYLOAD_TXID=$(payload_txn_field 2)
+    TXN_DATA_SNAP=restored
+    TXN_DATA_TMP=""
+    TXN_DATA_ASIDE=""
+    payload_txn_write rolling-back || return 1
+  fi
+  PAYLOAD_DATA_RECOVERED=1
+  return 0
+}
+
 payload_txn_recover_data() {
   _ptd_tmp=${1:-}
   _ptd_aside=${2:-}
+  PAYLOAD_DATA_RECOVERED=0
+  [ -n "$_ptd_tmp$_ptd_aside" ] || return 0
   if [ -n "$_ptd_tmp" ] && [ -d "$_ptd_tmp" ]; then
+    # tmp 尚在意味着第二次 rename 未完成；data 和 aside 同时在是矛盾现场，
+    # 不能仅凭 data 非空宣布成功并销毁唯一快照。
     if [ -n "$_ptd_aside" ] && [ -d "$_ptd_aside" ]; then
-      if [ -d "$DATADIR" ] && [ -n "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
-        # 换入已完成：$DATADIR 就是快照本体；中转与移开副本都不再需要。
-        rm -rf "$_ptd_tmp" 2>/dev/null
-        rm -rf "$_ptd_aside" 2>/dev/null
-        log_to "$UPDLOG" "中断事务的数据换入已就位，清理中转目录"
-        return 0
+      if [ -d "$DATADIR" ]; then
+        rmdir "$DATADIR" 2>/dev/null || return 1
       fi
-      # DATADIR 缺失或为空目录（ensure_layout 会建空目录）→ 完成换入。
-      [ -d "$DATADIR" ] && rmdir "$DATADIR" 2>/dev/null
-      if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
-        chmod 700 "$DATADIR" 2>/dev/null
-        rm -rf "$_ptd_aside" 2>/dev/null
-        log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data）"
-        return 0
+    else
+      [ -n "$_ptd_aside" ] || return 1
+      if [ -d "$DATADIR" ]; then
+        mv "$DATADIR" "$_ptd_aside" 2>/dev/null || return 1
       fi
-      # 换入失败：把升级后的现场原样放回，宁可不回滚也不留空 data。
-      if mv "$_ptd_aside" "$DATADIR" 2>/dev/null; then
-        log_to "$UPDLOG" "数据换入失败，已放回升级后的数据目录"
-        rm -rf "$_ptd_tmp" 2>/dev/null
-        return 0
+    fi
+    if ! mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
+      # 放回升级后的现场只是保全，不是回滚成功。保留 tmp 供下次重试。
+      if [ -d "$_ptd_aside" ] && [ ! -e "$DATADIR" ]; then
+        mv "$_ptd_aside" "$DATADIR" 2>/dev/null || true
       fi
-      log_to "$UPDLOG" "严重：数据现场在 $_ptd_aside，请手工恢复"
       return 1
     fi
-    # aside 不在：换入还没开始，$DATADIR 是升级后的数据 —— 把快照换进去。
-    _ptd_up="$_ptd_aside"
-    [ -n "$_ptd_up" ] || _ptd_up="$DATADIR.upgraded.$$"
-    if [ -e "$_ptd_up" ]; then _ptd_up="$DATADIR.upgraded.$$"; fi
-    if [ -d "$DATADIR" ]; then
-      if ! mv "$DATADIR" "$_ptd_up" 2>/dev/null; then
-        log_to "$UPDLOG" "无法移开升级后的数据目录，快照保留在 $_ptd_tmp，下次再试"
-        return 1
-      fi
-    fi
-    if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
-      chmod 700 "$DATADIR" 2>/dev/null
-      rm -rf "$_ptd_up" 2>/dev/null
-      log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data，first rename 未发生）"
-      return 0
-    fi
-    if [ -d "$_ptd_up" ] && [ ! -e "$DATADIR" ]; then
-      mv "$_ptd_up" "$DATADIR" 2>/dev/null
-    fi
-    log_to "$UPDLOG" "数据换入失败，现场已放回，快照保留在 $_ptd_tmp"
+  elif [ -n "$_ptd_tmp" ] && [ -d "$_ptd_aside" ] && [ -d "$DATADIR" ]; then
+    # 第二次 rename 已完成，tmp 被移动进 data；aside 保留到完成记录落盘。
+    :
+  else
+    # 路径丢失、仅剩 aside 或无法确认身份时保留记录，禁止猜测成功。
     return 1
   fi
-  # 只有 aside：数据被移开后、journal 都没来得及记 tmp 的极端窗口。
-  if [ -n "$_ptd_aside" ] && [ -d "$_ptd_aside" ] && [ ! -e "$DATADIR" ]; then
-    if mv "$_ptd_aside" "$DATADIR" 2>/dev/null; then
-      log_to "$UPDLOG" "已放回中断时被移开的数据目录"
-      return 0
-    fi
-  fi
+  chmod 700 "$DATADIR" 2>/dev/null
+  payload_data_mark_restored || return 1
+  rm -rf "$_ptd_aside" 2>/dev/null
+  log_to "$UPDLOG" "中断数据换入已完成并持久记录，禁止重复复制快照"
   return 0
 }
 
@@ -209,13 +201,17 @@ payload_txn_recover() {
   # 回填 TXN_* 全局：后续 payload_data_rollback 等函数重写 journal 时，
   # 本笔事务的字段不能被 "-" 顶掉（字段丢 = 恢复材料丢）。
   payload_txn_reload
+  PAYLOAD_TXID="$_ptr_txid"
   log_to "$UPDLOG" "发现中断的事务 journal（phase=$_ptr_phase txid=$_ptr_txid），开始收尾"
 
   # 数据目录的换入/移开独立于载荷：先收干净，别让后面的流程见到"空 data"。
   # 返回值必须看：换入失败还继续往下清 journal，等于把唯一的升级前快照
   # 当成已恢复（RR-04）。失败就先记下，收尾时保留 journal 等下次重试。
   _ptr_drc=0
-  payload_txn_recover_data "$_ptr_dtmp" "$_ptr_daside" || _ptr_drc=1
+  payload_txn_recover_data "$_ptr_dtmp" "$_ptr_daside" || {
+    log_to "$UPDLOG" "中断数据换入失败，保留 journal 与全部恢复材料"
+    return 1
+  }
 
   case "$_ptr_phase" in
     prepared|quiesced|snapshotted)
@@ -262,11 +258,20 @@ payload_txn_recover() {
     _ptr_cur_new=1
   fi
 
+  # 完成标记随旧目录原子换入，覆盖尚未来得及更新的全局 generation。
+  # 先写标记再 rename：任意指令间中断都能区分已回滚的目录与新版。
+  if [ "$_ptr_cur_ok" = "1" ] && [ -n "$_ptr_txid" ] && [ "$_ptr_txid" != "-" ] \
+     && [ "$(cat "$PAYLOAD/.a2a-rollback-txid" 2>/dev/null)" = "$_ptr_txid" ]; then
+    _ptr_cur_new=0
+  fi
+
   if [ "$_ptr_cur_new" = "0" ] && [ "$_ptr_cur_ok" = "1" ]; then
     # 已经是旧载荷（第一次 rename 前中断），无需再动。
     log_to "$UPDLOG" "当前载荷未参与切换，保持不动"
   elif [ -n "$_ptr_old" ] && [ -d "$_ptr_old" ] \
        && payload_validate "$_ptr_old" >/dev/null 2>&1; then
+    printf '%s\n' "$_ptr_txid" >"$_ptr_old/.a2a-rollback-txid.tmp" 2>/dev/null \
+      && mv -f "$_ptr_old/.a2a-rollback-txid.tmp" "$_ptr_old/.a2a-rollback-txid" 2>/dev/null || return 1
     if [ -e "$PAYLOAD" ]; then
       _ptr_bad="$APP_HOME/payload.interrupted.$$"
       rm -rf "$_ptr_bad" 2>/dev/null
@@ -284,7 +289,7 @@ payload_txn_recover() {
       log_to "$UPDLOG" "回滚中断载荷失败，旧版仍在 $_ptr_old"
       return 1
     fi
-  elif [ "$_ptr_cur_ok" = "1" ]; then
+  elif [ "$_ptr_cur_ok" = "1" ] && [ "$_ptr_cur_new" = "0" ]; then
     # 当前载荷完整但无法确认是新是旧、也没有事务旧目录：保守保留当前。
     log_to "$UPDLOG" "事务旧载荷不存在，当前载荷完整，保留当前载荷"
   else
@@ -297,7 +302,7 @@ payload_txn_recover() {
   fi
 
   # ---- 数据收尾：journal 明确记了快照才恢复（快照 txid 校验在函数内部）----
-  if [ "$_ptr_dsnap" = "1" ]; then
+  if [ "$_ptr_dsnap" = "1" ] && [ "${PAYLOAD_DATA_RECOVERED:-0}" != "1" ]; then
     PAYLOAD_TXID="$_ptr_txid"
     if ! payload_data_rollback; then
       log_to "$UPDLOG" "数据快照恢复失败，快照保留在 $BACKUPDIR/data-prev"
@@ -552,6 +557,10 @@ payload_activate_staged() { # $1=staging $2=事务标签
   # 未预设的场景现场生成，保证每次切换的 txid 唯一）。
   _pa_txid=${PAYLOAD_TXID:-}
   [ -n "$_pa_txid" ] || _pa_txid=$(payload_txid_new)
+  if [ "$_pa_tag" = "rollback" ] && [ -s "$A2A_TXN_JOURNAL" ]; then
+    printf '%s\n' "$_pa_txid" >"$_pa_tmp/.a2a-rollback-txid.tmp" 2>/dev/null \
+      && mv -f "$_pa_tmp/.a2a-rollback-txid.tmp" "$_pa_tmp/.a2a-rollback-txid" 2>/dev/null || return 1
+  fi
   # 问题 6：首次 rename 前写「切换进行中」标记（txid+时间戳+旧载荷去向），
   # 切换完成/失败后删除。中断恢复只认这个标记且要求已过期（>120s），
   # 绝不因载荷瞬时缺失就判定上一事务死亡。
@@ -948,15 +957,14 @@ payload_data_snapshot() { # $1=txid（日志/身份标记用）；前提：服�
 
 payload_data_rollback() { # 把快照恢复回 $DATADIR；调用者持 update 锁
   if [ ! -d "$BACKUPDIR/data-prev" ]; then
-    # 无快照时跳过并记日志，不算失败（数据目录本来就可能是空的）
-    log_to "$UPDLOG" "没有数据快照（$BACKUPDIR/data-prev），跳过数据回滚"
-    return 0
+    log_to "$UPDLOG" "数据快照缺失（$BACKUPDIR/data-prev），数据回滚失败，保留现场"
+    return 1
   fi
   # 快照身份校验：只恢复「本笔事务」的快照。txid 对不上说明快照是上一代
   # 更新留下的 —— 用它覆盖现在的数据等于静默回退用户数据，必须拒绝。
   _pdr_want=${PAYLOAD_TXID:-}
   _pdr_have=$(awk 'NR==1{print $1; exit}' "$BACKUPDIR/data-prev.txid" 2>/dev/null)
-  if [ -n "$_pdr_want" ] && [ -n "$_pdr_have" ] && [ "$_pdr_want" != "$_pdr_have" ]; then
+  if [ -n "$_pdr_want" ] && [ "$_pdr_want" != "$_pdr_have" ]; then
     log_to "$UPDLOG" "数据快照属于其它事务（期望 $_pdr_want，实际 $_pdr_have），跳过数据回滚"
     return 1
   fi
@@ -988,19 +996,15 @@ payload_data_rollback() { # 把快照恢复回 $DATADIR；调用者持 update �
     }
   fi
   if [ -d "$DATADIR" ] && ! mv "$DATADIR" "$_pdr_aside" 2>/dev/null; then
-    rm -rf "$_pdr_tmp" 2>/dev/null
-    echo "无法移开当前数据目录，数据回滚中止"
+    # journal 已引用 tmp：保留它，下一次恢复才能继续首个 rename。
+    echo "无法移开当前数据目录，保留快照副本等待重试"
     return 1
   fi
   if mv "$_pdr_tmp" "$DATADIR" 2>/dev/null; then
-    rm -rf "$_pdr_aside" 2>/dev/null
     chmod 700 "$DATADIR" 2>/dev/null
-    # 换入完成：清掉中转记账（phase 保持不变），后续中断不会重放这一步
-    if [ -s "$A2A_TXN_JOURNAL" ]; then
-      TXN_DATA_TMP=""
-      TXN_DATA_ASIDE=""
-      payload_txn_write "$(payload_txn_phase)" || true
-    fi
+    # 完成状态先落盘，aside 后清；落盘失败保留 aside 与原 journal 可重复收尾。
+    payload_data_mark_restored || return 1
+    rm -rf "$_pdr_aside" 2>/dev/null
     log_to "$UPDLOG" "数据已回滚到升级前快照（${_pdr_kb}KB）"
     return 0
   fi
@@ -1011,13 +1015,8 @@ payload_data_rollback() { # 把快照恢复回 $DATADIR；调用者持 update �
       echo "严重：升级后数据在 $_pdr_aside，请手工恢复"
     }
   fi
-  rm -rf "$_pdr_tmp" 2>/dev/null
-  # 现场放回成功才清记账；放不回去时保留 aside 指针给开机恢复补放。
-  if [ "$_pdr_back" = "1" ] && [ -s "$A2A_TXN_JOURNAL" ]; then
-    TXN_DATA_TMP=""
-    TXN_DATA_ASIDE=""
-    payload_txn_write "$(payload_txn_phase)" || true
-  fi
+  # 无论放回是否成功都保留 tmp 与 journal：恢复时按实际 rename 现场重试。
+  # 先删除 tmp 再改记账会留下不可恢复的中断窗口。
   return 1
 }
 

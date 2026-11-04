@@ -1,5 +1,5 @@
 diff --git a/desktop-tauri/mobile/src/App.tsx b/desktop-tauri/mobile/src/App.tsx
-index b8172d2..5f3b5ba 100644
+index ed1fbc4..2c901c1 100644
 --- a/desktop-tauri/mobile/src/App.tsx
 +++ b/desktop-tauri/mobile/src/App.tsx
 @@ -1,4 +1,4 @@
@@ -8,7 +8,7 @@ index b8172d2..5f3b5ba 100644
  import { AppFrame } from '@ui'
  import { store, useStore, bootstrapTheme } from './state/store'
  import { TabBar, Toast, AuthGate, ThemeSync } from './components/Shell'
-@@ -25,6 +25,8 @@ import type { ScreenId } from './lib/routes'
+@@ -26,6 +26,8 @@ import type { ScreenId } from './lib/routes'
  import { NavBar } from './components/NavBar'
  import { t } from './i18n'
  import { RequiredUpdateGate } from './components/RequiredUpdateGate'
@@ -17,7 +17,7 @@ index b8172d2..5f3b5ba 100644
  
  /**
   * 路由表。
-@@ -92,6 +94,42 @@ export function App() {
+@@ -94,6 +96,42 @@ export function App() {
      // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [])
  
@@ -62,10 +62,10 @@ index b8172d2..5f3b5ba 100644
     *
 diff --git a/desktop-tauri/mobile/src/api/switches.ts b/desktop-tauri/mobile/src/api/switches.ts
 new file mode 100644
-index 0000000..e64fdc6
+index 0000000..1410d05
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/api/switches.ts
-@@ -0,0 +1,209 @@
+@@ -0,0 +1,210 @@
 +/**
 + * 网关功能开关：与桌面面板「设置 → 网关」里的那组开关**同一批端点、同一批字段**。
 + *
@@ -254,20 +254,21 @@ index 0000000..e64fdc6
 +/**
 + * 写一个开关。返回**同端点上所有开关**的新值（响应体是整份状态）。
 + *
-+ * 调用方负责乐观更新与失败回滚：这里只在网络/接口失败时抛错。
++ * 只有目标字段为 boolean 且严格等于请求值才算确认；缺字段、类型错误、反向回显
++ * 与网络失败一样抛错，由调用方删除乐观值并显示未知，绝不合成服务端确认。
 + */
 +export async function saveSwitch(id: SwitchId, next: boolean): Promise<SwitchState> {
 +  const def = SWITCH_DEFS.find(item => item.id === id)
-+  if (!def) return {}
++  if (!def) throw new Error(`Unknown switch: ${id}`)
++  if (typeof next !== 'boolean') throw new Error(`Invalid switch value: ${id}`)
 +  const body = await apiCall(def.path, { method: 'PUT', body: { [def.field]: next } })
++  if (pick(body, def) !== next) throw new Error(`Switch write was not confirmed: ${id}`)
 +  const state: SwitchState = {}
 +  for (const item of SWITCH_DEFS) {
 +    if (item.path !== def.path) continue
 +    const value = pick(body, item)
 +    if (value !== undefined) state[item.id] = value
 +  }
-+  // 后端回了 200 但响应体里没有这个字段（老版本）：按用户拨的值显示，别让开关弹回去
-+  if (state[id] === undefined) state[id] = next
 +  return state
 +}
 +
@@ -277,10 +278,10 @@ index 0000000..e64fdc6
 +}
 diff --git a/desktop-tauri/mobile/src/components/GatewaySwitches.tsx b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
 new file mode 100644
-index 0000000..cee4f08
+index 0000000..aed51a5
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
-@@ -0,0 +1,172 @@
+@@ -0,0 +1,182 @@
 +import { useCallback, useEffect, useRef, useState } from 'react'
 +import { Card, Switch } from '@ui'
 +import { SectionHead } from './ui'
@@ -306,8 +307,8 @@ index 0000000..cee4f08
 + *    所以每轮回读都是**整份替换**（不是把新值并进旧对象）。
 + * 2. **写是串行的。** 同一端点上连点两个开关，后端返回的是整份状态；并发写会让
 + *    先发的响应覆盖后发的。这里用一条 promise 链把 PUT 排队。
-+ * 3. **在途的值不被回读覆盖。** 5 秒轮询可能在 PUT 落地前回来，把用户刚拨的值
-+ *    冲掉。pending 表记着在途意图，回读时用它盖住对应键；PUT 回来就清掉。
++ * 3. **读不能跨越写屏障。** 写意图入队、写完成（含失败）都推进 epoch，丢弃跨越
++ *    任一屏障的旧 GET；pending 隔离在途意图，React 延迟 updater 也要复查代次。
 + */
 +export function GatewaySwitches() {
 +  const [state, setState] = useState<SwitchState>({})
@@ -317,7 +318,7 @@ index 0000000..cee4f08
 +
 +  /** 在途写入：id → 目标值。回读时盖住这些键 */
 +  const pending = useRef<Map<SwitchId, boolean>>(new Map())
-+  /** 回读代次：后发的请求回来时，先发的作废 */
++  /** 读写代次：后发 GET、写入队和写结算都会使旧 GET 作废 */
 +  const epoch = useRef(0)
 +  /** 写队列：PUT 串行 */
 +  const chain = useRef<Promise<void>>(Promise.resolve())
@@ -328,7 +329,9 @@ index 0000000..cee4f08
 +    const next = await fetchSwitches()
 +    if (!alive.current || mine !== epoch.current) return
 +    // 整份替换：这一轮没返回的键 = 该端点失败 = 未知（渲染成禁用）
-+    setState(() => {
++    setState(prev => {
++      // React 可以稍后才执行 updater；从 await 到提交之间也可能开始/完成一次写。
++      if (!alive.current || mine !== epoch.current) return prev
 +      const merged: SwitchState = {}
 +      for (const id of Object.keys(next) as SwitchId[]) merged[id] = next[id]
 +      for (const [id, value] of pending.current) merged[id] = value
@@ -359,6 +362,9 @@ index 0000000..cee4f08
 +  }, [load])
 +
 +  const toggle = (id: SwitchId, next: boolean) => {
++    // 同键重复事件不再排队；不同键仍可进入全局串行队列。
++    if (pending.current.has(id)) return
++    ++epoch.current
 +    pending.current.set(id, next)
 +    setError('')
 +    setState(prev => ({ ...prev, [id]: next }))
@@ -367,11 +373,14 @@ index 0000000..cee4f08
 +      try {
 +        const patch = await saveSwitch(id, next)
 +        if (!alive.current) return
++        // 在入队 updater 前固定隔离集合；finally 清 pending 不能改变延迟提交的语义。
++        const protectedIds = new Set(pending.current.keys())
++        protectedIds.delete(id)
 +        setState(prev => {
 +          const merged: SwitchState = { ...prev }
 +          for (const [key, value] of Object.entries(patch) as [SwitchId, boolean][]) {
-+            // 别的键可能正被用户拨动，不能被这次响应盖回去
-+            if (!pending.current.has(key)) merged[key] = value
++            // 当前目标已由 API 严格确认；其余在途键保持各自意图。
++            if (!protectedIds.has(key) && (key === id || !pending.current.has(key))) merged[key] = value
 +          }
 +          return merged
 +        })
@@ -386,6 +395,8 @@ index 0000000..cee4f08
 +        })
 +        setError(t('开关保存失败，请检查网关是否可达'))
 +      } finally {
++        // 包含 PUT 在途期间发出的 GET：成功/失败结算后都不能再用其旧快照。
++        ++epoch.current
 +        pending.current.delete(id)
 +        if (alive.current) {
 +          setBusy(prev => {

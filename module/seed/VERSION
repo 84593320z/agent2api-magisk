@@ -1,7 +1,9 @@
 # 这里写的是 seed/agent2api-server 自报的版本，必须与实际二进制一致。
 # 二进制没有重编时不能跟着模块版本一起跳号，否则 a2a status 和
 # payload_install_from 的版本比较全部建立在假数据上（R18）。
-ver=3.4.0
-built=2026-11-04T03:00:00Z
+ver=3.4.1
+built=2026-11-04T09:17:30Z
 arch=aarch64
-source=84593320z/agent2api-musl (CI musl)
+source=aimod-cc/Agent2API v3.4.1 official release (glibc dynamic; published timestamp)
+commit=3ff4b8215d0d65c3451ca74923e90964ed7dbf59
+archive_sha256=d494e333a697ca9b48f17fc84cd10abdbe5f113a2900aba372fdac3503971e1c

@@ -1,0 +1,70 @@
+{
+  "input": "E:/AI/tmp/agent2api-audit-20261104/reverify/repair/apk-mod/src/components/GatewaySwitches.tsx",
+  "sha256": "ed1ab239da41fc68d1e53a0eaafbb93a793c2356231df056e1b53fb35d5ab79a",
+  "results": [
+    {
+      "name": "RR08 failed endpoint => unknown disabled",
+      "pass": true,
+      "state": {},
+      "ready": true,
+      "disabled": true
+    },
+    {
+      "name": "late GET after completed PUT rejected",
+      "pass": true,
+      "beforeLateGet": true,
+      "afterLateGet": true,
+      "epoch": 3,
+      "pendingSize": 0
+    },
+    {
+      "name": "different-key PUT serialized and pending preserved",
+      "pass": true,
+      "firstOnly": true,
+      "during": true,
+      "state": {
+        "sink": true,
+        "breaker": true
+      }
+    },
+    {
+      "name": "out-of-order GET rejected",
+      "pass": true,
+      "state": {
+        "debug": true
+      }
+    },
+    {
+      "name": "pending survives failed endpoint; write failure => unknown",
+      "pass": true,
+      "during": true,
+      "state": {},
+      "error": "开关保存失败，请检查网关是否可达"
+    },
+    {
+      "name": "React deferred updater retains confirmed value",
+      "pass": true,
+      "state": {
+        "debug": true
+      }
+    },
+    {
+      "name": "saveSwitch empty HTTP200",
+      "pass": true,
+      "threw": true
+    },
+    {
+      "name": "saveSwitch opposite echo",
+      "pass": true,
+      "threw": true
+    },
+    {
+      "name": "saveSwitch valid echo",
+      "pass": true,
+      "threw": false,
+      "result": {
+        "debug": true
+      }
+    }
+  ]
+}

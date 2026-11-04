@@ -432,7 +432,11 @@ log_to "$SUPLOG" "======== 守护进程启动 pid=$$ 端口=$PORT ========"
 # 启动会竞争同一次恢复，且与活跃更新事务无互斥）。恢复逻辑本身是证据驱动
 # 的，临界区在 update 锁内（见 common.sh 的 payload_recover_interrupted）。
 # F-002：runtime 模式 —— journal 的主人（更新器）还活着时绝不插手。
-payload_recover_interrupted runtime
+if ! payload_recover_interrupted runtime; then
+  log_to "$SUPLOG" "中断事务恢复失败，拒绝启动服务端，保留现场待修复"
+  cleanup
+  return 1
+fi
 
 # cgroup 逃逸：从 app 的 cgroup 里挪出来，避免被 app 的内存限制/冻结连坐。
 # 必须发生在拉起 server 子进程之前（子进程继承本进程的 cgroup 归属）；

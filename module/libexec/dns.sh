@@ -75,8 +75,7 @@ dns_log_policy() {
     else
       log_to "$SUPLOG" "当前未检测到 VPN；DNS 使用出口接口/系统可见解析器"
     fi
-    printf '%s
-' "$_vpn" >"$DNS_VPN_CACHE" 2>/dev/null
+    # 这里仅记日志；已发布 DNS 的身份只能由 dns_publish_cache 推进。
   fi
 }
 
@@ -254,6 +253,7 @@ dns_write() {
   fi
   case "$_mode" in auto|system|static) ;; *) return 1 ;; esac
 
+  _wid=$(dns_net_identity 2>/dev/null)
   _tmp="$TMPD/resolv.$$"
   _final="$TMPD/resolv.final.$$"
   rm -f "$_tmp" "$_final" 2>/dev/null
@@ -295,7 +295,7 @@ dns_write() {
       # 只有 auto 能保留最后可用配置，或使用静态地址作首次启动兜底。
       if ! awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$_tmp" 2>/dev/null; then
         _dns_cache_hit=0
-        if [ -s "$DNS_CACHE" ] && awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$DNS_CACHE" 2>/dev/null; then
+        if dns_cache_matches "$_wid" && awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$DNS_CACHE" 2>/dev/null; then
           # F-008：缓存有效时把缓存内容当采样结果，走正常发布路径（验证→
           # 去重→原子落盘→回写缓存）。旧实现 rm _tmp 后直接 return 0，
           # 只保住了“不写坏文件”，没恢复“live 文件缺失”：resolv 被删/断电
@@ -359,24 +359,20 @@ dns_write() {
   chmod 644 "$DNSFILE.new" 2>/dev/null || {
     rm -f "$_final" "$DNSFILE.new" 2>/dev/null; return 1;
   }
-  mv -f "$DNSFILE.new" "$DNSFILE" 2>/dev/null || {
+  [ ! -d "$DNSFILE" ] && mv -f "$DNSFILE.new" "$DNSFILE" 2>/dev/null || {
     rm -f "$_final" "$DNSFILE.new" 2>/dev/null; return 1;
   }
-  cp -f "$_final" "$DNS_CACHE" 2>/dev/null || { rm -f "$_final" 2>/dev/null; return 1; }
-  chmod 644 "$DNS_CACHE" 2>/dev/null || { rm -f "$_final" 2>/dev/null; return 1; }
 
   _want=$(sed -n 's/^nameserver[[:space:]]*\([0-9A-Fa-f:.]*\).*/\1/p' "$_final" 2>/dev/null | head -n 1)
   _got=$(sed -n 's/^nameserver[[:space:]]*\([0-9A-Fa-f:.]*\).*/\1/p' "$DNSFILE" 2>/dev/null | head -n 1)
-  rm -f "$_final" 2>/dev/null
   if [ -z "$_got" ] || [ "$_want" != "$_got" ]; then
+    rm -f "$_final" 2>/dev/null
     log_to "$SUPLOG" "警告：$DNSFILE 写入后内容不符（want=${_want:-none} got=${_got:-none}）"
     return 1
   fi
-  _iface=$(dns_default_iface 2>/dev/null)
-  printf '%s
-' "${_iface:-unknown}" >"$DNS_ACTIVE_CACHE" 2>/dev/null
-  dns_log_policy
-  log_to "$SUPLOG" "DNS 已更新（mode=$_mode, iface=${_iface:-unknown}, 首选=$_got）"
+  dns_publish_cache "$_final" "$_wid" || { rm -f "$_final"; return 1; }
+  rm -f "$_final" 2>/dev/null
+  log_to "$SUPLOG" "DNS 已更新（mode=$_mode, identity=$_wid, 首选=$_got）"
   return 0
 }
 
@@ -519,7 +515,120 @@ dns_opts_line() { # $1=noprobe 时只读缓存（开机早期用），否则现�
   fi
 }
 
-dns_apply_list() { # $1=候选（空格分隔）；去重、限 6 条、写入并回填缓存
+# 缓存内容和完整身份在同一个文件里原子发布。三个旧路径只是已发布身份的
+# 镜像，供 refresh 检测变化；绝不能把“刚观察到的网络”先写进这些路径。
+# 子 shell 隔离辅助变量（本模块不依赖非 POSIX 的 local）。
+dns_publish_cache() ( # $1=已成功写入的配置 $2=采样时的完整身份
+  _pc_src=$1; _pc_id=$2
+  [ "$(dns_net_identity 2>/dev/null)" = "$_pc_id" ] || return 1
+  set -- $_pc_id
+  [ "$#" = 3 ] || return 1
+  _pc_if=$1; _pc_vpn=$2; _pc_net=$3
+  _pc_stage="$TMPD/dns.publish.$$"
+  mkdir "$_pc_stage" 2>/dev/null || return 1
+  if ! mkdir "$DNS_CACHE.publish.lock" 2>/dev/null; then
+    _pc_owner=$(cat "$DNS_CACHE.publish.lock/pid" 2>/dev/null)
+    case "$_pc_owner" in ''|*[!0-9]*) rm -rf "$_pc_stage"; return 1 ;; esac
+    if kill -0 "$_pc_owner" 2>/dev/null; then rm -rf "$_pc_stage"; return 1; fi
+    # 上个发布者已退出，回收它的门闩后再竞争；cache 内容自带身份，不会洗白。
+    rm -f "$DNS_CACHE.publish.lock/pid" 2>/dev/null
+    rmdir "$DNS_CACHE.publish.lock" 2>/dev/null \
+      && mkdir "$DNS_CACHE.publish.lock" 2>/dev/null || { rm -rf "$_pc_stage"; return 1; }
+  fi
+  trap 'rm -f "$DNS_CACHE.publish.lock/pid"; rmdir "$DNS_CACHE.publish.lock" 2>/dev/null' 0
+  printf '%s' "$$" >"$DNS_CACHE.publish.lock/pid" || { rm -rf "$_pc_stage"; return 1; }
+  _pc_saved=0
+  # 先保存元数据的精确初始状态；目标是目录等异常时，发布尚未开始。
+  for _pc_path in "$DNS_ACTIVE_CACHE" "$DNS_VPN_CACHE" "$DNS_NETID_CACHE"; do
+    _pc_saved=$((_pc_saved + 1))
+    if [ -e "$_pc_path" ]; then
+      [ -f "$_pc_path" ] && cp -f "$_pc_path" "$_pc_stage/old.$_pc_saved" 2>/dev/null || {
+        rm -rf "$_pc_stage"; return 1;
+      }
+    fi
+  done
+  # 缓存头是权威身份；旧缓存无头时只兼容完整且匹配的三个旧字段。
+  if ! { printf '# agent2api-dns-identity %s\n' "$_pc_id" \
+         && sed '/^# agent2api-dns-identity /d' "$_pc_src"; } >"$_pc_stage/cache" \
+     || ! chmod 644 "$_pc_stage/cache" \
+     || ! cp -f "$_pc_stage/cache" "$DNS_CACHE.new.$$" \
+     || ! chmod 644 "$DNS_CACHE.new.$$"; then
+    rm -f "$DNS_CACHE.new.$$"; rm -rf "$_pc_stage"; return 1
+  fi
+  printf '%s' "$_pc_if" >"$_pc_stage/new.1" \
+    && printf '%s' "$_pc_vpn" >"$_pc_stage/new.2" \
+    && printf '%s' "$_pc_net" >"$_pc_stage/new.3" || {
+      rm -f "$DNS_CACHE.new.$$"; rm -rf "$_pc_stage"; return 1;
+    }
+  _pc_i=0; _pc_ok=1
+  for _pc_path in "$DNS_ACTIVE_CACHE" "$DNS_VPN_CACHE" "$DNS_NETID_CACHE"; do
+    _pc_i=$((_pc_i + 1))
+    if ! cp -f "$_pc_stage/new.$_pc_i" "$_pc_path.new.$$" 2>/dev/null \
+       || ! chmod 644 "$_pc_path.new.$$" 2>/dev/null \
+       || ! mv -f "$_pc_path.new.$$" "$_pc_path" 2>/dev/null; then
+      _pc_ok=0; break
+    fi
+  done
+  # mv -T 不属于 POSIX；显式拒绝目录，避免 mv 把临时文件放进目录后报成功。
+  if [ "$_pc_ok" = 1 ] && [ ! -d "$DNS_CACHE" ] \
+     && [ "$(dns_net_identity 2>/dev/null)" = "$_pc_id" ] \
+     && mv -f "$DNS_CACHE.new.$$" "$DNS_CACHE" 2>/dev/null; then
+    rm -rf "$_pc_stage"
+    return 0
+  fi
+  # cache 尚未提交：还原 metadata，不把失败候选伪记为新网络的已发布配置。
+  _pc_i=0
+  for _pc_path in "$DNS_ACTIVE_CACHE" "$DNS_VPN_CACHE" "$DNS_NETID_CACHE"; do
+    _pc_i=$((_pc_i + 1))
+    rm -f "$_pc_path.new.$$" 2>/dev/null
+    if [ -f "$_pc_stage/old.$_pc_i" ]; then
+      cp -f "$_pc_stage/old.$_pc_i" "$_pc_path.restore.$$" 2>/dev/null \
+        && mv -f "$_pc_path.restore.$$" "$_pc_path" 2>/dev/null \
+        || log_to "$SUPLOG" "DNS 身份元数据还原失败：$_pc_path"
+    else
+      rm -f "$_pc_path" 2>/dev/null
+    fi
+  done
+  rm -f "$DNS_CACHE.new.$$"; rm -rf "$_pc_stage"
+  return 1
+)
+
+# lastgood 同样将内容与身份装进一个原子文件；.id 仅保留给旧工具观察。
+# 新格式读取不依赖 .id，旧格式仍要求匹配的 .id，避免 split 写入窗口。
+dns_save_lastgood() ( # $1=已验证的 resolv $2=身份
+  _lg_file="$A2A_LIVE/dns.lastgood"
+  _lg_tmp="$_lg_file.new.$$"
+  if ! { printf '# agent2api-dns-identity %s\n' "$2" \
+         && awk '$1=="nameserver" {print $2}' "$1"; } >"$_lg_tmp" \
+     || ! chmod 644 "$_lg_tmp" \
+     || [ -d "$_lg_file" ] \
+     || ! mv -f "$_lg_tmp" "$_lg_file"; then
+    rm -f "$_lg_tmp"; return 1
+  fi
+  if ! printf '%s\n' "$2" >"$_lg_file.id.new.$$" \
+     || ! chmod 644 "$_lg_file.id.new.$$" \
+     || [ -d "$_lg_file.id" ] \
+     || ! mv -f "$_lg_file.id.new.$$" "$_lg_file.id"; then
+    rm -f "$_lg_file.id.new.$$"
+    log_to "$SUPLOG" "lastgood 已原子记录完整身份，兼容 .id 镜像写入失败"
+  fi
+  return 0
+)
+
+dns_cache_matches() { # $1=当前完整身份；缺任一字段、跨 iface/VPN/netId 均拒绝
+  [ -s "$DNS_CACHE" ] && [ ! -d "$DNS_CACHE.publish.lock" ] || return 1
+  _cm_if=$(cat "$DNS_ACTIVE_CACHE" 2>/dev/null)
+  _cm_vpn=$(cat "$DNS_VPN_CACHE" 2>/dev/null)
+  _cm_net=$(cat "$DNS_NETID_CACHE" 2>/dev/null)
+  [ -n "$_cm_if" ] && [ -n "$_cm_vpn" ] && [ -n "$_cm_net" ] || return 1
+  [ "$_cm_if $_cm_vpn $_cm_net" = "$1" ] || return 1
+  _cm_id=$(sed -n 's/^# agent2api-dns-identity //p' "$DNS_CACHE" 2>/dev/null)
+  [ ! -d "$DNS_CACHE.publish.lock" ] || return 1
+  [ -z "$_cm_id" ] || [ "$_cm_id" = "$1" ]
+}
+
+dns_apply_list() { # $1=候选；$2=trial 时只试写 live，验活通过后再提交缓存/身份
+  _aid=$(dns_net_identity 2>/dev/null)
   _al=""
   for _s in $1; do
     dns_ip_usable "$_s" || continue
@@ -534,24 +643,19 @@ dns_apply_list() { # $1=候选（空格分隔）；去重、限 6 条、写入�
     printf '%s\n' $_al | head -n 6 | sed 's/^/nameserver /'
     dns_opts_line || exit 1
   } >"$_at" 2>/dev/null || { rm -f "$_at"; return 1; }
-  chmod 644 "$_at" 2>/dev/null
+  chmod 644 "$_at" 2>/dev/null || { rm -f "$_at"; return 1; }
   # 必须是 rename 级原子替换。cp 直接覆盖会先把目标截断再写，
   # 正在读 resolv.conf 的解析器可能读到半截文件（nameserver 行被切断），
   # 表现就是随机解析失败。
   if ! cp -f "$_at" "$DNSFILE.new.$$" 2>/dev/null; then
     rm -f "$_at" "$DNSFILE.new.$$"; return 1
   fi
-  chmod 644 "$DNSFILE.new.$$" 2>/dev/null
-  mv -f "$DNSFILE.new.$$" "$DNSFILE" 2>/dev/null || { rm -f "$_at" "$DNSFILE.new.$$"; return 1; }
-  cp -f "$_at" "$DNS_CACHE" 2>/dev/null
+  chmod 644 "$DNSFILE.new.$$" 2>/dev/null || { rm -f "$_at" "$DNSFILE.new.$$"; return 1; }
+  [ ! -d "$DNSFILE" ] && mv -f "$DNSFILE.new.$$" "$DNSFILE" 2>/dev/null || { rm -f "$_at" "$DNSFILE.new.$$"; return 1; }
+  if [ "${2:-}" != trial ]; then
+    dns_publish_cache "$_at" "$_aid" || { rm -f "$_at"; return 1; }
+  fi
   rm -f "$_at" 2>/dev/null
-  # 变更检测依赖这两个缓存；dns_ensure 走的是本函数，必须在这里同步，
-  # 否则 dns_refresh_if_changed 永远认为"网络变了"，每轮都重写一遍。
-  _ai=$(dns_default_iface 2>/dev/null)
-  printf '%s' "${_ai:-unknown}" >"$DNS_ACTIVE_CACHE" 2>/dev/null
-  _av=0
-  dns_vpn_active 2>/dev/null && _av=1
-  printf '%s' "$_av" >"$DNS_VPN_CACHE" 2>/dev/null
   return 0
 }
 
@@ -596,32 +700,34 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
   _emode=$(cfg_get dns_mode auto)
   if [ "$_emode" != "auto" ]; then dns_write "$_emode"; return $?; fi
   [ -d "$TMPD" ] || mkdir -p "$TMPD" 2>/dev/null
+  _eid=$(dns_net_identity 2>/dev/null)
   _esys=$(dns_collect_system 2>/dev/null \
           | sed -n 's/^nameserver[[:space:]]*\([^[:space:]]*\).*/\1/p' \
           | awk '{printf "%s ", $1}')
   _esl=$(dns_static_list)
-  _eid=$(dns_net_identity 2>/dev/null)
+  # 采样跨过一次网络切换时整轮失败，不把前一个网络的样本绑定到后一个身份。
+  [ "$(dns_net_identity 2>/dev/null)" = "$_eid" ] || return 1
   # 缓存是「上次发布成功」的副本，必须带上当时的网络身份才允许兜底：
   # 换到 VPN/别的 Wi-Fi 后，缓存里很可能是旧 LAN 的解析器，直接拿来用
   # 就是把流量指回原网络（RR-06 的同一个坑，换了个入口）。
   _ecache=""
-  _eid_net=${_eid##* }
-  _ecnet=$(cat "$DNS_NETID_CACHE" 2>/dev/null)
   if [ -s "$DNS_CACHE" ]; then
-    if [ -n "$_ecnet" ] && [ "$_ecnet" = "$_eid_net" ]; then
+    if dns_cache_matches "$_eid"; then
       _ecache=$(dns_cache_list 2>/dev/null)
     else
-      log_to "$SUPLOG" "缓存里的 DNS 属于别的网络（${_ecnet:-unknown} != $_eid_net），不采用"
+      log_to "$SUPLOG" "缓存里的 DNS 完整身份缺失或属于别的网络（当前 $_eid），不采用"
     fi
   fi
   _elgf="$A2A_LIVE/dns.lastgood"
   _elgid="$A2A_LIVE/dns.lastgood.id"
   _elgl=""
   if [ -s "$_elgf" ]; then
-    if [ -s "$_elgid" ] && [ "$(cat "$_elgid" 2>/dev/null)" = "$_eid" ]; then
-      _elgl=$(awk '{printf "%s ", $1}' "$_elgf" 2>/dev/null)
+    _elg_identity=$(sed -n 's/^# agent2api-dns-identity //p' "$_elgf" 2>/dev/null)
+    [ -n "$_elg_identity" ] || _elg_identity=$(cat "$_elgid" 2>/dev/null)
+    if [ -n "$_elg_identity" ] && [ "$_elg_identity" = "$_eid" ]; then
+      _elgl=$(awk '$1 !~ /^#/ {printf "%s ", $1}' "$_elgf" 2>/dev/null)
     else
-      log_to "$SUPLOG" "上一条 lastgood DNS 属于别的网络（$(cat "$_elgid" 2>/dev/null) != $_eid），本轮不采用"
+      log_to "$SUPLOG" "上一条 lastgood DNS 属于别的网络（$_elg_identity != $_eid），本轮不采用"
       rm -f "$_elgf" "$_elgid" 2>/dev/null
     fi
   fi
@@ -665,12 +771,10 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
   fi
   for _ecand in "$_e1" "$_e2" "$_e3" "$_e4" "$_e5"; do
     [ -n "$_ecand" ] || continue
-    dns_apply_list "$_ecand" || continue
-    if dns_liveness_ok; then
-      printf '%s\n' $_ecand | head -n 6 >"$_elgf" 2>/dev/null
-      chmod 644 "$_elgf" 2>/dev/null
-      printf '%s\n' "$_eid" >"$_elgid" 2>/dev/null
-      chmod 644 "$_elgid" 2>/dev/null
+    dns_apply_list "$_ecand" trial || continue
+    if dns_liveness_ok && dns_publish_cache "$DNSFILE" "$_eid"; then
+      # cache 已提交，lastgood 是可选加速记忆：失败保留旧原子记录并如实记日志。
+      dns_save_lastgood "$DNSFILE" "$_eid" || log_to "$SUPLOG" "DNS 已发布，lastgood 原子记录失败，保留旧记忆"
       log_to "$SUPLOG" "DNS 生效并验证通过：$(printf '%s ' $_ecand)"
       # R14：成功也要收拾临时备份，否则每次 DNS 生效都往 tmp 里留一份整文件副本。
       rm -f "$_eback" 2>/dev/null
@@ -686,18 +790,13 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
        && chmod 644 "$DNSFILE.restore.$$" 2>/dev/null \
        && mv -f "$DNSFILE.restore.$$" "$DNSFILE" 2>/dev/null \
        && dns_file_same "$DNSFILE" "$_eback"; then
-      # DNS_CACHE 是“最后可用配置”的副本，跟着还原后的现役文件走（与
-      # dns_write / dns_apply_list 成功路径保持同一约定）；回写失败只警告。
-      if cp -f "$DNSFILE" "$DNS_CACHE" 2>/dev/null; then
-        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置并校验一致（$(dns_probe)）"
-      else
-        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置并校验一致；缓存副本回写失败（$DNS_CACHE）"
-      fi
+      # 所有候选失败：cache 与身份仍属于上一次成功发布，不从旧 live 重建。
+      log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置并校验一致（$(dns_probe)）"
     else
       rm -f "$DNSFILE.restore.$$" 2>/dev/null
       # 整文件还原失败（或还原后读回比对不符）：降级为仅回填原 nameserver。
       # 降级路径同样要核对结果，失败就如实报错，不能再说“保留现有配置”。
-      if [ -n "$_eorig" ] && dns_apply_list "$_eorig" && [ -s "$DNSFILE" ]; then
+      if [ -n "$_eorig" ] && dns_apply_list "$_eorig" trial && [ -s "$DNSFILE" ]; then
         log_to "$SUPLOG" "DNS 分级兜底均未通过验活，整文件还原失败，已降级回填原 nameserver（$(dns_probe)）"
       else
         log_to "$SUPLOG" "DNS 分级兜底均未通过验活，整文件还原与降级回填均失败：$DNSFILE 可能残留失败候选，请人工检查"
@@ -775,9 +874,12 @@ dns_refresh_if_changed() {
   else
     log_to "$SUPLOG" "DNS 定期验活失败，进入分级兜底"
   fi
-  printf '%s' "$_now_s" >"$_stamp" 2>/dev/null
-  printf '%s' "$_new_net" >"$DNS_NETID_CACHE" 2>/dev/null
-  dns_ensure
+  # 检测不等于发布：ensure 成功后才推进身份和成功验活时间戳。
+  if dns_ensure; then
+    printf '%s' "$_now_s" >"$_stamp" 2>/dev/null
+    return 0
+  fi
+  return 1
 }
 
 # gai.conf：ipv4_preferred=1 时保持 IPv4 优先。

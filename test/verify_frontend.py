@@ -1,68 +1,64 @@
 # -*- coding: utf-8 -*-
-"""RR-08 回归：开关页 load() 不得复用上一次的已知状态。
+"""Verify the split frontend snapshot and execute real-source behavior regressions.
 
-现场：第一次 GET 成功（debug=true），第二次 GET 因为端点 500 返回空对象。
-旧实现 `setState(current => ({...current, ...next}))` 会保留 debug=true，
-开关看起来仍然可点，用户拨下去必然失败；正确行为是未返回的键变成
-undefined，由 render 端 disabled 拦掉。
+Run: python test/verify_frontend.py
+Requires Node >=22.13 with node:module.stripTypeScriptTypes. Set NODE_BINARY to
+select a runtime. Missing source/runtime is a failure, never a silent SKIP.
 """
-import re
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
 TEST_DIR = Path(__file__).resolve().parent
-PAGE = TEST_DIR.parent / 'apk-mod' / 'src' / 'pages' / 'SettingsPage.tsx'
-
-checks = []
-
-
-def ck(name, ok, detail=''):
-    checks.append((name, bool(ok), detail))
-
-
-def slice_fn(src: str, start_marker: str, end_marker: str) -> str:
-    i = src.find(start_marker)
-    if i < 0:
-        return ''
-    j = src.find(end_marker, i)
-    if j < 0:
-        return ''
-    return src[i:j + len(end_marker)]
+ROOT = TEST_DIR.parent
+SRC = ROOT / 'apk-mod' / 'src'
 
 
 def main() -> int:
-    if not PAGE.is_file():
-        print('SKIP 缺少 %s' % PAGE)
-        return 0
-    src = PAGE.read_text(encoding='utf-8')
+    checks = []
 
-    body = slice_fn(src, 'const load = useCallback(async (silent: boolean) => {', '}, [])')
-    ck('找到 GatewaySwitches.load', bool(body))
-    if body:
-        # 注释里会引用旧实现（`{...current}`），只看代码本身
-        code = ' '.join(line.split('//')[0] for line in body.splitlines())
-        ck('load 不再展开旧 current',
-           '{ ...current }' not in code and '{...current}' not in code,
-           'load 代码里仍出现 {...current}')
-        ck('load 从空对象构造', re.search(r'const merged:\s*SwitchState\s*=\s*\{\s*\}', body) is not None)
-        ck('load 用服务端结果覆盖', 'for (const key of Object.keys(next)' in body)
-        ck('load 保留在途乐观值', 'pending.current' in body)
-        # 关键语义：未返回的键必须消失（不是复制旧值）
-        ck('load 丢弃未返回键', 'merged[key] = pending.current' not in body)
+    def ck(name, ok):
+        checks.append(bool(ok))
+        print(('  ok   ' if ok else '  FAIL ') + name, flush=True)
 
-    ck('未就绪/未知状态禁用开关',
-       'disabled={!ready || value === undefined || busyIds.size > 0}' in src,
-       'render 端的 disabled 表达式不匹配')
+    required = [SRC / 'components' / 'GatewaySwitches.tsx', SRC / 'api' / 'switches.ts',
+                SRC / 'pages' / 'SettingsPage.tsx', ROOT / 'apk-mod' / 'a2a-mobile-mod.patch',
+                TEST_DIR / 'verify_frontend_runtime.mjs']
+    for file in required:
+        ck('required source: ' + str(file.relative_to(ROOT)), file.is_file())
+    if not all(checks):
+        return 1
+    page = (SRC / 'pages' / 'SettingsPage.tsx').read_text(encoding='utf-8')
+    ck('SettingsPage uses split GatewaySwitches component',
+       "from '../components/GatewaySwitches'" in page and '<GatewaySwitches' in page)
 
-    total = len(checks)
-    passed = sum(1 for _, ok, _ in checks if ok)
-    for name, ok, detail in checks:
-        if ok:
-            print('  ok   %s' % name)
-        else:
-            print('  FAIL %s %s' % (name, detail))
-    print('\n=== %d checked / %d passed / %d failed ===' % (total, passed, total - passed))
-    return 0 if passed == total else 1
+    # Integrity checks complement (not replace) the dynamic state/API tests below.
+    patch = (ROOT / 'apk-mod' / 'a2a-mobile-mod.patch').read_text(encoding='utf-8').splitlines(keepends=True)
+    for rel in ('api/switches.ts', 'components/GatewaySwitches.tsx', 'lib/discover.ts'):
+        marker = '+++ b/desktop-tauri/mobile/src/' + rel
+        positions = [i for i, line in enumerate(patch) if line.rstrip() == marker]
+        matches = False
+        if len(positions) == 1:
+            start = positions[0]
+            end = next((i for i in range(start + 1, len(patch)) if patch[i].startswith('diff --git ')), len(patch))
+            added = ''.join(line[1:] for line in patch[start + 1:end] if line.startswith('+'))
+            matches = added == (SRC / rel).read_text(encoding='utf-8')
+        ck('patch new-file snapshot matches: ' + rel, matches)
+
+    node = os.environ.get('NODE_BINARY') or shutil.which('node')
+    ck('Node runtime available (NODE_BINARY or PATH)', bool(node))
+    if not node:
+        return 1
+    print('\nExecuting real component/API runtime regression:', flush=True)
+    result = subprocess.run([node, '--disable-warning=ExperimentalWarning',
+                             str(TEST_DIR / 'verify_frontend_runtime.mjs')], cwd=ROOT)
+    ck('runtime behavior suite exits zero', result.returncode == 0)
+    passed = sum(checks)
+    print('\n=== integration: %d checked / %d passed / %d failed ===' %
+          (len(checks), passed, len(checks) - passed))
+    return 0 if all(checks) else 1
 
 
 if __name__ == '__main__':

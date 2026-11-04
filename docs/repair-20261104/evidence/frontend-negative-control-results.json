@@ -1,0 +1,894 @@
+{
+  "node": "v24.22.2",
+  "root": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair-evidence\\frontend\\baseline-fixture",
+  "inputs": [
+    {
+      "path": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair-evidence\\frontend\\baseline-fixture\\apk-mod\\src\\components\\GatewaySwitches.tsx",
+      "sha256": "13523841c56a4d94dec336dca6d167e9d0a3e40a227adcc8146ce0f07d756c0c"
+    },
+    {
+      "path": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\repair-evidence\\frontend\\baseline-fixture\\apk-mod\\src\\api\\switches.ts",
+      "sha256": "daa7e67779844059e2374b0ec4d41b05e91d7a9a7cbabcd8d86c085ac486c2ff"
+    }
+  ],
+  "total": 182,
+  "passed": 35,
+  "failed": 147,
+  "results": [
+    {
+      "name": "RR08 replaces missing keys and disables unknown [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued before PUT after completed PUT [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:100:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:90:5"
+    },
+    {
+      "name": "reject GET issued during PUT after completed PUT [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:100:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:90:5"
+    },
+    {
+      "name": "late GET cannot restore value after failed PUT [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ false\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:110:12\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:105:3"
+    },
+    {
+      "name": "GET responses are ordered by latest request [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "different-key PUTs are globally serial and preserve pending intent [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "failed write does not stop serial queue [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "pending intent survives missing read endpoint [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "duplicate same-key event is ignored without losing pending ownership [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:143:12\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:141:3"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {} [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":false} [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":\"true\"} [immediate updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API valid echo confirms component target [immediate updater]",
+      "pass": true
+    },
+    {
+      "name": "RR08 replaces missing keys and disables unknown [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "reject GET issued before PUT after completed PUT [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:100:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:90:5"
+    },
+    {
+      "name": "reject GET issued during PUT after completed PUT [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:100:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:90:5"
+    },
+    {
+      "name": "late GET cannot restore value after failed PUT [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ false\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:110:12\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:105:3"
+    },
+    {
+      "name": "GET responses are ordered by latest request [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "different-key PUTs are globally serial and preserve pending intent [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "failed write does not stop serial queue [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "pending intent survives missing read endpoint [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "duplicate same-key event is ignored without losing pending ownership [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\nfalse !== true\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:143:12\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:141:3"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {} [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":false} [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ false\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API invalid echo becomes unknown in component {\"debugMode\":\"true\"} [deferred React updater]",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:153:14\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:150:5"
+    },
+    {
+      "name": "actual API valid echo confirms component target [deferred React updater]",
+      "pass": true
+    },
+    {
+      "name": "already queued GET updater rechecks write-intent barrier on commit",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: whole obsolete snapshot must be rejected\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:166:48\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:162:1"
+    },
+    {
+      "name": "GET updater queued during PUT rechecks write-settlement barrier",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n+ actual - expected\n\n+ true\n- undefined\n\n    at file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:173:48\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:169:1"
+    },
+    {
+      "name": "queued older GET updater loses to a later GET before commit",
+      "pass": true
+    },
+    {
+      "name": "deferred earlier PUT cannot overwrite a later failed pending key",
+      "pass": true
+    },
+    {
+      "name": "later confirmed endpoint response may resolve another failed key",
+      "pass": true
+    },
+    {
+      "name": "unmounted component ignores late GET and PUT state updates",
+      "pass": true
+    },
+    {
+      "name": "API strict confirmation sanitize=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo {\"sanitizeBlacklistFingerprints\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation sanitize=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects sanitize=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo {\"sanitizeBlacklistFingerprints\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sanitize=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation developerRoleCompat=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo {\"developerRoleCompat\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation developerRoleCompat=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo {\"developerRoleCompat\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects developerRoleCompat=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation cors=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo {\"corsEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation cors=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects cors=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo {\"corsEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects cors=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation debug=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo {\"debugMode\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation debug=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects debug=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo {\"debugMode\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects debug=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation captcha=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo {\"captchaEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation captcha=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects captcha=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo {\"captchaEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects captcha=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation modelsDev=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo {\"modelsDevEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation modelsDev=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects modelsDev=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo {\"modelsDevEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects modelsDev=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation failoverBackoff=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo {\"routingFailoverBackoff\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation failoverBackoff=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo {\"routingFailoverBackoff\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects failoverBackoff=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation sink=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo {\"routingSink\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation sink=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects sink=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo {\"routingSink\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects sink=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation breaker=false",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=false echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":0}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":\"false\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo {\"routingBreakerEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=false echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API strict confirmation breaker=true",
+      "pass": true
+    },
+    {
+      "name": "API rejects breaker=true echo {}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":1}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":\"true\"}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo {\"routingBreakerEnabled\":null}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo null",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "API rejects breaker=true echo []",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:213:55\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:212:7"
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":false,\"next\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:224:7\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:220:5"
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":false,\"next\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:224:7\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:220:5"
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":true,\"next\":false}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:224:7\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:220:5"
+    },
+    {
+      "name": "captcha current-side boolean echo {\"localPanel\":true,\"next\":true}",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:224:7\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:220:5"
+    },
+    {
+      "name": "fetchSwitches deduplicates routing and preserves partial unknown",
+      "pass": true
+    },
+    {
+      "name": "unknown switch and invalid requested type reject before HTTP",
+      "pass": false,
+      "error": "AssertionError [ERR_ASSERTION]: Missing expected rejection.\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:237:3\n    at async test (file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:33:5)\n    at async file:///E:/AI/tmp/agent2api-audit-20261104/reverify/repair-evidence/frontend/baseline-fixture/test/verify_frontend_runtime.mjs:235:1"
+    }
+  ]
+}

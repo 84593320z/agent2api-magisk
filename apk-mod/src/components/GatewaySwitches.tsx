@@ -23,8 +23,8 @@ import {
  *    所以每轮回读都是**整份替换**（不是把新值并进旧对象）。
  * 2. **写是串行的。** 同一端点上连点两个开关，后端返回的是整份状态；并发写会让
  *    先发的响应覆盖后发的。这里用一条 promise 链把 PUT 排队。
- * 3. **在途的值不被回读覆盖。** 5 秒轮询可能在 PUT 落地前回来，把用户刚拨的值
- *    冲掉。pending 表记着在途意图，回读时用它盖住对应键；PUT 回来就清掉。
+ * 3. **读不能跨越写屏障。** 写意图入队、写完成（含失败）都推进 epoch，丢弃跨越
+ *    任一屏障的旧 GET；pending 隔离在途意图，React 延迟 updater 也要复查代次。
  */
 export function GatewaySwitches() {
   const [state, setState] = useState<SwitchState>({})
@@ -34,7 +34,7 @@ export function GatewaySwitches() {
 
   /** 在途写入：id → 目标值。回读时盖住这些键 */
   const pending = useRef<Map<SwitchId, boolean>>(new Map())
-  /** 回读代次：后发的请求回来时，先发的作废 */
+  /** 读写代次：后发 GET、写入队和写结算都会使旧 GET 作废 */
   const epoch = useRef(0)
   /** 写队列：PUT 串行 */
   const chain = useRef<Promise<void>>(Promise.resolve())
@@ -45,7 +45,9 @@ export function GatewaySwitches() {
     const next = await fetchSwitches()
     if (!alive.current || mine !== epoch.current) return
     // 整份替换：这一轮没返回的键 = 该端点失败 = 未知（渲染成禁用）
-    setState(() => {
+    setState(prev => {
+      // React 可以稍后才执行 updater；从 await 到提交之间也可能开始/完成一次写。
+      if (!alive.current || mine !== epoch.current) return prev
       const merged: SwitchState = {}
       for (const id of Object.keys(next) as SwitchId[]) merged[id] = next[id]
       for (const [id, value] of pending.current) merged[id] = value
@@ -76,6 +78,9 @@ export function GatewaySwitches() {
   }, [load])
 
   const toggle = (id: SwitchId, next: boolean) => {
+    // 同键重复事件不再排队；不同键仍可进入全局串行队列。
+    if (pending.current.has(id)) return
+    ++epoch.current
     pending.current.set(id, next)
     setError('')
     setState(prev => ({ ...prev, [id]: next }))
@@ -84,11 +89,14 @@ export function GatewaySwitches() {
       try {
         const patch = await saveSwitch(id, next)
         if (!alive.current) return
+        // 在入队 updater 前固定隔离集合；finally 清 pending 不能改变延迟提交的语义。
+        const protectedIds = new Set(pending.current.keys())
+        protectedIds.delete(id)
         setState(prev => {
           const merged: SwitchState = { ...prev }
           for (const [key, value] of Object.entries(patch) as [SwitchId, boolean][]) {
-            // 别的键可能正被用户拨动，不能被这次响应盖回去
-            if (!pending.current.has(key)) merged[key] = value
+            // 当前目标已由 API 严格确认；其余在途键保持各自意图。
+            if (!protectedIds.has(key) && (key === id || !pending.current.has(key))) merged[key] = value
           }
           return merged
         })
@@ -103,6 +111,8 @@ export function GatewaySwitches() {
         })
         setError(t('开关保存失败，请检查网关是否可达'))
       } finally {
+        // 包含 PUT 在途期间发出的 GET：成功/失败结算后都不能再用其旧快照。
+        ++epoch.current
         pending.current.delete(id)
         if (alive.current) {
           setBusy(prev => {

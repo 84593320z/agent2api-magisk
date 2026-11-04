@@ -1,0 +1,17 @@
+Verifies
+Verified using v1 scheme (JAR signing): false
+Verified using v2 scheme (APK Signature Scheme v2): true
+Verified using v3 scheme (APK Signature Scheme v3): false
+Verified using v3.1 scheme (APK Signature Scheme v3.1): false
+Verified using v4 scheme (APK Signature Scheme v4): false
+Verified for SourceStamp: false
+Number of signers: 1
+Signer #1 certificate DN: CN=Agent2API Release, OU=Mobile, O=Agent2API, C=CN
+Signer #1 certificate SHA-256 digest: d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f
+Signer #1 certificate SHA-1 digest: 721db81a58cd71a4dfdd3de690026ff937bbcd1b
+Signer #1 certificate MD5 digest: bb5366acf0a0046a54e3dd6f927f6b7c
+Signer #1 key algorithm: RSA
+Signer #1 key size (bits): 4096
+Signer #1 public key SHA-256 digest: f91bd932d5ec68796cb461e58c181178c1630b6798a65f7d985f058fc67fe385
+Signer #1 public key SHA-1 digest: aa060dd27e730f13298668e485148b767c502f2f
+Signer #1 public key MD5 digest: 373069c20dc836c56da59142e56f7c7f

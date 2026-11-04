@@ -1,0 +1,27 @@
+
+> agent2api-mobile@3.4.1 build:native
+> tsc --noEmit && vite build --mode apk
+
+vite v7.3.7 building client environment for apk...
+transforming...
+
+[2m[264.54ms][22m [@tailwindcss/vite] Generate CSS (build)
+[2m[180.85ms][22m  [2m ↳ [22mSetup compiler
+[2m[  3.00ms][22m  [2m ↳ [22mSetup scanner
+[2m[ 22.71ms][22m  [2m ↳ [22mScan for candidates
+[2m[  8.98ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 48.38ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+[2m[ 13.89ms][22m [@tailwindcss/vite] Optimize CSS
+
+
+[2m[3.21ms][22m [@tailwindcss/vite] Generate CSS (build)
+[2m[2.03ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.95ms][22m  [2m ↳ [22mSetup scanner
+
+✓ 755 modules transformed.
+rendering chunks...
+computing gzip size...
+android-www/mobile.css     85.59 kB │ gzip:  15.77 kB
+android-www/mobile.js   1,022.17 kB │ gzip: 328.39 kB
+✓ built in 4.05s

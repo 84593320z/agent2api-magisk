@@ -1,0 +1,21 @@
+CASE refresh_vpn (real dns_refresh_if_changed -> dns_ensure)
+rc=0 live=9.9.9.9 cache=9.9.9.9 lastgood=9.9.9.9 lastgood_id=tun0 1 101 cache_id=101 iface=tun0 vpn=1 netid=101
+CASE refresh_cross_netid_cache_only (real refresh 100 -> 101, old cache only)
+rc=1 live=192.168.1.1 cache=192.168.1.1 lastgood= lastgood_id= cache_id=100 iface=wlan0 vpn=0 netid=101
+CASE cache_same_id (live absent, valid same-net cache)
+rc=0 live=9.9.9.9 cache=9.9.9.9 lastgood=9.9.9.9 lastgood_id=wlan0 0 200 cache_id=200 iface=wlan0 vpn=0 netid=200
+CASE cache_cross_iface (cache netid same, iface/vpn changed)
+rc=1 live= cache=192.168.1.1 lastgood= lastgood_id= cache_id=300 iface=wlan0 vpn=0 netid=300
+CASE cache_invalid (invalid nameservers only)
+rc=1 live= cache=127.0.0.1 lastgood= lastgood_id= cache_id=400 iface=wlan0 vpn=0 netid=400
+CASE follow_system=0
+rc=0 live=9.9.9.9 cache=9.9.9.9 lastgood=9.9.9.9 lastgood_id=wlan0 0 500 cache_id=500 iface=wlan0 vpn=0 netid=500
+CASE follow_system=1
+rc=0 live=10.8.0.1 cache=10.8.0.1 lastgood=10.8.0.1 lastgood_id=wlan0 0 501 cache_id=501 iface=wlan0 vpn=0 netid=501
+CASE follow_system=2
+rc=0 live=9.9.9.9 cache=9.9.9.9 lastgood=9.9.9.9 lastgood_id=wlan0 0 502 cache_id=502 iface=wlan0 vpn=0 netid=502
+CASE metadata_update (direct ensure after netid transition)
+first_rc=0 live=1.1.1.1 cache=1.1.1.1 lastgood=1.1.1.1 lastgood_id=wlan0 0 600 cache_id=600 iface=wlan0 vpn=0 netid=600
+second_rc=0 live=1.1.1.1 cache=1.1.1.1 lastgood=1.1.1.1 lastgood_id=wlan0 0 600 cache_id=600 iface=wlan0 vpn=0 netid=600
+CASE metadata_missing (cache identity absent, fresh sample present)
+rc=0 live=4.4.4.4 cache=4.4.4.4 lastgood=4.4.4.4 lastgood_id=wlan0 0 700 cache_id=700 iface=wlan0 vpn=0 netid=700

@@ -1,0 +1,428 @@
+[
+  {
+    "name": "data-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "actual": {
+      "rc": "1",
+      "payload": "old",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "payload-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "old-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "actual": {
+      "rc": "1",
+      "payload": "2.0.0",
+      "data": "old-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "missing-snapshot",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "actual": {
+      "rc": "1",
+      "payload": "old",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0",
+      "restart": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "first-rename",
+    "pass": true,
+    "expected": {
+      "injected": "91",
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "actual": {
+      "injected": "91",
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "signal-data-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "payload": "old",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0"
+    },
+    "actual": {
+      "rc": "1",
+      "payload": "old",
+      "data": "new-schema",
+      "journal": "rollback-failed",
+      "running": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "signal-payload-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "payload": "new",
+      "data": "old-schema",
+      "journal": "rollback-failed",
+      "running": "0"
+    },
+    "actual": {
+      "rc": "1",
+      "payload": "new",
+      "data": "old-schema",
+      "journal": "rollback-failed",
+      "running": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "customize-orphan",
+    "pass": true,
+    "expected": {
+      "rc": "77",
+      "continued": "0",
+      "killed": "1"
+    },
+    "actual": {
+      "rc": "77",
+      "payload": "new",
+      "data": "new-schema",
+      "journal": "rollback-blocked",
+      "running": "0",
+      "continued": "0",
+      "killed": "1"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "customize-recover-fail",
+    "pass": true,
+    "expected": {
+      "rc": "77",
+      "continued": "0",
+      "running": "0"
+    },
+    "actual": {
+      "rc": "77",
+      "payload": "old",
+      "data": "new-schema",
+      "journal": "rollback-blocked",
+      "running": "0",
+      "continued": "0",
+      "killed": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "customize-stop-fail",
+    "pass": true,
+    "expected": {
+      "rc": "77",
+      "running": "0",
+      "starts": "0"
+    },
+    "actual": {
+      "rc": "77",
+      "running": "0",
+      "starts": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "commit-unhealthy",
+    "pass": true,
+    "expected": {
+      "old": "yes",
+      "pending": "yes"
+    },
+    "actual": {
+      "old": "yes",
+      "pending": "yes"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "commit-healthy",
+    "pass": true,
+    "expected": {
+      "old": "no",
+      "pending": "no"
+    },
+    "actual": {
+      "old": "no",
+      "pending": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "snapshot-no-id",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "new-schema"
+    },
+    "actual": {
+      "rc": "1",
+      "data": "new-schema"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "snapshot-wrong-id",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "new-schema"
+    },
+    "actual": {
+      "rc": "1",
+      "data": "new-schema"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "second-rename",
+    "pass": true,
+    "expected": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "actual": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": "",
+      "restored": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "after-second-rename",
+    "pass": true,
+    "expected": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "actual": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": "",
+      "restored": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "restore-rename-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "data": "new-schema",
+      "journal": "rolling-back",
+      "restored": "yes"
+    },
+    "actual": {
+      "rc": "1",
+      "data": "new-schema",
+      "journal": "rolling-back",
+      "restored": "yes"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "recovered-data-retry",
+    "pass": true,
+    "expected": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "actual": {
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "contradictory-data",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "tmp": "yes",
+      "aside": "yes",
+      "data": "old-schema"
+    },
+    "actual": {
+      "rc": "1",
+      "tmp": "yes",
+      "aside": "yes",
+      "data": "old-schema"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "supervisor-recovery-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "starts": "0"
+    },
+    "actual": {
+      "rc": "1",
+      "starts": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "boot-recovery-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "layout": "0"
+    },
+    "actual": {
+      "rc": "1",
+      "layout": "0"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "customize-safe-fail",
+    "pass": true,
+    "expected": {
+      "rc": "77",
+      "running": "1",
+      "starts": "1"
+    },
+    "actual": {
+      "rc": "77",
+      "running": "1",
+      "starts": "1"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "first-rename-return-fail",
+    "pass": true,
+    "expected": {
+      "first": "1",
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "actual": {
+      "first": "1",
+      "rc": "0",
+      "data": "old-schema",
+      "journal": ""
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "payload-rename-retry",
+    "pass": true,
+    "expected": {
+      "injected": "91",
+      "rc": "0",
+      "payload": "old",
+      "data": "old-schema",
+      "journal": "",
+      "marker": "tx-payload-retry",
+      "oldpath": "no"
+    },
+    "actual": {
+      "injected": "91",
+      "rc": "0",
+      "payload": "old",
+      "data": "old-schema",
+      "journal": "",
+      "marker": "tx-payload-retry",
+      "oldpath": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "payload-complete-retry",
+    "pass": true,
+    "expected": {
+      "injected": "91",
+      "rc": "0",
+      "payload": "old",
+      "data": "old-schema",
+      "journal": "",
+      "marker": "tx-payload-retry",
+      "oldpath": "no"
+    },
+    "actual": {
+      "injected": "91",
+      "rc": "0",
+      "payload": "old",
+      "data": "old-schema",
+      "journal": "",
+      "marker": "tx-payload-retry",
+      "oldpath": "no"
+    },
+    "process_rc": 0
+  },
+  {
+    "name": "payload-marker-fail",
+    "pass": true,
+    "expected": {
+      "rc": "1",
+      "payload": "new",
+      "data": "new-schema",
+      "journal": "started",
+      "oldpath": "yes"
+    },
+    "actual": {
+      "injected": "1",
+      "rc": "1",
+      "payload": "new",
+      "data": "new-schema",
+      "journal": "started",
+      "marker": "none",
+      "oldpath": "yes"
+    },
+    "process_rc": 0
+  }
+]

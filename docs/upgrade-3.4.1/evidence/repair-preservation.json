@@ -1,0 +1,26 @@
+{
+  "customize.sh": {
+    "equal": true,
+    "sha256": "63ec14190495593f2b56883fcdd0f888e1c41f155896ac378d4d2b90334bc421"
+  },
+  "post-fs-data.sh": {
+    "equal": true,
+    "sha256": "f8858d41acce7f9b63bc3c0bad8c90582b3c4169b187262bbaca1b339d9081c0"
+  },
+  "libexec/payload.sh": {
+    "equal": true,
+    "sha256": "05b4bf163eed3a546410b68e921bca3da4214f95fb60f5f8c7329a3f9d395852"
+  },
+  "libexec/updater.sh": {
+    "equal": true,
+    "sha256": "1baaf0eca9644765cdbfc0532378ce9a77f0bfb23d28adb028d67d54365eec05"
+  },
+  "libexec/supervise.sh": {
+    "equal": true,
+    "sha256": "935b2f462d8ee27a75289456d21aa483cece1c0a31269e0bb55690bd94386132"
+  },
+  "libexec/dns.sh": {
+    "equal": true,
+    "sha256": "84801868666bf993d82955b8ba616948af58aee707e8df4cdb86a57e0e2a55dc"
+  }
+}

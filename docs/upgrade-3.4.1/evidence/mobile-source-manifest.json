@@ -1,0 +1,14 @@
+{
+  "upstream_tag": "v3.4.1",
+  "upstream_commit": "3ff4b8215d0d65c3451ca74923e90964ed7dbf59",
+  "snapshots": {
+    "App.tsx": "e6dd12dd7a9e7be1ce809f1313412d3e409064deb004b986417dfd4e8cdcef5d",
+    "api/switches.ts": "93965ff9e06b505ad9acc191dc203960412bf0720d4feb331883e889ead73b50",
+    "components/GatewaySwitches.tsx": "f12a206cce67aec2b89223f83e4fed1723aa53f71ea4a33fae1961779d0eff01",
+    "lib/discover.ts": "c1f9c66e9cb32a001f80fd214d78a284cd564e53c0f298e7f3f603f4d94a390b",
+    "pages/ServersPage.tsx": "c6196fd2259bed0239a5f194e61aa9303af7188803e4772264312bd600d18681",
+    "pages/SettingsPage.tsx": "b87b5f7ffb091dfd14991ffe8c2b6b9931d1c20cda8294d2e48e0d9ede359267",
+    "state/store.ts": "07630a134540192cbf8c2914afaeea29f839bccfd7439ad4c6fa227efb72edc4"
+  },
+  "patch_sha256": "61e34897dc9d168319a238a6b522a96abd778cfe447006b69c7798bfcfc73317"
+}

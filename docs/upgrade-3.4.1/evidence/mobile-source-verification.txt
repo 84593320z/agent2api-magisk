@@ -1,0 +1,18 @@
+PASS exact upstream commit
+PASS snapshot bytes and hash: App.tsx
+PASS snapshot bytes and hash: api/switches.ts
+PASS snapshot bytes and hash: components/GatewaySwitches.tsx
+PASS snapshot bytes and hash: lib/discover.ts
+PASS snapshot bytes and hash: pages/ServersPage.tsx
+PASS snapshot bytes and hash: pages/SettingsPage.tsx
+PASS snapshot bytes and hash: state/store.ts
+PASS patch matches complete staged mobile delta
+PASS patch hash
+PASS patch reverse applicability
+PASS 3.4.1 ToolsPage import and tools route
+PASS upstream feature unchanged: pages/ToolsPage.tsx
+PASS upstream feature unchanged: lib/assistant-attachments.ts
+PASS upstream feature unchanged: lib/assistant-image-tools.ts
+PASS upstream feature unchanged: lib/assistant-read-tools.ts
+PASS upstream feature unchanged: lib/assistantTools.ts
+17/17 checks passed

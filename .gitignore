@@ -27,3 +27,5 @@ test/verify_loop/out/
 *.p12
 test/run-*.txt
 test/out*/
+# Local build trees and raw upgrade output; portable evidence lives under docs/
+/upgrade-evidence/

@@ -1,0 +1,11 @@
+{
+  "upstream_commit": "3ff4b8215d0d65c3451ca74923e90964ed7dbf59",
+  "apk": "Agent2API-3.4.1-mod.apk",
+  "bytes": 5880005,
+  "sha256": "94a208b7699acf1224cd2fc36913f58e7cffaf055b9651bbf26e7f3e52a01f9e",
+  "signed": true,
+  "certificate_sha256": "d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f",
+  "applicationId": "com.agent2api.mobile.mod",
+  "versionName": "3.4.1",
+  "versionCode": 30401
+}

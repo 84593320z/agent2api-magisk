@@ -143,6 +143,7 @@ _ZONE_COMMITTED=0
 _ZONE_OLD_PRESENT=0
 _INSTALL_SUCCESS=0
 _HOT_WAS_RUNNING=0
+_HOT_SAFE_TO_RESTART=0
 install_cleanup() {
   # 只要旧时区库已经被移开，就必须还原——不管新库有没有"提交"过。
   # 旧实现只在 _ZONE_COMMITTED=1 时还原，于是"移开旧库、新库还没 rename
@@ -155,11 +156,13 @@ install_cleanup() {
     if [ -e "$APP_HOME/zoneinfo" ]; then
       rm -rf "$APP_HOME/zoneinfo" 2>/dev/null
     fi
-    mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
+    mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null || _HOT_SAFE_TO_RESTART=0
   fi
   rm -rf "$_INSTALL_TRANSACTION" 2>/dev/null
   # 安装失败也要把本来在跑的服务拉回来：停服是安装造成的，不能让它一直停着。
-  if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_HOT_WAS_RUNNING" = "1" ]; then
+  if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_HOT_WAS_RUNNING" = "1" ] \
+     && [ "$_HOT_SAFE_TO_RESTART" = "1" ] && [ ! -s "$A2A_TXN_JOURNAL" ] \
+     && [ -z "$(svc_stray_pids 2>/dev/null)" ]; then
     svc_start >/dev/null 2>&1
   fi
   update_lock_release "$RUNDIR/update.lock.d"
@@ -176,16 +179,19 @@ if svc_is_running; then
   if svc_is_running; then
     abort "服务仍未停止，安装中止（不在活服务上替换载荷）"
   fi
-  svc_kill_stray 2>/dev/null
-  _HOT_LEFT=$(svc_stray_pids 2>/dev/null)
-  [ -z "$_HOT_LEFT" ] || abort "仍有服务端进程未退出（$_HOT_LEFT），安装中止"
 fi
+# supervisor 消失并不代表写者退出；孤儿 server/plugins 也必须无条件清理。
+svc_kill_stray 2>/dev/null
+_HOT_LEFT=$(svc_stray_pids 2>/dev/null)
+[ -z "$_HOT_LEFT" ] || abort "仍有服务端进程未退出（$_HOT_LEFT），安装中止"
 # F-004：拿到锁之后清残留，但绝不再用 `rm -rf payload.new.*` —— 该通配符
 # 会连带删掉上一笔中断事务登记在 pending/journal 里的旧载荷
 # （payload.new.old.<pid> 同样匹配），那是唯一能立刻回滚的副本。
 # 走 journal 恢复（runtime：锁已在我们手里，不需要 boot 的年龄豁免）+
 # sweep：sweep 只清无主目录，会保住 journal / pending / switching 引用的材料。
-payload_recover_interrupted runtime
+payload_recover_interrupted runtime || abort "中断事务恢复失败，保留现场并停止安装"
+[ ! -s "$A2A_TXN_JOURNAL" ] || abort "中断事务尚未收尾，停止安装"
+_HOT_SAFE_TO_RESTART=1
 sweep_stale_dirs
 
 # ---------------------------------------------------------------------------

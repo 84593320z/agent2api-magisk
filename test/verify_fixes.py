@@ -104,15 +104,20 @@ def func(rel, name):
     raise SystemExit('unbalanced function: ' + name)
 
 
-def between(rel, a, b):
+def between(rel, a, b, include_start=False):
     lines = kl(rel)
     i = find(rel, a)
     j = find(rel, b, i)
-    return ''.join(lines[i:j - 1])
+    return ''.join(lines[i - 1 if include_start else i:j - 1])
 
 
 def run(name, body, timeout=60):
     case_dir = ROOT / 'cases' / (name + '.d')
+    # 每次运行重建独立夹具，避免上次 journal/pending 影响本轮断言。
+    if case_dir.exists():
+        if case_dir.is_symlink() or case_dir.resolve().parent != (ROOT / 'cases').resolve():
+            raise SystemExit('Unsafe test fixture path: ' + str(case_dir))
+        shutil.rmtree(case_dir)
     case_dir.mkdir(parents=True, exist_ok=True)
     pth = save(ROOT / 'cases' / (name + '.sh'), body)
     env = dict(os.environ, CASE=posix(case_dir), TMP=posix(ROOT / 'tmp'),
@@ -189,6 +194,7 @@ RUNDIR="$APP_HOME/run"; LOGDIR="$APP_HOME/logs"; TMPD="$APP_HOME/tmp"
 CFGDIR="$APP_HOME/etc"; DATADIR="$APP_HOME/data"; HOMEDIR="$APP_HOME/home"
 DLDIR="$APP_HOME/dl"; BINDIR="$APP_HOME/bin"; A2A_LIVE="$CASE/live"
 PLIB="$PAYLOAD/lib"; LOADER="$PLIB/ld-linux-aarch64.so.1"; SERVER_BIN="$PAYLOAD/agent2api-server"
+A2A_TXN_JOURNAL="$RUNDIR/update.journal"
 SETTINGS="$CFGDIR/settings.conf"; SUPLOG="$LOGDIR/supervisor.log"; SRVLOG="$LOGDIR/server.log"
 APPLOG="$LOGDIR/app.log"; DNSFILE="$A2A_LIVE/resolv"; DNS_CACHE="$RUNDIR/resolv.last"
 CURL='{CURL}'; PORT=3065
@@ -222,9 +228,13 @@ check('r01_activate_registers_pending',
 run('r01_post_fs_data_keeps_pending', PRE + P('libexec/payload.sh', 'libexec/dns.sh') + r'''
 mkdir -p "$PAYLOAD"; fx static "$PAYLOAD"
 mkdir -p "$APP_HOME/staged"; fx static_new "$APP_HOME/staged"
+PAYLOAD_TXID=$(payload_txid_new)
 payload_activate_staged "$APP_HOME/staged" new >/dev/null 2>&1
+# 本例验证有意保留的未启动更新；switched 是崩溃窗口，应回滚而非保留。
+payload_txn_reload
+payload_txn_write await-verify
 _old=$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null)
-''' + between('post-fs-data.sh', 'payload_recover_interrupted', '# glibc 运行时文件') + r'''
+''' + between('post-fs-data.sh', 'if ! payload_recover_interrupted boot; then', '# glibc 运行时文件', include_start=True) + r'''
 metric pending_kept "$(exists "$RUNDIR/update.pending")"
 metric old_kept "$(exists "$_old")"
 ''')
@@ -837,10 +847,10 @@ metric prop_mentions_payload "$(grep -c "载荷 v$_ver" "$MODDIR/module.prop")"
 # 模块号会随发布递增，这里只钉「载荷版本必须与二进制一致」和「描述里点明载荷版本」，
 # 不把 magisk.NN 写死在断言里，否则每次发版都要改测试。
 check_fn('r18_version_metadata', lambda out: (
-    'binary=3.4.0' in out
-    and 'version_file=3.4.0' in out
+    'binary=3.4.1' in out
+    and 'version_file=3.4.1' in out
     and 'consistent=1' in out
-    and 'module_prop=v3.4.0 (magisk.' in out
+    and 'module_prop=v3.4.1 (magisk.' in out
     and 'prop_mentions_payload=1' in out
 ))
 
