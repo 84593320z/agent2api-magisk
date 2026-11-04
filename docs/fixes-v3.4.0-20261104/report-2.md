@@ -230,9 +230,14 @@ sh test/run.sh --full        # 194 项断言，exit 0（日志 `evidence/run-ful
 
 ## 7. 交付物
 
-- 代码：本仓库工作树（分支 `audit-fixes-v3.4.0`），本轮提交见 `git log -1`。
+- 代码：本仓库工作树（分支 `audit-fixes-v3.4.0`），本轮提交 `66a943a`（父提交 `999aa1e`，
+  基线 `23b881d`）。
 - 报告：本文件；第一轮报告 `report.md` 已就地更正两处不实表述（语法文件数 15→17、
   前端 Node 验证引用基线脚本）。
-- 补丁：`../audit-fixes-v3.4.0-round2.patch`（相对 `999aa1e`）。
-- 包：`dist/agent2api-magisk-v3.4.0-magisk.34-arm64.zip`（重建，sha256 见发布说明），
-  **待真机验收后才可对外称「已验收」**。
+- 补丁：`../audit-fixes-v3.4.0-round2.patch`（`999aa1e..66a943a`，123793 字节，
+  sha256 `d4d5d901b00f86608b0156f21214b9909cd34437d19b078a48c601a7bed86cac`）；两轮合计补丁 `../audit-fixes-v3.4.0-all.patch`（`23b881d..66a943a`，
+  223666 字节，sha256 `0106d495a54c9466c0037b2df83b032cae94c20cf988bc58e4ccf1b4e56372c6`）。
+- 包：`dist/agent2api-magisk-v3.4.0-magisk.34-arm64.zip`（936 条目，18509904 字节，
+  sha256 `ec92a2874face9c2a61de9152fcd625843df06546d86ea069c22dada2228573a`）。
+  该包由 `66a943a` 重建、`ZipFile.testzip()` 通过，但**未做真机安装验收**，不能对外称
+  「已验收」；第一轮包（`adde5f2e…`）不得继续分发。
