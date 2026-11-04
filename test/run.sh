@@ -3,8 +3,8 @@
 #
 # 层级：
 #   1. sh -n        全部模块 shell 脚本的语法检查
-#   2. txn_test.sh  事务/DNS/CLI 纯 POSIX 故障注入测试（F-001..F-008 的回归）
-#   3. verify 套件  test/verify_fixes.py + verify_loop.py（环境里有 python 时）
+#   2. txn_test.sh  事务/DNS/CLI 纯 POSIX 故障注入测试（F-001..F-008、RR-01..RR-07 的回归）
+#   3. verify 套件  事务/循环/路径/前端/打包 五组 Python 检查
 #
 # 历史问题（F-010）：旧 run.sh 是 2.x 架构，cp 一个已经不存在的
 # module/bin/lib.sh，README 推荐的 `dash test/run.sh` 从未跑通过。
@@ -12,7 +12,7 @@
 #
 # 用法：
 #   sh test/run.sh            # 语法 + 事务测试
-#   sh test/run.sh --full     # 加上 Python verify 套件（需要 python3）
+#   sh test/run.sh --full     # 加上 Python verify 套件（缺 python 直接判失败）
 #   A2A_SH=/path/to/sh sh test/run.sh   # 显式指定 POSIX shell
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -73,7 +73,8 @@ else
   FAIL=1
 fi
 
-# 可选：Python verify 套件
+# 可选：Python verify 套件。--full 是验收模式：缺 python 或缺少套件文件都算失败，
+# 不再静默 SKIP（旧的 `--full` 在没装 python 的机器上会“全绿”，不能作为验收证据）。
 if [ "${1:-}" = "--full" ]; then
   echo
   echo "== 3. Python verify 套件 =="
@@ -83,19 +84,21 @@ if [ "${1:-}" = "--full" ]; then
     PY=python3
   else
     PY=""
-    echo "  SKIP（未找到 python）"
+    echo "  FAIL 未找到 python（--full 需要 python 3）"
+    FAIL=1
   fi
   if [ -n "$PY" ]; then
-    for v in verify_fixes.py verify_loop.py; do
+    for v in verify_fixes.py verify_loop.py verify_paths.py verify_frontend.py repack_test.py sign_test.py; do
       if [ -f "$HERE/$v" ]; then
-        if "$PY" "$HERE/$v"; then
+        if PYTHONIOENCODING=utf-8 "$PY" "$HERE/$v"; then
           echo "  ok   $v"
         else
           echo "  FAIL $v"
           FAIL=1
         fi
       else
-        echo "  SKIP（文件不存在）: $v"
+        echo "  FAIL（文件不存在）: $v"
+        FAIL=1
       fi
     done
   fi

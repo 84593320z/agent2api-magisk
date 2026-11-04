@@ -1,0 +1,132 @@
+
+== T0 journal 读写往返 ==
+  ok   T0 write rc
+  ok   T0 phase
+  ok   T0 txid
+  ok   T0 old_payload
+  ok   T0 new_built
+  ok   T0 reload tag
+  ok   T0 reload old
+  ok   T0 reload built
+  ok   T0 clear rc
+  ok   T0 phase after clear
+
+== T1 更新健康失败：回滚数据前新版必须已停止 ==
+  ok   T1 更新返回失败
+  ok   T1 数据换入时服务已停(无BUG标记)
+  ok   T1 确实发生了数据回滚
+  ok   T1 数据回到升级前快照
+  ok   T1 载荷回到 1.0.0
+  ok   T1 journal 已收尾
+  ok   T1 服务已恢复运行
+  ok   T1 sweep 后无残留旧载荷目录
+
+== T1b 新版停不下来：rollback-blocked 保全现场 ==
+  ok   T1b 更新返回失败
+  ok   T1b journal=rollback-blocked
+  ok   T1b 数据未被回滚(仍是新版现场)
+  ok   T1b 载荷保持新版
+  ok   T1b 未发生数据换入
+  ok   T1b 停服被拒有记录
+  ok   T1b sweep 保留 journal 引用的旧载荷
+
+== T2 切换中崩溃：开机恢复不受 120s 门槛限制 ==
+  ok   T2 崩溃注入生效(rc=77)
+  ok   T2 崩溃后 PAYLOAD 缺失
+  ok   T2 journal=switching
+  ok   T2 旧载荷被 journal 记录
+  ok   T2 开机恢复成功
+  ok   T2 载荷恢复 1.0.0
+  ok   T2 journal 已清
+  ok   T2 无残留切换目录
+  ok   T2 switching 标记被清
+
+== T3 数据回滚中断：开机补完换入，不留空 data ==
+  ok   T3 开机恢复成功
+  ok   T3 data 补完换入(快照内容)
+  ok   T3 journal 已清
+  ok   T3 无残留中转/移开目录
+
+== T4 sweep 保护 journal 引用目录 ==
+  ok   T4 journal 引用的旧载荷保留
+  ok   T4 journal 引用的数据中转保留
+  ok   T4 无主 payload.new.* 被清
+  ok   T4 无 journal 后无主目录被清(payload)
+  ok   T4 无 journal 后无主目录被清(data)
+
+== T5 静态载荷无 loader 也可启动检查 ==
+  ok   T5 静态载荷无 lib/ld-linux
+  ok   T5 静态载荷通过
+  ok   T5 动态载荷 loader 不可执行被拒
+  ok   T5 提示动态链接器缺失
+  ok   T5 动态载荷 loader 可执行通过
+  ok   T5 服务端缺失被拒
+  ok   T5 提示载荷缺失
+
+== T6 网络变化重算 DNS ==
+  ok   T6 网络变化触发重算
+  ok   T6 网络未变化不重算
+
+== T7 DNS 缓存恢复 live 文件 ==
+  ok   T7 返回成功
+  ok   T7 live 文件已恢复
+  ok   T7 缓存保留
+  ok   T7 无缓存走静态兜底
+
+== T8 回滚不完整：保持停止、保全体、journal=rollback-failed ==
+  ok   T8 更新返回失败
+  FAIL T8 journal=rollback-failed  期望[rollback-failed] 实际[rolling-back]
+  FAIL T8 服务保持停止(未重启)  期望[0] 实际[1]
+  FAIL T8 没有重启事件  期望[0] 实际[1]
+  ok   T8 载荷未被假装回滚(仍2.0.0)
+  ok   T8 数据已回到升级前快照
+  ok   T8 数据快照保留
+
+== T9 journal 恢复受 update 锁约束 ==
+  ok   T9 拿到活锁时不恢复也不报错
+  FAIL T9 journal 原样保留  期望[switching] 实际[]
+  FAIL T9 载荷未被换回(仍缺失)  期望[0] 实际[1]
+  FAIL T9 旧载荷仍在  期望存在=1 实际路径=test/out/txn/cases/t9/payload.new.old.777
+  FAIL T9 日志说明锁占用  期望[1] 实际[]
+  ok   T9 锁释放后恢复成功
+  ok   T9 载荷恢复正常
+  ok   T9 journal 已清
+
+== T10 数据换入中断收尾：三种现场 ==
+  ok   T10a 返回成功
+  FAIL T10a 快照真的换入  期望[old-data] 实际[new-data]
+  ok   T10a 中转目录已清
+  ok   T10a 没有留下移开副本
+  ok   T10b 返回成功
+  ok   T10b 快照换入
+  ok   T10b 移开副本已清
+  ok   T10c 返回成功
+  ok   T10c 数据保持快照
+  ok   T10c 残留已清
+
+== T11 补提交只在健康通过后执行 ==
+  FAIL T11 健康失败保留唯一回滚副本  期望存在=1 实际路径=test/out/txn/cases/t11/payload.new.old.12345
+  FAIL T11 健康失败保留 pending  期望存在=1 实际路径=test/out/txn/cases/t11/run/update.pending
+  ok   T11 健康通过后提交删除旧载荷
+
+== T12 DNS lastgood 绑定网络身份、缓存参与兜底 ==
+  ok   T12a 返回成功
+  FAIL T12a 未沿用别的网络的 DNS  期望[0] 实际[1]
+  FAIL T12a 改用当前系统的 DNS  期望[1] 实际[0]
+  FAIL T12a 新身份已记录  期望[tun0 1 101] 实际[wlan0 0 100]
+  ok   T12b 身份匹配时沿用 lastgood
+  FAIL T12c 缓存兜底成功  期望[0] 实际[1]
+  FAIL T12c 发布缓存里的解析器  期望[1] 实际[]
+  ok   T12d 跨网缓存不兜底
+  ok   T12d 没有把跨网解析器写进 live
+  FAIL T12d 日志说明原因  期望[1] 实际[0]
+
+== T13 customize 先停服再恢复 ==
+  FAIL T13 加载 control.sh 在恢复之前  期望[1] 实际[0]
+  FAIL T13 停服判定在恢复之前  期望[1] 实际[0]
+  FAIL T13 运行期恢复模式  期望[1] 实际[0]
+  FAIL T13 停不下来必须中止  期望[1] 实际[0]
+  FAIL T13 失败也会拉起原服务  期望[1] 实际[0]
+
+=== 99 checked / 78 passed / 21 failed ===
+failed: T8 journal=rollback-failed T8 服务保持停止(未重启) T8 没有重启事件 T9 journal 原样保留 T9 载荷未被换回(仍缺失) T9 旧载荷仍在 T9 日志说明锁占用 T10a 快照真的换入 T11 健康失败保留唯一回滚副本 T11 健康失败保留 pending T12a 未沿用别的网络的 DNS T12a 改用当前系统的 DNS T12a 新身份已记录 T12c 缓存兜底成功 T12c 发布缓存里的解析器 T12d 日志说明原因 T13 加载 control.sh 在恢复之前 T13 停服判定在恢复之前 T13 运行期恢复模式 T13 停不下来必须中止 T13 失败也会拉起原服务

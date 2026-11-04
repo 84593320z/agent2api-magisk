@@ -361,7 +361,21 @@ trap 'on_signal' TERM INT HUP
 # 旧版遗留的无代次 pending 退回 tag 匹配，与历史行为兼容。update 锁的获取
 # 在 payload_commit_old 内部完成（短超时，拿不到本轮跳过下轮重试）。
 # ---------------------------------------------------------------------------
-supervise_commit_pending() {
+supervise_commit_pending() { # $1=verified（调用方刚跑过联合健康检查）
+  # RR-05：提交会删掉事务旧载荷 —— 那是这笔事务唯一的回滚副本。旧实现只
+  # 校验代次，健康与否不管：新版起不来时巡检仍然照删，回滚路彻底断掉。
+  # 这里必须先有「服务此刻健康」的证据再提交；start_child 刚验过的调用点
+  # 传 verified 免掉重复探测。
+  _scp_healthy=0
+  if [ "${1:-}" = "verified" ]; then
+    _scp_healthy=1
+  elif svc_http_health 3; then
+    _scp_healthy=1
+  fi
+  if [ "$_scp_healthy" != "1" ]; then
+    log_to "$SUPLOG" "健康检查未通过，本轮不提交事务旧载荷（保留回滚副本）"
+    return 0
+  fi
   _scp_disk=$(payload_generation_read)
   if [ -s "$RUNDIR/update.pending" ]; then
     _scp_line=$(head -n 1 "$RUNDIR/update.pending" 2>/dev/null) || _scp_line=""
@@ -535,6 +549,7 @@ while [ "$STOP" = "0" ]; do
     _sc_last=$(cat "$RUNDIR/commit.last" 2>/dev/null || echo 0)
     case "$_sc_last" in ''|*[!0-9]*) _sc_last=0 ;; esac
     if [ $((_sc_now - _sc_last)) -ge 60 ]; then
+      # 不传 verified：本函数内部先做联合健康检查，不健康就不提交（RR-05）。
       supervise_commit_pending
       printf '%s\n' "$_sc_now" >"$RUNDIR/commit.last" 2>/dev/null
     fi
@@ -655,7 +670,8 @@ while [ "$STOP" = "0" ]; do
     # 已通过进程/端口/HTTP 联合健康检查。提交点仍在启动路径，但删除动作统一
     # 走 payload_commit_old（内部自带 update 锁短超时与代次校验）：拿不到锁
     # 就本轮跳过、下轮重试，绝不死等；代次不匹配绝不提交。
-    supervise_commit_pending
+    # 刚通过 svc_wait_health 40，健康证据是新的，传 verified 免掉重复探测。
+    supervise_commit_pending verified
   else
     write_state starting-unhealthy
   fi

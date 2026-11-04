@@ -168,28 +168,36 @@ zipalign -p -f 4 ...-unsigned.apk ...-aligned.apk
 
 ### 签名
 
-**不要把签名私钥提交进仓库。** 本仓库早期版本曾把 `a2a-mod.jks` 连同
-口令一起提交——那个 key 已经泄露（任何拿到仓库的人都能签出同签名的
-升级包），**必须视为作废**：升级它签的安装会因签名不一致被拒，正好说明
-它不能再用。
+**不要把签名私钥提交进仓库。** 本仓库早期版本曾把 `a2a-mod.jks` 连同口令一起
+提交（可 `git show <old-commit>:apk-mod/a2a-mod.jks` 取回）——那等于把发布私钥
+公开：拿到仓库的人可以签出**同包名、同证书**的 APK，Android 会把它当成正常
+升级**静默覆盖**已经装了旧包的手机。所以这把钥匙只能按「已泄露」处理：
 
-自己生成一个（一次即可，离线保管）：
+- 不能再用它签任何新版本（`apk-mod/sign-tool.sh` 会直接拒绝这个证书指纹，
+  指纹常量在同一文件顶部）；
+- 已经用旧钥匙装上的手机**不会自动变安全**——签名校验只发生在安装时，
+  攻击者签的包同样能通过；用户需要按 `apk-mod/signing.md` 主动换成新签名版本。
+
+新钥匙用脚本生成（默认拒绝写进仓库目录，口令随机并单独落 600 文件）：
 
 ```bash
-keytool -genkeypair -v -keystore my-release.jks -alias mykey \
-  -keyalg RSA -keysize 2048 -validity 10000
+sh apk-mod/sign-tool.sh new --out ~/.a2a-signing
+sh apk-mod/sign-tool.sh fingerprint --keystore ~/.a2a-signing/a2a-release.jks
 ```
 
 签名时用环境变量传路径与口令，别写进脚本或命令历史：
 
 ```bash
-export A2A_KEYSTORE=/secure/path/my-release.jks
-export A2A_KEYSTORE_PASS='…'
-export A2A_KEY_ALIAS=mykey
-apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \
-  --ks-pass env:A2A_KEYSTORE_PASS \
+export A2A_KEYSTORE=~/.a2a-signing/a2a-release.jks
+export A2A_KEY_ALIAS=a2a
+export A2A_KEYSTORE_PASS=$(cat ~/.a2a-signing/a2a-release.pass)
+apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \\
+  --ks-pass env:A2A_KEYSTORE_PASS \\
   --out ...-mod.apk ...-aligned.apk
 ```
 
-`my-release.jks` 已被根 `.gitignore` 的 `*.jks` 规则排除；任何情况下都
-不要为了「方便别人复现」而把私钥或口令放进 git。
+跨签名的包**不能覆盖安装**：换钥匙后老用户必须卸载重装（`adb uninstall
+com.agent2api.mobile` 之后再装），具体迁移步骤和发版顺序见 `apk-mod/signing.md`。
+
+`*.jks` / `*.keystore` / `*.pass` 已被根 `.gitignore` 排除；任何情况下都不要
+为了「方便别人复现」把私钥或口令放进 git（包括示例、截图、CI 日志）。

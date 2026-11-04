@@ -43,7 +43,12 @@ results, summary = {}, []
 
 def posix(p):
     s = str(p).replace('\\', '/')
-    return '/' + s[0].lower() + s[2:]
+    # 只有真正的 Windows 盘符路径才转成 /c/...；Linux 绝对路径（/tmp/x）
+    # 必须原样返回。旧实现无条件 return '/' + s[0].lower() + s[2:]，把
+    # /tmp/repro.sh 变成 //mp/repro.sh —— 在 Linux/MSYS 上根本找不到文件。
+    if len(s) >= 2 and s[1] == ':' and s[0].isalpha():
+        return '/' + s[0].lower() + s[2:]
+    return s
 
 
 def save(p, d):

@@ -232,7 +232,7 @@ source **真实** libexec 源码，在每个事务窗口注入故障：
 - `python test/verify_fixes.py`：37/37（R01–R19 函数级，在改后源码上全部通过——
   源码切片锚点用动态查找，journal 插入未破坏）；
 - `python test/verify_loop.py`：8/8（主循环集成，虚拟时钟）；
-- `sh test/run.sh --full`：三层全过（语法 15 文件 + txn 56 + verify 37+8）。
+- `sh test/run.sh --full`：三层全过（语法 17 文件 + txn 56 + verify 37+8）。
 
 ### 打包验证
 
@@ -249,9 +249,12 @@ source **真实** libexec 源码，在每个事务窗口注入故障：
    KSU 热安装路径）建议真机过一遍 `a2a update` + 断电重启场景。
 2. **F-007 的 netid 采样**依赖 `dumpsys connectivity`（Android 7+）；极旧 ROM 归一为
    unknown，退化为 iface+vpn 二要素判定（不差于修复前）。
-3. **F-009 前端**：TS 无类型检查环境（apk-mod 只有 6 个源文件，无完整构建项目），
-   重写逻辑用 Node 摘函数体方式验证过并发契约（审计期 replay_ui.py），但未在真实
-   APK 构建里编译。合并进上游构建前建议跑一次 `npm run build`。
+3. **F-009 前端**：TS 无类型检查环境（apk-mod 只有 6 个源文件，无完整构建项目）。
+   更正（2026-11-04 复审）：本轮并没有对修复后的代码做过 Node 验证 —— 当时引用的
+   `replay_ui.py` 读的是**基线仓库**的旧版 `SettingsPage.tsx`，只能说明旧实现的竞态，
+   不能当作新实现的证据。第二轮已补 `test/verify_frontend.py`（直接对修复后的源码断言
+   状态合并语义）与独立复审的动态验证；完整 APK 构建仍未编译，合并前建议跑
+   `npm run build`。
 4. **musl 构建仓库**（`84593320z/Agent2API-musl`）的 workflow 问题（浮动 tag、
    cargo 未 `--locked`、resolv 替换 n=0 不失败、UI 未注入模板）在审计报告里列为
    "关联构建仓库"项，不在本仓修复范围。

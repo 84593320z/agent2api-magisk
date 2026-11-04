@@ -570,6 +570,28 @@ dns_file_same() { # $1 $2
   [ -n "$_dfs_a" ] && [ -n "$_dfs_b" ] && [ "$_dfs_a" = "$_dfs_b" ]
 }
 
+# 当前网络的解析身份：默认网卡 + VPN 状态 + netId。
+# dns.lastgood 只是「某个网络上验证通过的配置」，换网后继续沿用就是拿
+# 旧网络的解析器解析新网络的流量（wlan0 的 LAN DNS 在 tun0 下往往仍可直连，
+# 等于把 VPN 的解析策略拆掉）。RR-06：lastgood 必须和身份绑定。
+dns_net_identity() {
+  _dni_if=$(dns_default_iface 2>/dev/null)
+  case "$_dni_if" in ''|*[!A-Za-z0-9._:-]*) _dni_if="unknown" ;; esac
+  _dni_vpn=0
+  dns_vpn_active 2>/dev/null && _dni_vpn=1
+  _dni_net=$(dns_active_netid 2>/dev/null)
+  case "$_dni_net" in ''|*[!0-9]*) _dni_net="unknown" ;; esac
+  printf '%s %s %s\n' "${_dni_if:-unknown}" "$_dni_vpn" "$_dni_net"
+}
+
+# DNS_CACHE 里可用的 nameserver：上一次验证通过、真正发布过的配置。
+# dns_ensure 也必须读它（RR-07）——只让 dns_write 读缓存，等于生产入口
+# 全都不恢复：supervise 启动与 dns_refresh_if_changed 走的都是 ensure。
+dns_cache_list() {
+  [ -s "$DNS_CACHE" ] || return 0
+  awk '$1=="nameserver" && $2!="" {printf "%s ", $2}' "$DNS_CACHE" 2>/dev/null
+}
+
 dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代 dns_write
   _emode=$(cfg_get dns_mode auto)
   if [ "$_emode" != "auto" ]; then dns_write "$_emode"; return $?; fi
@@ -578,9 +600,31 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
           | sed -n 's/^nameserver[[:space:]]*\([^[:space:]]*\).*/\1/p' \
           | awk '{printf "%s ", $1}')
   _esl=$(dns_static_list)
+  _eid=$(dns_net_identity 2>/dev/null)
+  # 缓存是「上次发布成功」的副本，必须带上当时的网络身份才允许兜底：
+  # 换到 VPN/别的 Wi-Fi 后，缓存里很可能是旧 LAN 的解析器，直接拿来用
+  # 就是把流量指回原网络（RR-06 的同一个坑，换了个入口）。
+  _ecache=""
+  _eid_net=${_eid##* }
+  _ecnet=$(cat "$DNS_NETID_CACHE" 2>/dev/null)
+  if [ -s "$DNS_CACHE" ]; then
+    if [ -n "$_ecnet" ] && [ "$_ecnet" = "$_eid_net" ]; then
+      _ecache=$(dns_cache_list 2>/dev/null)
+    else
+      log_to "$SUPLOG" "缓存里的 DNS 属于别的网络（${_ecnet:-unknown} != $_eid_net），不采用"
+    fi
+  fi
   _elgf="$A2A_LIVE/dns.lastgood"
+  _elgid="$A2A_LIVE/dns.lastgood.id"
   _elgl=""
-  [ -s "$_elgf" ] && _elgl=$(awk '{printf "%s ", $1}' "$_elgf" 2>/dev/null)
+  if [ -s "$_elgf" ]; then
+    if [ -s "$_elgid" ] && [ "$(cat "$_elgid" 2>/dev/null)" = "$_eid" ]; then
+      _elgl=$(awk '{printf "%s ", $1}' "$_elgf" 2>/dev/null)
+    else
+      log_to "$SUPLOG" "上一条 lastgood DNS 属于别的网络（$(cat "$_elgid" 2>/dev/null) != $_eid），本轮不采用"
+      rm -f "$_elgf" "$_elgid" 2>/dev/null
+    fi
+  fi
   # 现役配置整文件留一份：四级都失败时原样写回，绝不把“还能凑合”的结果弄更糟。
   # 只记 nameserver 会把 search/options/注释全部丢掉，回滚反而更糟。
   _eback="$TMPD/resolv.orig.$$"
@@ -610,24 +654,30 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
   # 默认「静态优先」：公网 DNS 只要能用就固定用它，不跟随系统变化，
   # 这样开关 VPN / 切节点时一个字节都不用改（和 wb2api、magpie 的体感一致）。
   # dns_follow_system=1 恢复老行为（跟随系统采样优先）。
+  # 候选顺序：身份匹配的 lastgood → 静态/系统 → 上次发布的可用配置 → 组合。
+  # 缓存排在静态与系统之后：它可能是别的网络上的 LAN 解析器，只在前三级
+  # 都拿不出东西时兜底（RR-07：没有它，采样为空 + live 缺失 + 无静态时
+  # dns_ensure 直接失败，明明手里有一份验证过的可用配置）。
   if [ "$(cfg_get dns_follow_system 0)" = "1" ]; then
-    _e1="$_elgl"; _e2="$_esys"; _e3="$_esys $_esl"; _e4="$_esl"
+    _e1="$_elgl"; _e2="$_esys"; _e3="$_esl"; _e4="$_ecache"; _e5="$_esys $_esl"
   else
-    _e1="$_elgl"; _e2="$_esl"; _e3="$_esys"; _e4="$_esys $_esl"
+    _e1="$_elgl"; _e2="$_esl"; _e3="$_esys"; _e4="$_ecache"; _e5="$_esys $_esl"
   fi
-  for _ecand in "$_e1" "$_e2" "$_e3" "$_e4"; do
+  for _ecand in "$_e1" "$_e2" "$_e3" "$_e4" "$_e5"; do
     [ -n "$_ecand" ] || continue
     dns_apply_list "$_ecand" || continue
     if dns_liveness_ok; then
       printf '%s\n' $_ecand | head -n 6 >"$_elgf" 2>/dev/null
       chmod 644 "$_elgf" 2>/dev/null
+      printf '%s\n' "$_eid" >"$_elgid" 2>/dev/null
+      chmod 644 "$_elgid" 2>/dev/null
       log_to "$SUPLOG" "DNS 生效并验证通过：$(printf '%s ' $_ecand)"
       # R14：成功也要收拾临时备份，否则每次 DNS 生效都往 tmp 里留一份整文件副本。
       rm -f "$_eback" 2>/dev/null
       return 0
     fi
   done
-  # ---- 四级候选全部失败：按 _estate 精确还原初始状态。绝不能把最后一个
+  # ---- 分级候选全部失败：按 _estate 精确还原初始状态。绝不能把最后一个
   # 失败候选留在 $DNSFILE 里还日志声称“保留现有配置”；每一步写操作都核对
   # 返回值，回写后读回比对（与备份逐字节一致 / 与预期状态一致）才算成功，
   # 校验失败只报错误日志并返回非零，不得报告成功。

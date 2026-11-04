@@ -104,6 +104,8 @@ apk-mod/               手机端 APK 改造
   src/                 改动过的 6 个前端源文件
   a2a-mobile-mod.patch 对上游 desktop-tauri/mobile 的完整 diff
   repack.py            把重新构建的 Web 产物塞回官方 APK（参数化，不签名）
+  sign-tool.sh         发布签名：生成新 keystore / 读指纹 / 拒绝已泄露的旧证书
+  signing.md           旧私钥泄露的影响与「换钥匙」迁移步骤
   README-mod.md        APK 侧的详细说明与验证记录（含签名指南）
 docs/                  审计 / 修复报告
   2026-11-03-源码审计-Agent2API-Android17.md   第一轮完整源码审计（19 项发现）
@@ -112,7 +114,7 @@ docs/                  审计 / 修复报告
   2026-11-03_Agent2API-magisk31-独立复审.md    独立复审：13 项真解决 / 6 项部分修复 + 19 组新问题
   2026-11-03_Agent2API-magisk32-19组修复报告.md 本轮按复审报告逐条修复的正式报告与复验证据
 test/run.sh            离线回归入口：语法检查 + 事务故障注入 + 可选 Python 套件
-test/txn_test.sh       事务/DNS/CLI 故障注入测试（journal 状态机、中断恢复、56 项断言）
+test/txn_test.sh       事务/DNS/CLI 故障注入测试（journal 状态机、中断恢复、96 项断言）
 test/fix_verify.py     第一轮 19 项修复的复测夹具（历史保留）
 test/verify_fixes.py   本轮 R01–R19 函数级隔离复验（37 项断言，自动探测 sh，可用 A2A_SH 覆盖）
 test/verify_loop.py    本轮 R01/R15/R16/R17 主循环集成复验（8 个场景）
@@ -189,10 +191,14 @@ sh test/run.sh --full   # 上一行之外，追加 Python verify 套件（需要
 ```
 
 `run.sh` 分三层：① 全部模块脚本的 `sh -n` 语法检查；② `txn_test.sh` 纯 POSIX
-故障注入测试（更新事务 journal / 中断恢复 / sweep 保护 / 静态载荷 / DNS 重算与缓存恢复，
-共 56 项断言）；③ `--full` 时跑 `verify_fixes.py`（R01–R19 函数级复验）与
-`verify_loop.py`（主循环集成复验 8 场景）。Python 套件可用 `A2A_MODULE`、
-`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖路径，中间产物写到 `test/*/out/`。
+故障注入测试（更新事务 journal / 中断恢复 / 回滚失败保现场 / 恢复互斥 / sweep 保护 /
+静态载荷 / DNS 网络身份与缓存恢复，共 96 项断言）；③ `--full` 时跑六组 Python 检查：
+`verify_fixes.py`（R01–R19 函数级复验）、`verify_loop.py`（主循环集成复验 8 场景）、
+`verify_paths.py`（跨平台路径转换）、`verify_frontend.py`（开关页状态合并）、
+`repack_test.py`（APK 重打包的输入保护与原子输出）、`sign_test.py`（签名指纹拦截）。
+`--full` 是验收模式：缺 python 或缺少套件文件都直接判失败，不会静默 SKIP。
+Python 套件可用 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖路径，
+中间产物写到 `test/*/out/`。
 
 APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 

@@ -1,0 +1,10 @@
+  ok   找到 GatewaySwitches.load
+  FAIL load 不再展开旧 current load 代码里仍出现 {...current}
+  FAIL load 从空对象构造 
+  ok   load 用服务端结果覆盖
+  ok   load 保留在途乐观值
+  ok   load 丢弃未返回键
+  ok   未就绪/未知状态禁用开关
+
+=== 7 checked / 5 passed / 2 failed ===
+rc=1

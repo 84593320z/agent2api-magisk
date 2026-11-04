@@ -1,0 +1,31 @@
+SKIP 当前环境无法创建符号链接
+  ok   out==apk 被拒绝
+  ok   out==apk 没有截断源包
+  ok   硬链接别名被拒绝
+  FAIL 硬链接别名没有截断源包  
+  FAIL 大小写别名被拒绝  OK C:\Users\Y-H\AppData\Local\Temp\repack-test-fhd3toto\BASE.APK
+   保留 0 条 / 新增 2 条 / 0.00 MB
+   输出未签名；用 apksigner + 你自己的 keystore 签名后再安装
+
+  FAIL 大小写别名没有截断源包  
+  FAIL out 在 web 内被拒绝  OK C:\Users\Y-H\AppData\Local\Temp\repack-test-fhd3toto\web\out.apk
+   保留 0 条 / 新增 3 条 / 0.00 MB
+   输出未签名；用 apksigner + 你自己的 keystore 签名后再安装
+
+  FAIL 被拒绝时没有生成输出  
+  ok   正常打包成功
+  ok   网页资源已替换
+  ok   新增资源已写入
+  FAIL resources.arsc 仍为 STORED  
+  ok   旧签名条目已删除
+  FAIL cordova 占位保留  
+  ok   输出包 CRC 完整
+  ok   没有残留临时文件
+  ok   缺少 index.html 时失败
+  ok   失败时旧输出原样保留
+  ok   输出路径不可替换时失败
+  ok   输出路径仍是目录(未被破坏)
+  ok   替换失败不留临时文件
+
+=== 21 checked / 14 passed / 7 failed ===
+rc=1

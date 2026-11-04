@@ -115,34 +115,63 @@ payload_txn_reload() {
 
 # 数据目录换入的中断收尾：可重复执行（幂等），绝不把 data 留成空目录。
 # $1=data_tmp（快照副本，换入前临时名） $2=data_aside（升级后数据移开的位置）
+#
+# 「换入做到哪一步」只能看 aside 目录在不在，不能看 $DATADIR 是不是非空：
+#   · aside 在      → 第一次 rename（DATADIR -> aside）已完成，$DATADIR 要么
+#                     不存在（两次 rename 之间），要么已经是换进来的快照；
+#   · aside 不在    → 第一次 rename 还没发生（或失败），$DATADIR 仍是升级后的
+#                     数据，$_ptd_tmp 是唯一的升级前快照，必须真的换进去。
+# 旧实现用「$DATADIR 非空 = 已就位」判断：换入还没开始时 $DATADIR 本来就非空，
+# 于是把唯一快照删掉、回滚等于没做，还把错误的数据当成已恢复（RR-04）。
 payload_txn_recover_data() {
   _ptd_tmp=${1:-}
   _ptd_aside=${2:-}
   if [ -n "$_ptd_tmp" ] && [ -d "$_ptd_tmp" ]; then
-    if [ -d "$DATADIR" ] && [ -n "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
-      # 换入已完成：$DATADIR 就是快照本体；中转与移开副本都不再需要。
-      rm -rf "$_ptd_tmp" 2>/dev/null
-      [ -n "$_ptd_aside" ] && rm -rf "$_ptd_aside" 2>/dev/null
-      log_to "$UPDLOG" "中断事务的数据换入已就位，清理中转目录"
-      return 0
-    fi
-    # DATADIR 缺失或为空目录（ensure_layout 会建空目录）→ 完成换入。
-    [ -d "$DATADIR" ] && rmdir "$DATADIR" 2>/dev/null
-    if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
-      chmod 700 "$DATADIR" 2>/dev/null
-      [ -n "$_ptd_aside" ] && rm -rf "$_ptd_aside" 2>/dev/null
-      log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data）"
-      return 0
-    fi
-    # 换入失败：把升级后的现场原样放回，宁可不回滚也不留空 data。
     if [ -n "$_ptd_aside" ] && [ -d "$_ptd_aside" ]; then
+      if [ -d "$DATADIR" ] && [ -n "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
+        # 换入已完成：$DATADIR 就是快照本体；中转与移开副本都不再需要。
+        rm -rf "$_ptd_tmp" 2>/dev/null
+        rm -rf "$_ptd_aside" 2>/dev/null
+        log_to "$UPDLOG" "中断事务的数据换入已就位，清理中转目录"
+        return 0
+      fi
+      # DATADIR 缺失或为空目录（ensure_layout 会建空目录）→ 完成换入。
+      [ -d "$DATADIR" ] && rmdir "$DATADIR" 2>/dev/null
+      if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
+        chmod 700 "$DATADIR" 2>/dev/null
+        rm -rf "$_ptd_aside" 2>/dev/null
+        log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data）"
+        return 0
+      fi
+      # 换入失败：把升级后的现场原样放回，宁可不回滚也不留空 data。
       if mv "$_ptd_aside" "$DATADIR" 2>/dev/null; then
         log_to "$UPDLOG" "数据换入失败，已放回升级后的数据目录"
         rm -rf "$_ptd_tmp" 2>/dev/null
         return 0
       fi
       log_to "$UPDLOG" "严重：数据现场在 $_ptd_aside，请手工恢复"
+      return 1
     fi
+    # aside 不在：换入还没开始，$DATADIR 是升级后的数据 —— 把快照换进去。
+    _ptd_up="$_ptd_aside"
+    [ -n "$_ptd_up" ] || _ptd_up="$DATADIR.upgraded.$$"
+    if [ -e "$_ptd_up" ]; then _ptd_up="$DATADIR.upgraded.$$"; fi
+    if [ -d "$DATADIR" ]; then
+      if ! mv "$DATADIR" "$_ptd_up" 2>/dev/null; then
+        log_to "$UPDLOG" "无法移开升级后的数据目录，快照保留在 $_ptd_tmp，下次再试"
+        return 1
+      fi
+    fi
+    if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
+      chmod 700 "$DATADIR" 2>/dev/null
+      rm -rf "$_ptd_up" 2>/dev/null
+      log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data，first rename 未发生）"
+      return 0
+    fi
+    if [ -d "$_ptd_up" ] && [ ! -e "$DATADIR" ]; then
+      mv "$_ptd_up" "$DATADIR" 2>/dev/null
+    fi
+    log_to "$UPDLOG" "数据换入失败，现场已放回，快照保留在 $_ptd_tmp"
     return 1
   fi
   # 只有 aside：数据被移开后、journal 都没来得及记 tmp 的极端窗口。
@@ -183,7 +212,10 @@ payload_txn_recover() {
   log_to "$UPDLOG" "发现中断的事务 journal（phase=$_ptr_phase txid=$_ptr_txid），开始收尾"
 
   # 数据目录的换入/移开独立于载荷：先收干净，别让后面的流程见到"空 data"。
-  payload_txn_recover_data "$_ptr_dtmp" "$_ptr_daside"
+  # 返回值必须看：换入失败还继续往下清 journal，等于把唯一的升级前快照
+  # 当成已恢复（RR-04）。失败就先记下，收尾时保留 journal 等下次重试。
+  _ptr_drc=0
+  payload_txn_recover_data "$_ptr_dtmp" "$_ptr_daside" || _ptr_drc=1
 
   case "$_ptr_phase" in
     prepared|quiesced|snapshotted)
@@ -205,8 +237,8 @@ payload_txn_recover() {
       payload_txn_clear
       return 0
       ;;
-    rolling-back|rollback-blocked)
-      # 回滚进行中：走下面的完整回滚路径（幂等）。
+    rolling-back|rollback-blocked|rollback-failed)
+      # 回滚进行中 / 上次回滚没做完：走下面的完整回滚路径（幂等）。
       ;;
     switching|switched|started)
       # 切换后、健康验证前中断：按"未验证"处理，回滚到旧载荷。
@@ -271,6 +303,13 @@ payload_txn_recover() {
       log_to "$UPDLOG" "数据快照恢复失败，快照保留在 $BACKUPDIR/data-prev"
       return 1
     fi
+    # 数据快照这条独立路径成功就等于数据已还原，不再要求下面那个判据。
+    _ptr_drc=0
+  fi
+
+  if [ "$_ptr_drc" != "0" ]; then
+    log_to "$UPDLOG" "数据目录仍未收尾，journal 保留到下次重试（快照见 $_ptr_dtmp）"
+    return 1
   fi
 
   live_link_refresh 2>/dev/null

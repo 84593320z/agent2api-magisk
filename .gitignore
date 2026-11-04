@@ -23,3 +23,7 @@ test/verify_loop/out/
 *.jks
 *.keystore
 *.keystore.b64
+*.pass
+*.p12
+test/run-*.txt
+test/out*/

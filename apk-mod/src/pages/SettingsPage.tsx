@@ -467,12 +467,17 @@ function GatewaySwitches() {
     const ep = epoch.current
     const next = await fetchSwitches()
     if (!alive.current || seq !== loadSeq.current || ep !== epoch.current) return
-    setState(current => {
-      // 写在途的键由它们自己的写响应带回；这里的快照可能早于写落库。
-      const merged: SwitchState = { ...current }
+    setState(() => {
+      // 整份状态以服务端返回为准：没回来的键（端点失败/老网关）必须变成
+      // undefined —— 旧实现 `{...current}` 合并会把上一次的已知值留下来，
+      // 端点已经 500 了开关还显示可点，拨下去必然失败（RR-08）。
+      // 仍在队列里的键由自己的写响应带回，这里保留它的乐观值。
+      const merged: SwitchState = {}
       for (const key of Object.keys(next) as SwitchId[]) {
-        if (pending.current.has(key)) continue
         merged[key] = next[key]
+      }
+      for (const [key, value] of pending.current) {
+        merged[key] = value
       }
       return merged
     })

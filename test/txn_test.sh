@@ -401,6 +401,177 @@ dns_write auto >/dev/null 2>&1
 ck 'T7 无缓存走静态兜底' 1 "$(grep -c 'nameserver 223.5.5.5' "$DNSFILE" 2>/dev/null)"
 
 # ============================================================================
+# ============================================================================
+# T8：健康失败 + 载荷回滚也失败 -> 不得重启/提交/清 journal（RR-01）
+# ============================================================================
+hdr 'T8 回滚不完整：保持停止、保全体、journal=rollback-failed'
+reset_case t8
+seed_payload "$PAYLOAD" 1.0.0
+printf 'old-schema' >"$DATADIR/agent2api.db"
+make_pkg 2.0.0
+svc_run_set 1
+(
+  # 健康检查失败 + 备份介质损坏（payload_rollback 真实失败路径）
+  svc_wait_health() { rm -rf "$BACKUPDIR/prev" 2>/dev/null; return 1; }
+  LOCAL_TAG=v2.0.0 upd_do_update stable 1 "$APP_HOME/local.tar.gz" >"$WORK/cases/t8/update.out" 2>&1
+)
+T8_RC=$?
+ck 'T8 更新返回失败' 1 "$T8_RC"
+ck 'T8 journal=rollback-failed' rollback-failed "$(jphase)"
+ck 'T8 服务保持停止(未重启)' 0 "$(svc_is_running >/dev/null 2>&1 && echo 1 || echo 0)"
+ck 'T8 没有重启事件' 0 "$(grep -c SVC_RESTART "$EVENTS" 2>/dev/null)"
+ck 'T8 载荷未被假装回滚(仍2.0.0)' 2.0.0 "$(pver "$PAYLOAD")"
+ck 'T8 数据已回到升级前快照' old-schema "$(cat "$DATADIR/agent2api.db" 2>/dev/null)"
+ckf 'T8 数据快照保留' 1 "$BACKUPDIR/data-prev"
+
+# ============================================================================
+# T9：有活跃更新事务时，journal 恢复必须让路（RR-02）
+# ============================================================================
+hdr 'T9 journal 恢复受 update 锁约束'
+reset_case t9
+seed_payload "$APP_HOME/payload.new.old.777" 1.0.0
+rm -rf "$PAYLOAD"
+printf 'v1 txid-x switching 777 12345 update-stable %s 0 - - 111 -\n' \
+  "$APP_HOME/payload.new.old.777" >"$A2A_TXN_JOURNAL"
+mkdir -p "$RUNDIR/update.lock.d"
+printf '99991 12345 99991.12345.111.0\n' >"$RUNDIR/update.lock.d/owner"
+(
+  # 锁的持有者是“另一个活着的进程”
+  pid_alive() { [ "$1" = "99991" ]; }
+  payload_recover_interrupted boot >"$WORK/cases/t9/recover.out" 2>&1
+)
+T9_RC=$?
+ck 'T9 拿到活锁时不恢复也不报错' 0 "$T9_RC"
+ck 'T9 journal 原样保留' switching "$(jphase)"
+ck 'T9 载荷未被换回(仍缺失)' 0 "$([ -e "$PAYLOAD" ] && echo 1 || echo 0)"
+ckf 'T9 旧载荷仍在' 1 "$APP_HOME/payload.new.old.777"
+ck 'T9 日志说明锁占用' 1 "$(grep -c '拿不到 update 锁' "$SUPLOG" 2>/dev/null)"
+# 锁释放后同样的 journal 必须能恢复
+rm -rf "$RUNDIR/update.lock.d"
+payload_recover_interrupted boot >"$WORK/cases/t9/recover2.out" 2>&1
+ck 'T9 锁释放后恢复成功' 0 $?
+ck 'T9 载荷恢复正常' 1.0.0 "$(pver "$PAYLOAD")"
+ck 'T9 journal 已清' '' "$(jphase)"
+
+# ============================================================================
+# T10：数据换入判据必须看 aside，而不是「DATADIR 非空」（RR-04）
+# ============================================================================
+hdr 'T10 数据换入中断收尾：三种现场'
+reset_case t10
+# (a) 第一次 rename 未发生：DATADIR 仍是升级后数据，快照停在 tmp
+printf 'new-data' >"$DATADIR/agent2api.db"
+mkdir -p "$APP_HOME/data.restore.9"; printf 'old-data' >"$APP_HOME/data.restore.9/agent2api.db"
+payload_txn_recover_data "$APP_HOME/data.restore.9" "$APP_HOME/data.upgraded.9" >/dev/null 2>&1
+ck 'T10a 返回成功' 0 $?
+ck 'T10a 快照真的换入' old-data "$(cat "$DATADIR/agent2api.db" 2>/dev/null)"
+ckf 'T10a 中转目录已清' 0 "$APP_HOME/data.restore.9"
+ckf 'T10a 没有留下移开副本' 0 "$APP_HOME/data.upgraded.9"
+# (b) 第二次 rename 前被打断：DATADIR 不在，aside 在
+rm -rf "$DATADIR"
+mkdir -p "$APP_HOME/data.restore.8"; printf 'old-data' >"$APP_HOME/data.restore.8/agent2api.db"
+mkdir -p "$APP_HOME/data.upgraded.8"; printf 'new-data' >"$APP_HOME/data.upgraded.8/agent2api.db"
+payload_txn_recover_data "$APP_HOME/data.restore.8" "$APP_HOME/data.upgraded.8" >/dev/null 2>&1
+ck 'T10b 返回成功' 0 $?
+ck 'T10b 快照换入' old-data "$(cat "$DATADIR/agent2api.db" 2>/dev/null)"
+ckf 'T10b 移开副本已清' 0 "$APP_HOME/data.upgraded.8"
+# (c) 换入已完成：DATADIR 就是快照，只清残留，不覆盖
+printf 'old-data' >"$DATADIR/agent2api.db"
+mkdir -p "$APP_HOME/data.restore.7"; printf 'old-data' >"$APP_HOME/data.restore.7/agent2api.db"
+mkdir -p "$APP_HOME/data.upgraded.7"; printf 'new-data' >"$APP_HOME/data.upgraded.7/agent2api.db"
+payload_txn_recover_data "$APP_HOME/data.restore.7" "$APP_HOME/data.upgraded.7" >/dev/null 2>&1
+ck 'T10c 返回成功' 0 $?
+ck 'T10c 数据保持快照' old-data "$(cat "$DATADIR/agent2api.db" 2>/dev/null)"
+ckf 'T10c 残留已清' 0 "$APP_HOME/data.upgraded.7"
+
+# ============================================================================
+# T11：巡检补提交必须先有健康证据（RR-05）
+# ============================================================================
+hdr 'T11 补提交只在健康通过后执行'
+reset_case t11
+seed_payload "$PAYLOAD" 2.0.0
+mkdir -p "$APP_HOME/payload.new.old.12345"
+seed_payload "$APP_HOME/payload.new.old.12345" 1.0.0
+printf 'tx1 update-stable\n' >"$RUNDIR/payload.generation"
+printf 'update-stable 12345 %s tx1 12345\n' "$APP_HOME/payload.new.old.12345" >"$RUNDIR/update.pending"
+CHILD_GENERATION=tx1
+eval "$(sed -n '/^supervise_commit_pending() {/,/^}/p' "$SRC/libexec/supervise.sh")"
+svc_http_health() { return 1; }
+supervise_commit_pending >"$WORK/cases/t11/scp1.out" 2>&1
+ckf 'T11 健康失败保留唯一回滚副本' 1 "$APP_HOME/payload.new.old.12345"
+ckf 'T11 健康失败保留 pending' 1 "$RUNDIR/update.pending"
+svc_http_health() { return 0; }
+supervise_commit_pending >"$WORK/cases/t11/scp2.out" 2>&1
+ckf 'T11 健康通过后提交删除旧载荷' 0 "$APP_HOME/payload.new.old.12345"
+
+# ============================================================================
+# T12：DNS 身份绑定 + 缓存进候选（RR-06 / RR-07）
+# ============================================================================
+hdr 'T12 DNS lastgood 绑定网络身份、缓存参与兜底'
+reset_case t12
+rm -f "$DNS_CACHE" "$DNS_NETID_CACHE"   # 不带上一个用例留下的缓存/身份
+printf 'dns_mode=auto\n' >"$SETTINGS"
+# T6 为了观察调用次数把 dns_ensure 换成了计数器 stub；这里重新载入真实实现
+# （dns.sh 只声明函数与路径常量，重载是安全的）。
+. "$SRC/libexec/dns.sh"
+dns_default_iface() { echo tun0; }
+dns_vpn_active() { return 0; }
+dns_active_netid() { echo 101; }
+dns_static_list() { echo "223.5.5.5 "; }
+dns_collect_system() { echo "nameserver 10.8.0.1"; }
+LIVE_LIST="192.168.1.1 10.8.0.1 9.9.9.9"
+dns_liveness_ok() {
+  _t12=" $(awk '/^nameserver/{printf "%s ", $2}' "$DNSFILE" 2>/dev/null)"
+  for _t12a in $LIVE_LIST; do
+    case "$_t12" in *" $_t12a "*) return 0 ;; esac
+  done
+  return 1
+}
+# (a) 旧 lastgood 属于 wlan0/100，当前是 tun0/1/101：不得沿用
+printf '192.168.1.1\n' >"$A2A_LIVE/dns.lastgood"
+printf 'wlan0 0 100\n' >"$A2A_LIVE/dns.lastgood.id"
+dns_ensure >/dev/null 2>&1
+ck 'T12a 返回成功' 0 $?
+ck 'T12a 未沿用别的网络的 DNS' 0 "$(grep -c '192.168.1.1' "$DNSFILE" 2>/dev/null)"
+ck 'T12a 改用当前系统的 DNS' 1 "$(grep -c '10.8.0.1' "$DNSFILE" 2>/dev/null)"
+ck 'T12a 新身份已记录' 'tun0 1 101' "$(cat "$A2A_LIVE/dns.lastgood.id" 2>/dev/null)"
+# (b) 身份匹配的 lastgood 仍然优先
+printf '192.168.1.1\n' >"$A2A_LIVE/dns.lastgood"
+printf 'tun0 1 101\n' >"$A2A_LIVE/dns.lastgood.id"
+: >"$DNSFILE"
+dns_ensure >/dev/null 2>&1
+ck 'T12b 身份匹配时沿用 lastgood' 1 "$(grep -c '192.168.1.1' "$DNSFILE" 2>/dev/null)"
+# (c) 采样为空/静态无/无 lastgood，但 DNS_CACHE 有验证过的配置
+rm -f "$A2A_LIVE/dns.lastgood" "$A2A_LIVE/dns.lastgood.id" "$DNSFILE"
+dns_collect_system() { return 0; }
+dns_static_list() { :; }
+printf 'nameserver 9.9.9.9\n' >"$DNS_CACHE"
+printf '101' >"$DNS_NETID_CACHE"     # 缓存发布时的网络身份与当前一致
+dns_ensure >/dev/null 2>&1
+ck 'T12c 缓存兜底成功' 0 $?
+ck 'T12c 发布缓存里的解析器' 1 "$(grep -c '9.9.9.9' "$DNSFILE" 2>/dev/null)"
+# (d) 缓存属于别的网络：即使能连通也不许拿来兜底（RR-06/07 的边界）
+rm -f "$DNSFILE" "$A2A_LIVE/dns.lastgood" "$A2A_LIVE/dns.lastgood.id"
+printf 'nameserver 9.9.9.9\n' >"$DNS_CACHE"
+printf '100' >"$DNS_NETID_CACHE"     # 上一次是 wlan0/100，当前 tun0/101
+dns_ensure >/dev/null 2>&1
+ck 'T12d 跨网缓存不兜底' 1 $?
+ck 'T12d 没有把跨网解析器写进 live' 0 "$([ -f "$DNSFILE" ] && grep -c '9.9.9.9' "$DNSFILE" 2>/dev/null || echo 0)"
+ck 'T12d 日志说明原因' 1 "$(grep -c '（100 != 101）' "$SUPLOG" 2>/dev/null)"
+
+# ============================================================================
+# T13：热安装不得在活服务上换载荷（RR-03，静态顺序断言）
+# ============================================================================
+hdr 'T13 customize 先停服再恢复'
+_CZ="$SRC/customize.sh"
+n_ctl=$(grep -n 'libexec/control.sh' "$_CZ" | head -n 1 | cut -d: -f1)
+n_stop=$(grep -n 'if svc_is_running' "$_CZ" | head -n 1 | cut -d: -f1)
+n_rec=$(grep -n 'payload_recover_interrupted' "$_CZ" | head -n 1 | cut -d: -f1)
+ck 'T13 加载 control.sh 在恢复之前' 1 "$([ -n "$n_ctl" ] && [ "$n_ctl" -lt "$n_rec" ] && echo 1 || echo 0)"
+ck 'T13 停服判定在恢复之前' 1 "$([ -n "$n_stop" ] && [ "$n_stop" -lt "$n_rec" ] && echo 1 || echo 0)"
+ck 'T13 运行期恢复模式' 1 "$(grep -c 'payload_recover_interrupted runtime' "$_CZ" 2>/dev/null)"
+ck 'T13 停不下来必须中止' 1 "$(grep -c '不在活服务上替换载荷' "$_CZ" 2>/dev/null)"
+ck 'T13 失败也会拉起原服务' 1 "$(grep -c 'svc_start >/dev/null 2>&1' "$_CZ" 2>/dev/null)"
+
 printf '\n=== %d checked / %d passed / %d failed ===\n' "$TOTAL" "$PASS" "$FAIL"
 [ -n "$FAILED_NAMES" ] && printf 'failed:%s\n' "$FAILED_NAMES"
 [ "$FAIL" -eq 0 ] || exit 1

@@ -130,18 +130,19 @@ chmod 755 "$APP_HOME" "$BINDIR" "$LOGDIR" "$RUNDIR" \
 
 # 沿用公共安装/更新锁；整个脚本只有这一处加锁。
 update_lock_acquire "$RUNDIR/update.lock.d" || abort "另一个安装/更新事务正在运行，请稍后重试"
-# F-004：拿到锁之后清残留，但绝不再用 `rm -rf payload.new.*` —— 该通配符
-# 会连带删掉上一笔中断事务登记在 pending/journal 里的旧载荷
-# （payload.new.old.<pid> 同样匹配），那是唯一能立刻回滚的副本。
-# 统一走 journal 恢复（boot 模式，无年龄门槛）+ sweep：sweep 只清无主目录，
-# 会保住 journal / pending / switching 标记引用的恢复材料。
-payload_recover_interrupted boot
-sweep_stale_dirs
+# RR-03：热安装是"运行中安装"，不是开机安装。下面的恢复可能按 journal
+# 换入数据快照、替换载荷目录，而此刻正在跑的服务还在写 $DATADIR —— 两边
+# 同时动就是数据库损坏。识别服务要按 live 模块路径（MODPATH 在更新时是
+# /data/adb/modules_update/<id>，不是运行中那份），停服在恢复之前。
+MODDIR=/data/adb/modules/$MODID
+[ -d "$MODDIR" ] || MODDIR="$MODPATH"
+. "$MODPATH/libexec/control.sh" || abort "无法加载 libexec/control.sh"
 _INSTALL_TRANSACTION="$APP_HOME/.install.$$"
 _ZONE_OLD="$APP_HOME/zoneinfo.old.$$"
 _ZONE_COMMITTED=0
 _ZONE_OLD_PRESENT=0
 _INSTALL_SUCCESS=0
+_HOT_WAS_RUNNING=0
 install_cleanup() {
   # 只要旧时区库已经被移开，就必须还原——不管新库有没有"提交"过。
   # 旧实现只在 _ZONE_COMMITTED=1 时还原，于是"移开旧库、新库还没 rename
@@ -157,10 +158,35 @@ install_cleanup() {
     mv -f "$_ZONE_OLD" "$APP_HOME/zoneinfo" 2>/dev/null
   fi
   rm -rf "$_INSTALL_TRANSACTION" 2>/dev/null
+  # 安装失败也要把本来在跑的服务拉回来：停服是安装造成的，不能让它一直停着。
+  if [ "$_INSTALL_SUCCESS" != "1" ] && [ "$_HOT_WAS_RUNNING" = "1" ]; then
+    svc_start >/dev/null 2>&1
+  fi
   update_lock_release "$RUNDIR/update.lock.d"
 }
 trap 'install_cleanup' EXIT
 trap 'exit 1' HUP INT TERM
+
+# 停服：必须在下面的恢复/替换之前完成，并且要核实真的退了（supervisor 与
+# 残留服务端进程都不许在）。停不下来就中止安装，绝不在活服务上换载荷。
+if svc_is_running; then
+  _HOT_WAS_RUNNING=1
+  ui_print "- 服务正在运行，先停止再替换载荷/数据（装完自动拉起）"
+  svc_stop || abort "无法停止正在运行的服务：请先执行 a2a stop 再安装"
+  if svc_is_running; then
+    abort "服务仍未停止，安装中止（不在活服务上替换载荷）"
+  fi
+  svc_kill_stray 2>/dev/null
+  _HOT_LEFT=$(svc_stray_pids 2>/dev/null)
+  [ -z "$_HOT_LEFT" ] || abort "仍有服务端进程未退出（$_HOT_LEFT），安装中止"
+fi
+# F-004：拿到锁之后清残留，但绝不再用 `rm -rf payload.new.*` —— 该通配符
+# 会连带删掉上一笔中断事务登记在 pending/journal 里的旧载荷
+# （payload.new.old.<pid> 同样匹配），那是唯一能立刻回滚的副本。
+# 走 journal 恢复（runtime：锁已在我们手里，不需要 boot 的年龄豁免）+
+# sweep：sweep 只清无主目录，会保住 journal / pending / switching 引用的材料。
+payload_recover_interrupted runtime
+sweep_stale_dirs
 
 # ---------------------------------------------------------------------------
 # 3) 在独立事务目录暂存全部新文件。权限和 loader 自检均针对暂存副本，
@@ -314,6 +340,19 @@ fi
 # 不 sync 的话极少数机器上会出现"装完重启，载荷又变回旧的"。
 sync 2>/dev/null
 _INSTALL_SUCCESS=1
+# 热安装按原状态把服务拉回来；启动失败只告警，不回滚已装好的载荷。
+if [ "$_HOT_WAS_RUNNING" = "1" ]; then
+  ui_print "- 重新拉起服务"
+  if svc_start; then
+    if svc_wait_health 45; then
+      ui_print "  服务已恢复并通过健康检查"
+    else
+      ui_print "  ! 服务已启动但健康检查未通过，见 a2a logs"
+    fi
+  else
+    ui_print "  ! 服务启动失败，请执行 a2a start 或重启手机"
+  fi
+fi
 rm -rf "$_ZONE_OLD" 2>/dev/null
 live_link_refresh || ui_print "  ! 动态链接器软链刷新失败，开机后会自动重试"
 if lib_snapshot_save; then

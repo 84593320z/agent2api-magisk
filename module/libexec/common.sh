@@ -755,7 +755,30 @@ payload_recover_interrupted() { # $1=boot|runtime（默认 runtime）
   _pri_boot=0
   [ "${1:-}" = "boot" ] && _pri_boot=1
   if [ -s "$A2A_TXN_JOURNAL" ]; then
-    payload_txn_recover "${1:-runtime}" && return 0
+    # RR-02：按 journal 收尾会移动载荷目录、换入数据快照、删中转目录，必须
+    # 与更新/安装事务互斥。旧实现直接调用 payload_txn_recover，supervise
+    # 与 updater 可以同时改同一份现场（journal 只挡"主人还活着"，挡不住
+    # 另一个刚启动、还没写 journal 的更新进程）。已持有锁（updater 事务内
+    # 调用）时直接复用，不重复取。
+    _pri_jtok=${UPDATE_LOCK_TOKEN:-}
+    _pri_jpath=${UPDATE_LOCK_PATH:-}
+    _pri_jlock=0
+    if ! update_lock_is_self "$RUNDIR/update.lock.d"; then
+      if update_lock_acquire "$RUNDIR/update.lock.d" 5 >/dev/null 2>&1; then
+        _pri_jlock=1
+      else
+        log_to "$SUPLOG" "拿不到 update 锁（有活跃更新事务），本轮不按 journal 恢复"
+        return 0
+      fi
+    fi
+    payload_txn_recover "${1:-runtime}"
+    _pri_jrc=$?
+    if [ "$_pri_jlock" = "1" ]; then
+      update_lock_release "$RUNDIR/update.lock.d"
+      UPDATE_LOCK_TOKEN=$_pri_jtok
+      UPDATE_LOCK_PATH=$_pri_jpath
+    fi
+    [ "$_pri_jrc" = "0" ] && return 0
     # journal 收尾失败：现场保持原样等下次，绝不再叠加启发式动作
     return 1
   fi

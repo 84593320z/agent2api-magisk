@@ -607,9 +607,36 @@ upd_do_update() {
         upd_transaction_finish 1
         return 1
       fi
-      payload_rollback || printf '载荷回滚失败，请执行 a2a doctor\n'
+      # RR-01：回滚结果必须逐项判定。旧实现用 `payload_rollback || printf`、
+      # `payload_data_rollback || printf` 把失败降级成一行提示，然后照样
+      # svc_restart、照样按「旧版已恢复」提交并 payload_txn_clear —— 服务跑着
+      # 新载荷、数据停在回滚了一半的状态，journal 还没了，事后无从追溯。
+      _upd_rbp=0
+      if payload_rollback; then
+        _upd_rbp=1
+      else
+        printf '载荷回滚失败，旧载荷与现场保持原样\n'
+      fi
+      _upd_rbd=1
       if [ "$UPD_DATA_SNAP" = "1" ]; then
-        payload_data_rollback || printf '数据快照恢复失败，快照保留在 %s，请执行 a2a doctor\n' "$BACKUPDIR/data-prev"
+        if payload_data_rollback; then
+          _upd_rbd=1
+        else
+          _upd_rbd=0
+          printf '数据快照恢复失败，快照保留在 %s\n' "$BACKUPDIR/data-prev"
+        fi
+      fi
+      if [ "$_upd_rbp" != "1" ] || [ "$_upd_rbd" != "1" ]; then
+        # 回滚没做完就不启动服务（宁可停着，也不在「新载荷 + 半旧数据」这种
+        # 不一致状态上跑业务），不删旧载荷、不写 committed，只把 journal
+        # 推进到 rollback-failed，交给开机恢复按同一份记录重试。
+        printf '回滚未完成（载荷=%s 数据=%s），服务保持停止，现场已保全\n' \
+          "$_upd_rbp" "$_upd_rbd"
+        log_to "$LOGDIR/update.log" "rollback incomplete payload_ok=$_upd_rbp data_ok=$_upd_rbd，保留 journal 等开机重试"
+        payload_txn_reload
+        payload_txn_write rollback-failed || true
+        upd_transaction_finish 1
+        return 1
       fi
       svc_restart
       _upd_rb_ok=1
