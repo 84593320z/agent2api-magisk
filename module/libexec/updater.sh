@@ -15,6 +15,10 @@ UPD_ACTIVATE_BEFORE=""
 UPD_ACTIVATE_AFTER=""
 UPD_ACTIVE_WRITTEN=0
 UPD_LOCK_HELD=0
+# 问题 1/2 的完成阶段状态：是否已停服、是否已启动过新版、是否做过数据快照
+UPD_SERVICE_STOPPED=0
+UPD_SERVICE_STARTED=0
+UPD_DATA_SNAP=0
 
 mirror_url() {
   _mu_cfg=$(cfg_get github_mirror)
@@ -36,7 +40,7 @@ mirror_url() {
 upd_curl() {
   _ca=""; [ -s "$CACERT" ] && _ca="--cacert $CACERT"
   _ua='agent2api-magisk/1.1'
-  # 三级降级：自带 curl → 系统 curl → busybox wget。
+  # 三级降级：自带 curl → 系统 curl → wget（仅配置 update_pin 时允许，见下）。
   # wb2api v1.4.4 的 updater.sh 就是这么排的（bin/curl → curl → bin/wget → wget → busybox wget）：
   # 模块里的静态 curl 万一被杀毒/清理工具删掉或架构不对，"在线升级"不该整条死掉。
   # 只有"跑不起来"（126/127）才降级，网络错误必须原样上报，不能被降级掩盖成成功。
@@ -52,6 +56,14 @@ upd_curl() {
     _uc=$?
     [ "$_uc" = "126" ] || [ "$_uc" = "127" ] || return "$_uc"
   fi
+  # wget 回退（问题 14）：busybox/toybox 的 wget 既不校验证书也不强制 TLS
+  # 版本，curl 的传输层约束（--proto '=https' --tlsv1.2）在这里全部丢失。
+  # 只有配置了 update_pin（固定 digest，完整性由 pin 保证、不依赖传输层）
+  # 时才允许走 wget；否则直接报错说明原因，绝不静默降级。
+  if [ -z "$(cfg_get update_pin "")" ]; then
+    printf '没有可用的 curl，且未配置 update_pin：wget 回退无法保证传输安全，拒绝下载\n' >&2
+    return 1
+  fi
   # 最后一位只认"-o 文件"这一种用法（本模块所有调用点都是这样）
   _wo=""; _wu=""
   while [ $# -gt 0 ]; do
@@ -63,12 +75,17 @@ upd_curl() {
     esac
   done
   [ -n "$_wu" ] || return 1
-  for _bb in /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox; do
-    [ -x "$_bb" ] || continue
+  # 优先 toybox wget、其次 busybox（问题 14）。-T 超时必加；-t 1 仅在该实现
+  # 支持时加：本机 busybox/toybox 的 wget 都是单次尝试且无 -t 选项，GNU wget
+  # 默认重试 20 次才需要显式限制成 1 次。
+  for _wg in toybox /data/adb/ksu/bin/busybox /data/adb/magisk/busybox /data/adb/ap/bin/busybox /data/adb/apd/bin/busybox; do
+    command -v "$_wg" >/dev/null 2>&1 || [ -x "$_wg" ] || continue
+    _wg_t=""
+    case $("$_wg" wget --help 2>&1) in *"-t"*) _wg_t="-t 1" ;; esac
     if [ -n "$_wo" ]; then
-      "$_bb" wget -q -O "$_wo" "$_wu" && return 0
+      "$_wg" wget -q -T 60 $_wg_t -O "$_wo" "$_wu" && return 0
     else
-      "$_bb" wget -q -O - "$_wu" && return 0
+      "$_wg" wget -q -T 60 $_wg_t -O - "$_wu" && return 0
     fi
   done
   return 1
@@ -247,14 +264,49 @@ upd_payload_committed() {
   UPD_COMMITTED=1
 }
 
-upd_finish_service() {
-  svc_stop || return 1
+upd_stop_service() { # 问题 2：停服并核实退出，必须发生在切换 payload 之前
   if [ "$UPD_WAS_RUNNING" = "1" ]; then
-    svc_start || return 1
+    # svc_stop 按 pidfile+cmdline 身份核验：TERM（supervisor 25s / server 10s）
+    # 不退再 KILL，仍存活即报失败；这里再兜一层 supervisor 复核。
+    svc_stop || { printf '服务停止失败（旧进程仍在），中止更新\n' >&2; return 1; }
+    if svc_is_running; then
+      printf '服务停止后 supervisor 仍存活，中止更新\n' >&2
+      return 1
+    fi
+  fi
+  # 服务端死了，它拉起的插件进程会成为孤儿继续写数据目录。数据快照（问题 1）
+  # 要求完全静默：无论更新前是否在运行，快照前都必须清掉残留并核实。
+  svc_kill_stray
+  _uss_left=$(svc_stray_pids 2>/dev/null)
+  if [ -n "$_uss_left" ]; then
+    printf '仍有模块相关进程未退出（%s），中止更新\n' "$_uss_left" >&2
+    return 1
+  fi
+  UPD_SERVICE_STOPPED=1
+  return 0
+}
+
+upd_finish_service() { # 按更新前状态恢复运行；返回健康结果
+  # 问题 2：停服已提前到 upd_stop_service（切换之前）。这里只负责
+  # 「更新前在运行 -> 现在也必须在运行且健康」；更新前就是停止的直接返回 0
+  # （「已安装未验证」是独立状态，见主流程的 pending-verify 分支）。
+  if [ "$UPD_WAS_RUNNING" != "1" ]; then
+    return 0
+  fi
+  # 置位在 svc_start 之前：启动期间被信号打断时，数据回滚判定要用它
+  UPD_SERVICE_STARTED=1
+  svc_start || return 1
+  svc_wait_health 45
+  return $?
+}
+
+upd_restore_service() { # 信号/失败后的服务恢复：在跑就重启到恢复后的载荷，没跑就按原状态启动
+  if svc_is_running || [ -n "$(svc_server_pid 2>/dev/null)" ]; then
+    svc_restart || return 1
     svc_wait_health 45
     return $?
   fi
-  return 0
+  upd_finish_service
 }
 
 upd_recover_activation() {
@@ -300,10 +352,22 @@ upd_on_signal() {
   log_to "$LOGDIR/update.log" "更新被信号中断，尝试恢复旧载荷"
   if [ -n "$UPD_ACTIVATE_BEFORE" ]; then
     upd_recover_activation
-    upd_finish_service
+    # 新版可能已经跑起来写过数据（信号落在健康等待窗口）：恢复载荷后把
+    # 数据快照也放回去；新版从未启动过时这是一次内容不变的复制，安全。
+    if [ "$UPD_SERVICE_STARTED" = "1" ] && [ "$UPD_DATA_SNAP" = "1" ]; then
+      payload_data_rollback || log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+    fi
+    upd_restore_service
   elif [ "$UPD_INSTALLED" = "1" ]; then
     # 当前安装器只保留一份完整 prev 备份；已完成的切换也统一走同一代次恢复。
     payload_rollback
+    if [ "$UPD_SERVICE_STARTED" = "1" ] && [ "$UPD_DATA_SNAP" = "1" ]; then
+      payload_data_rollback || log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+    fi
+    upd_restore_service
+  elif [ "$UPD_WAS_RUNNING" = "1" ]; then
+    # 停服后、切换前被中断（或停服/快照失败中止）：载荷与数据都没动过，
+    # 只需按原状态把服务拉回来；服务本来就没停时 svc_start 会发现已在运行。
     upd_finish_service
   fi
   upd_transaction_finish 1
@@ -332,6 +396,10 @@ upd_do_update() {
   }
   UPD_ACTIVE_WRITTEN=1
   log_to "$LOGDIR/update.log" "开始更新 chan=$_chan force=$_force"
+  # 问题 3：本笔事务的代次 ID。载荷切换（payload_activate_staged）会把它
+  # 原子写进代次文件与 pending，健康提交用它把「健康证据」绑定到具体
+  # 一次切换，防止删错别的代次的旧载荷。
+  PAYLOAD_TXID=$(payload_txid_new)
 
   if [ -n "${3:-}" ]; then
     _tag="${LOCAL_TAG:-$(payload_version)}"
@@ -377,7 +445,8 @@ upd_do_update() {
   fi
   printf '下载校验文件…\n'
   # 默认哈希必须直连官方 GitHub；加速镜像只承载 tar，不能同时决定哈希与包。
-  # 可选 update_pin 是受信 digest，设置后以 pin 为准，适合发布渠道独立校验。
+  # 可选 update_pin 是受信 digest：优先级最高，设置后以 pin 为准、不再访问任何
+  # 远程 .sha256（包括镜像），适合发布渠道独立校验（问题 12：pin 优先于镜像 SHA）。
   _pin=$(cfg_get update_pin "")
   if [ -n "${3:-}" ]; then
     : # 本地包：校验文件已在上面就位
@@ -385,9 +454,15 @@ upd_do_update() {
     printf '%s  %s\n' "$_pin" "$ASSET_NAME" >"$_sha" || { upd_fail '无法写入固定哈希'; return 1; }
   elif ! upd_curl -fL --max-time 90 --retry 2 --retry-all-errors "$_sha_url" -o "$_sha"; then
     # github.com 与 api.github.com 是两个独立域名：很多网络里 API 通、下载域名不通。
-    # 允许用**同一个镜像**再取一次 sha256 —— 此时 tar 本来就走这个镜像，
-    # 信任边界没有变化。要更严格就把开关关掉，改用 update_pin 固定 digest。
+    # 官方 sha256 不可达时允许用**同一个镜像**再取一次 —— 注意这确实是信任
+    # 降级（镜像可同时伪造包与校验值，见下），不是等价回退；要严格就保持
+    # 默认 0，或配置 update_pin 固定 digest。
     if [ "$(cfg_get update_sha_via_mirror 0)" = "1" ]; then
+      # 问题 12：开启镜像 sha256 = 真正的信任降级。镜像可以同时伪造包体和
+      # 校验值，构造一对自洽的 (tar, sha)，模块无法察觉。明确告警，绝不
+      # 让用户误以为这是等价选项。
+      log_to "$LOGDIR/update.log" "WARNING: update_sha_via_mirror=1，sha256 改从镜像获取：镜像可同时伪造包与校验值，信任边界已从 GitHub 降级到镜像；建议配置 update_pin 或保持默认 0"
+      printf '  WARNING: 镜像 sha256 回退已开启：镜像可同时伪造包与校验值，信任边界已降级\n'
       _mir=$(mirror_url "$_sha_url")
       if [ "$_mir" = "$_sha_url" ]; then
         upd_fail '官方 sha256 下载失败（未配置 github_mirror，无法走镜像）'; return 1
@@ -423,51 +498,103 @@ upd_do_update() {
   } >"$_root/VERSION" || { upd_fail '无法写入载荷版本'; return 1; }
 
   svc_is_running && UPD_WAS_RUNNING=1
+  # 问题 2：完成阶段时序重排。旧顺序是「先切载荷 -> upd_finish_service 才停服」，
+  # 切换窗口里旧服务端还拿着旧载荷跑，健康证据与磁盘状态脱节；新版迁移过
+  # 数据库后回滚更是只剩「旧程序 + 新数据」。新时序：
+  #   staging 完成 -> 停服并核实退出 -> 数据快照（问题 1）-> 原子切换 payload ->
+  #   （更新前在运行）启动 + svc_wait_health 45 -> 成功才提交；
+  #   任一步失败 -> 回滚载荷与数据 -> 按原状态重启旧版 -> 报错退出。
+  printf '停止服务并核实退出…\n'
+  upd_stop_service || { upd_fail '服务无法停止，更新中止（载荷与数据均未改动）'; return 1; }
+  printf '制作数据快照…\n'
+  payload_data_snapshot "$PAYLOAD_TXID" || { upd_fail '数据快照失败，中止更新（载荷未动，按原状态恢复服务）'; return 1; }
+  [ "$PAYLOAD_DATA_SNAPSHOT_TAKEN" = "1" ] && UPD_DATA_SNAP=1
   printf '安装新载荷并校验…\n'
   payload_install_from "$_root" 1 || { upd_fail '新载荷安装失败，已恢复旧版'; return 1; }
   if [ "$UPD_INSTALLED" != "1" ]; then
     upd_fail '载荷提交状态缺失，恢复旧版'; return 1
   fi
-  if ! upd_finish_service; then
-    printf '新版健康检查失败，正在回滚并强制重启旧版…\n'
-    payload_rollback || printf '回滚失败，请执行 a2a doctor\n'
-    if [ "$UPD_WAS_RUNNING" = "1" ]; then svc_restart; fi
-    _upd_rb_ok=1
-    if [ "$UPD_WAS_RUNNING" = "1" ]; then
+  if [ "$UPD_WAS_RUNNING" = "1" ]; then
+    _upd_verify_ok=0
+    if upd_finish_service; then
+      # 健康证据绑定（问题 3 的 updater 侧）：确认正在服务的进程确实是从新
+      # 载荷路径 exec 出来的。切换用的是 rename：旧进程的 /proc/<pid>/exe
+      # 会跟着 rename 指到被移走的目录，借此分辨「健康的是不是新版本」，
+      # 防止更新窗口里被手工拉起的旧实例顶替健康证据。静态载荷 exe=服务端，
+      # 动态载荷 exe=自带 loader，两者都在 $PAYLOAD 下，rename 后即失配。
+      _upd_srv=$(svc_server_pid 2>/dev/null)
+      _upd_exe=""
+      [ -n "$_upd_srv" ] && _upd_exe=$(readlink "/proc/$_upd_srv/exe" 2>/dev/null)
+      if [ -z "$_upd_srv" ] \
+         || { [ "$_upd_exe" != "$SERVER_BIN" ] && [ "$_upd_exe" != "$LOADER" ]; }; then
+        printf '健康检查命中的不是新载荷进程（exe=%s），按失败处理\n' "${_upd_exe:-未知}"
+      else
+        _upd_verify_ok=1
+      fi
+    fi
+    if [ "$_upd_verify_ok" != "1" ]; then
+      printf '新版健康检查失败，正在回滚载荷与数据…\n'
+      payload_rollback || printf '载荷回滚失败，请执行 a2a doctor\n'
+      if [ "$UPD_DATA_SNAP" = "1" ]; then
+        payload_data_rollback || printf '数据快照恢复失败，快照保留在 %s，请执行 a2a doctor\n' "$BACKUPDIR/data-prev"
+      fi
+      svc_restart
+      _upd_rb_ok=1
       if svc_wait_health 45; then
         printf '旧版已恢复并通过健康检查\n'
       else
         printf '旧版未通过健康检查，请执行 a2a doctor 和 a2a logs\n'
         _upd_rb_ok=0
       fi
-    fi
-    # R04：回滚成功后 pending 仍指着刚才失败的那一版。旧版已恢复可用，
-    # 这笔事务的「旧载荷」（即失败的 v2）就该提交掉；否则 pending 永远悬空，
-    # 下一次开机由守护拿着旧标记去提交，删的是别的代次的目录。
-    if [ "$_upd_rb_ok" = "1" ] && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
-      if payload_commit_old "rollback $$"; then
-        upd_payload_committed
+      # R04：回滚成功后 pending 仍指着刚才失败的那一版。旧版已恢复可用，
+      # 这笔事务的「旧载荷」（即失败的 v2）就该提交掉；否则 pending 永远
+      # 悬空，下一次开机由守护拿着旧标记去提交，删的是别的代次的目录。
+      if [ "$_upd_rb_ok" = "1" ] && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+        if payload_commit_old "rollback $$" "$PAYLOAD_TXID"; then
+          upd_payload_committed
+          rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+        else
+          printf '失败版本暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+        fi
       else
-        printf '失败版本暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+        printf '旧版尚未确认健康，保留事务现场：%s\n' \
+          "$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
       fi
-    else
-      printf '旧版尚未确认健康，保留事务现场：%s\n' \
-        "$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)"
+      upd_transaction_finish 1
+      return 1
     fi
-    upd_transaction_finish 1
-    return 1
-  fi
-  # 新版已经通过健康检查，事务旧载荷这时才允许删除（F-002 两阶段提交）。
-  # R03：带上本笔事务的标记（activate_staged 用 "new $$" 登记），
-  # 这样并发事务后写进来的 pending 不会被误当成自己的。
-  if payload_commit_old "new $$"; then
-    upd_payload_committed
+    # 新版已经通过健康检查，事务旧载荷这时才允许删除（F-002 两阶段提交）。
+    # R03：带上本笔事务的标记与 txid（activate_staged 用 "new $$" 登记），
+    # 并发事务后写进来的 pending 不会被误当成自己的。删除动作统一走
+    # payload_commit_old（内部持锁 + 代次校验），supervise 侧只是同一条
+    # 提交路径的「下轮重试」，不构成第二条删除路径。
+    if payload_commit_old "new $$" "$PAYLOAD_TXID"; then
+      upd_payload_committed
+      # 更新前遗留的「未验证安装」标记随本次已验证提交一并失效（问题 8）
+      rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+    else
+      printf '事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+    fi
   else
-    printf '事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试\n'
+    # 问题 8：更新前服务本就是停止的 —— 「已安装、未启动、未验证」是独立
+    # 状态：载荷已切换但手里没有任何健康证据，绝不是"成功"，也绝不能在这
+    # 里提交旧载荷。写 pending-verify 标记（含 txid），等下次健康启动由
+    # supervise 按代次匹配提交；期间又发生新更新（txid 不匹配）则留给新
+    # 事务处理。真正的提交仍走 pending + 代次，标记只是状态记账。
+    if printf '%s %s %s %s\n' "$PAYLOAD_TXID" "$(now_epoch)" new "$$" \
+       >"$RUNDIR/update.pending-verify.tmp.$$" 2>/dev/null \
+       && mv -f "$RUNDIR/update.pending-verify.tmp.$$" "$RUNDIR/update.pending-verify" 2>/dev/null; then
+      log_to "$LOGDIR/update.log" "更新已安装未验证（txid=$PAYLOAD_TXID，服务更新前处于停止状态）"
+    else
+      rm -f "$RUNDIR/update.pending-verify.tmp.$$" 2>/dev/null
+      printf '警告：无法写入 pending-verify 标记（提交仍按 pending+代次进行）\n'
+    fi
+    printf '更新已安装但未验证（服务更新前处于停止状态）：版本 %s\n' "$(payload_version)"
+    printf '下次服务健康启动后自动提交旧载荷\n'
   fi
   printf '更新完成：%s\n' "$(payload_version)"
-  [ "$UPD_WAS_RUNNING" = "1" ] && printf '服务健康检查通过\n' || printf '保留了更新前的停止状态\n'
-  log_to "$LOGDIR/update.log" "更新成功 $_tag"
+  [ "$UPD_WAS_RUNNING" = "1" ] && printf '服务健康检查通过\n' || printf '保留了更新前的停止状态（已安装未验证）\n'
+  log_to "$LOGDIR/update.log" "更新成功 $_tag（txid=$PAYLOAD_TXID verified=$UPD_WAS_RUNNING）"
   upd_transaction_finish 0
   return 0
 }

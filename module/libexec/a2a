@@ -7,7 +7,7 @@
 #   a2a restart           重启
 #   a2a logs [行数] [流]  看日志（流：server / sup / app / all，默认 all 30 行）
 #   a2a update [--beta] [--force]   在线升级载荷（带校验与自动回滚）
-#   a2a rollback          回滚到上一个版本
+#   a2a rollback [--with-data]       回滚到上一个版本（--with-data 连数据快照一起恢复）
 #   a2a dns [refresh|probe]         看 / 刷新 / 测试 DNS
 #   a2a doctor            全身体检（出问题先跑这个）
 #   a2a url [--port|--ports]  打印面板地址 / 有效面板端口 / 面板+网关端口
@@ -331,7 +331,20 @@ rollback_finish() {
   return "$_rbf_rc"
 }
 
-cmd_rollback() {
+cmd_rollback() { # 可选 --with-data：连同更新前的数据快照一起回滚（O2）
+  # 参数解析：无参数调用保持完全兼容；仅新增可选 --with-data。
+  _rb_with_data=0
+  for _rb_arg in "$@"; do
+    case "$_rb_arg" in
+      --with-data) _rb_with_data=1 ;;
+      '') ;; # 忽略空参数（兼容拼接调用）
+      *)
+        say "未知参数：$_rb_arg"
+        say "用法：a2a rollback [--with-data]"
+        return 1
+        ;;
+    esac
+  done
   _was_running=0
   svc_is_running && _was_running=1
   trap 'rollback_finish 130; exit 130' HUP INT TERM
@@ -343,7 +356,31 @@ cmd_rollback() {
   _rc=0
   _rb_activated=0
   _rb_old=""
+  _rb_data_done=0
   payload_rollback || _rc=$?
+  if [ "$_rc" -eq 0 ] && [ "$_rb_with_data" = "1" ]; then
+    # O2：--with-data 连数据一起回滚。快照恢复要求数据目录静默：先停掉仍在
+    # 跑的服务端（载荷虽已切走，它还握着旧 inode 随时可能写库），再恢复数据；
+    # 服务重启交给下面的统一路径（svc_restart 对已停服务是幂等的）。
+    _rb_data_rc=0
+    if [ "$_was_running" = "1" ]; then
+      svc_stop >/dev/null 2>&1 || _rb_data_rc=$?
+    fi
+    if [ "$_rb_data_rc" -ne 0 ]; then
+      say "警告：无法停止服务端，数据快照未恢复；载荷已回滚，服务将按回滚后的版本重启"
+    elif [ ! -d "$BACKUPDIR/data-prev" ]; then
+      say "没有更新前的数据快照（$BACKUPDIR/data-prev），仅回滚载荷"
+    else
+      say "正在恢复更新前的数据快照（将丢失更新之后对数据的全部写入）..."
+      if payload_data_rollback; then
+        _rb_data_done=1
+      else
+        # 数据恢复失败不推翻已成功的载荷回滚（那是本命令的主目的）：
+        # 快照保留在 data-prev，排障后可重试 a2a rollback --with-data。
+        say "警告：数据快照恢复失败（快照保留在 $BACKUPDIR/data-prev，可重试 a2a rollback --with-data）"
+      fi
+    fi
+  fi
   if [ "$_rc" -eq 0 ] && [ "$_was_running" = "1" ]; then
     say "重启服务..."
     svc_restart >/dev/null 2>&1 || _rc=$?
@@ -372,6 +409,21 @@ cmd_rollback() {
     else
       say "暂时拿不到更新锁，事务旧载荷留待下次启动提交"
     fi
+  fi
+  # O2：手工回滚默认只回滚载荷，数据仍是新版写入/迁移过的 —— 这正是问题 1
+  # 要根治的「旧程序 + 新数据」状态。数据快照存在时醒目提示，但默认不动数据。
+  if [ "$_rb_with_data" != "1" ]; then
+    if [ -d "$BACKUPDIR/data-prev" ]; then
+      say ""
+      say "===================== 警告 ====================="
+      say "载荷已回滚，但数据仍是新版本写入的（旧程序 + 新数据）。"
+      say "检测到更新前的数据快照：$BACKUPDIR/data-prev"
+      say "如需一并恢复数据：a2a rollback --with-data"
+      say "注意：恢复会丢失更新之后对数据的全部写入。"
+      say "==============================================="
+    fi
+  elif [ "$_rb_data_done" = "1" ]; then
+    say "数据已随载荷一起回滚到更新前快照"
   fi
   [ "$_was_running" != "1" ] || say "服务已恢复"
   return 0
@@ -561,7 +613,7 @@ case "${1:-status}" in
   restart)  cmd_restart ;;
   logs)     shift; cmd_logs "$@" ;;
   update)   shift; cmd_update "$@" ;;
-  rollback) cmd_rollback ;;
+  rollback) shift; cmd_rollback "$@" ;;
   desc)     shift; cmd_desc "$@" ;;
   dns)      shift; cmd_dns "$@" ;;
   doctor)   cmd_doctor ;;

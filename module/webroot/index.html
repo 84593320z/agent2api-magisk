@@ -181,25 +181,46 @@ sh /data/adb/agent2api/bin/a2a restart     # 重启服务端</pre>
           if (m > 0) return m + ' 分 ' + (sec % 60) + ' 秒';
           return sec + ' 秒';
         }
-        function row(k, v) { return '<div style="color:#7d8896">' + k + '</div><div>' + v + '</div>'; }
+        // 问题 13：状态字段的值一律走 DOM API + textContent，不再拼
+        // innerHTML 字符串 —— status.json 的字段（status/version 等）来自
+        // 服务端，拼进 HTML 就是注入面。两列 grid 的结构保持不变。
+        function row(k, v, bold) {
+          var kd = document.createElement('div');
+          kd.style.color = '#7d8896';
+          kd.textContent = k;
+          body.appendChild(kd);
+          var vd = document.createElement('div');
+          if (bold) {
+            var b = document.createElement('b');
+            b.textContent = v;
+            vd.appendChild(b);
+          } else {
+            vd.textContent = v;
+          }
+          body.appendChild(vd);
+        }
         function load() {
           fetch('status.json?t=' + Date.now(), { cache: 'no-store' })
             .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
             .then(function (s) {
-              var html = '';
-              html += row('状态', '<b>' + (LABEL[s.status] || s.status || '未知') + '</b>');
-              html += row('端口', (s.port || '?') +
+              body.textContent = '';
+              row('状态', LABEL[s.status] || s.status || '未知', true);
+              row('端口', (s.port || '?') +
                 (s.panel_port && String(s.panel_port) !== String(s.port) ? '（面板 ' + s.panel_port + '）' : ''));
-              html += row('载荷', s.version || '?');
-              html += row('运行时长', fmt(s.uptime));
-              html += row('PID', (s.supervisor_pid || '-') + ' → ' + (s.server_pid || '-'));
-              html += row('重启 / 失败', (s.restarts || 0) + ' / ' + (s.fails || 0));
-              body.innerHTML = html;
+              row('载荷', s.version || '?');
+              row('运行时长', fmt(s.uptime));
+              row('PID', (s.supervisor_pid || '-') + ' → ' + (s.server_pid || '-'));
+              row('重启 / 失败', (s.restarts || 0) + ' / ' + (s.fails || 0));
               if (tsEl) tsEl.textContent = s.ts ? '更新于 ' + new Date(Number(s.ts) * 1000).toLocaleTimeString() : '';
             })
             .catch(function (e) {
-              body.innerHTML = '<div class="hint" style="grid-column:1 / -1">读不到 status.json（' + e.message +
-                '）。守护进程没在跑、或模块目录不可读时属正常，用下面的命令看详情。</div>';
+              body.textContent = '';
+              var d = document.createElement('div');
+              d.className = 'hint';
+              d.style.gridColumn = '1 / -1';
+              d.textContent = '读不到 status.json（' + e.message +
+                '）。守护进程没在跑、或模块目录不可读时属正常，用下面的命令看详情。';
+              body.appendChild(d);
               if (tsEl) tsEl.textContent = '';
             });
           fetch('lastlog.txt?t=' + Date.now(), { cache: 'no-store' })

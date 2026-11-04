@@ -68,6 +68,7 @@ ui_print "- 安装路径：$APP_HOME（数据保留，模块升级不动它）"
 # ---------------------------------------------------------------------------
 for _required in \
   libexec/common.sh libexec/payload.sh libexec/dns.sh libexec/a2a \
+  libexec/boot-worker.sh libexec/boot-start.sh libexec/hot-restart.sh \
   settings.conf.example tools/curl tools/cacert.pem \
   zoneinfo/VERSION zoneinfo/UTC zoneinfo/Etc/UTC \
   zoneinfo/Asia/Shanghai zoneinfo/tzdata.zi

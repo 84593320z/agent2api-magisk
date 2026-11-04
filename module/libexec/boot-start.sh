@@ -1,14 +1,17 @@
 #!/system/bin/sh
 # ============================================================================
-# Agent2API 模块 · boot-start.sh（开机后台拉起，独立进程）
+# Agent2API 模块 · boot-start.sh（开机入口 → 投递 boot-worker）
 #
-# 由 service.sh 以独立进程方式启动（setsid + 后台），因此这里的 $$ 就是
-# 本进程自己的 PID：加锁时 proc_start_ticks $$ 能正常读到 /proc/$$/stat，
-# 事务身份成立。若把这段逻辑写在 service.sh 的 `( ... ) &` 里，$$ 会继承
-# 已经退出的父进程 PID，加锁必然失败（见 service.sh 头部说明）。
+# 由 service.sh 以独立进程方式启动（setsid + 后台）。历史上这个脚本自己
+# 承担“等 boot_completed → boot_delay → 等网络 → DNS 三件套 → svc_start”
+# 的完整流程；但 KernelSU / APatch 还有第二个入口 boot-completed.sh，旧
+# 实现在那边直接做 DNS 初始化并 svc_start，绕过了这里的等待策略，两个
+# 入口还可能并行准备 DNS、并行拉起服务。
 #
-# 流程：等 boot_completed → boot_delay → 等网络 → DNS 三件套 → 插件解释器
-#       → svc_start。全程失败都只记日志，不阻塞开机。
+# 现在完整流程统一收进 libexec/boot-worker.sh（独占锁保证全机同一时刻
+# 只跑一份），本脚本退化为纯投递：把 worker 丢到后台就立刻返回。仍然
+# 保持独立脚本文件、不并回 service.sh 的 `( ... ) &`，原因见 service.sh
+# 头部 —— 加锁发生在 worker 里，同样要求它是独立进程（$$ 是自己的 PID）。
 # ============================================================================
 
 _self="${0:-}"
@@ -17,7 +20,7 @@ case "$_self" in
   *)   MODDIR="." ;;
 esac
 # R19：本脚本住在 <模块根>/libexec/ 下，取目录只得到 libexec，模块根是它的
-# 上一层。旧实现少了这一层，只"恰好"靠 /data/adb/modules/agent2api 兜底才对；
+# 上一层。旧实现少了这一层，只“恰好”靠 /data/adb/modules/agent2api 兜底才对；
 # 模块目录改名、走 modules_update 或多开时会拿错路径。先向上找一级，再退标准路径。
 if [ ! -f "$MODDIR/module.prop" ]; then
   _bs_parent="${MODDIR%/*}"
@@ -29,43 +32,19 @@ fi
 
 [ -f "$MODDIR/libexec/common.sh" ] || exit 0
 . "$MODDIR/libexec/common.sh"
-. "$MODDIR/libexec/control.sh"
 
-log_to "$LOGDIR/boot.log" "boot-start.sh 启动（pid=$$）"
-
-wait_boot_completed 180
-
-_delay=$(cfg_get boot_delay 8)
-case "$_delay" in ''|*[!0-9]*) _delay=8 ;; esac
-[ "$_delay" -gt 0 ] && sleep "$_delay"
-
-_nw=$(cfg_get net_wait 45)
-case "$_nw" in ''|*[!0-9]*) _nw=45 ;; esac
-# 等网络超时不是错误（Android 上 net_ready 会因路由表形态误判），但必须留痕迹，
-# 否则用户只看到"开机 45 秒后才起来"却查不到原因。
-if ! wait_net "$_nw"; then
-  log_to "$LOGDIR/boot.log" "等待网络超时（${_nw}s），按无网继续启动；DNS 交给分级兜底"
-fi
-
-# DNS：这时候系统 DNS 才是真的（boot_completed 之前 ConnectivityService
-# 还没把 DnsAddresses 填进去）
-. "$MODDIR/libexec/dns.sh"
-dns_ensure
-nss_apply
-gai_apply
-
-# 插件解释器修复（面板拉起的插件二进制）
-. "$MODDIR/libexec/plugin.sh"
-plugin_interp_fix
-
-# autostart 可能在这几十秒里被用户关掉，落锁前再确认一次。
-if [ "$(cfg_get autostart 1)" != "1" ]; then
-  log_to "$LOGDIR/boot.log" "autostart 已被关闭，放弃拉起服务"
+[ -f "$MODDIR/libexec/boot-worker.sh" ] || {
+  log_to "$LOGDIR/boot.log" "boot-start.sh：缺少 libexec/boot-worker.sh，无法拉起"
   exit 0
+}
+
+log_to "$LOGDIR/boot.log" "boot-start.sh：投递开机流程到 boot-worker（from=service.sh）"
+
+# 独立进程：自己的 PID、自己的会话，父进程退出也不受影响。
+if command -v setsid >/dev/null 2>&1; then
+  setsid sh "$MODDIR/libexec/boot-worker.sh" service.sh >>"$LOGDIR/boot.log" 2>&1 </dev/null &
+else
+  sh "$MODDIR/libexec/boot-worker.sh" service.sh >>"$LOGDIR/boot.log" 2>&1 </dev/null &
 fi
 
-log_to "$LOGDIR/boot.log" "boot-start.sh 启动守护进程"
-svc_start
-_rc=$?
-rotate_log "$LOGDIR/boot.log" 256
-exit "$_rc"
+exit 0

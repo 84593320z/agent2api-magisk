@@ -73,6 +73,10 @@ fx() {{ cp -R "{posix(ROOT)}/fixtures/$1/." "$2"; }}
 
 STUBS = r'''
 log_to() { :; }
+# localfix：提交动作已抽成独立函数 supervise_commit_pending，主循环只调用它。
+# 这里计数以便断言「拉起成功后确实走到提交点」，同时避免 command not found 噪声。
+COMMITS=0
+supervise_commit_pending() { COMMITS=$((COMMITS+1)); }
 dns_ensure() { :; }; nss_apply() { :; }; gai_apply() { :; }
 live_link_refresh() { :; }; cgroup_escape() { :; }; payload_recover_interrupted() { :; }
 write_state() { printf '%s\n' "$1" >>"$CASE/states.txt"; }
@@ -104,8 +108,8 @@ start_child() {
 stop_child() { CHILD=""; CHILD_START=""; CHILD_TICKS=""; return 0; }
 cleanup() {
   release_wake
-  printf 'FINAL fails=%s giveup=%s launches=%s releases=%s takes=%s clock=%s\n' \
-    "$FAILS" "$GIVEUP" "$LAUNCHES" "$RELEASES" "$TAKES" "$CLOCK"
+  printf 'FINAL fails=%s giveup=%s launches=%s releases=%s takes=%s clock=%s commits=%s\n' \
+    "$FAILS" "$GIVEUP" "$LAUNCHES" "$RELEASES" "$TAKES" "$CLOCK" "$COMMITS"
 }
 sleep() {
   printf 'SLEEP t=%s dur=%s wake=%s fails=%s giveup=%s\n' "$CLOCK" "$1" "$WAKE" "$FAILS" "$GIVEUP" >>"$CASE/events.txt"
@@ -178,7 +182,9 @@ def parse(txt, key):
 
 r = results['fast_crash_fuse']
 summary.append({'case': 'fast_crash_fuse', 'pass': bool(r['final']) and 'giveup=1' in r['final'][0]
-                and 'fails=6' in r['final'][0], 'final': r['final']})
+                and 'fails=6' in r['final'][0] and 'commits=0' not in r['final'][0],
+                'final': r['final'],
+                'note': '每次拉起成功都走到 supervise_commit_pending（commits>0）'})
 r = results['natural_death_70s']
 summary.append({'case': 'natural_death_70s',
                 'pass': bool(r['final']) and 'giveup=1' in r['final'][0],

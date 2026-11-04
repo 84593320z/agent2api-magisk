@@ -95,6 +95,8 @@ def main():
             "libexec/common.sh", "libexec/dns.sh", "libexec/control.sh",
             "libexec/supervise.sh", "libexec/payload.sh", "libexec/updater.sh",
             "libexec/plugin.sh", "libexec/launch.sh", "libexec/boot-start.sh",
+            "libexec/boot-worker.sh", "libexec/hot-restart.sh",
+            "libexec/timezone.sh",
             "libexec/a2a", "seed/agent2api-server", "seed/VERSION",
             "tools/curl", "tools/cacert.pem", "settings.conf.example",
             "META-INF/com/google/android/update-binary"]

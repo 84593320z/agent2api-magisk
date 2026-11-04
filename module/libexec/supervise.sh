@@ -27,7 +27,6 @@ fi
 
 supervise_main() {
 ensure_layout
-payload_recover_interrupted
 secure_files
 
 PORT=$(port_normalize "$(cfg_get port 3065)") || {
@@ -95,6 +94,8 @@ fi
 CHILD=""
 CHILD_START=""
 CHILD_TICKS=""
+# 问题 3：本次子进程启动时读到的载荷代次（见 start_child / supervise_commit_pending）
+CHILD_GENERATION=""
 RESTARTS=0
 FAILS=0
 STOP=0
@@ -141,13 +142,43 @@ write_state() { # $1=status
   module_desc_set "$_ds · 端口 ${PORT:-?} · 载荷 $(payload_ver) · 面板 $(panel_port_effective 2>/dev/null)"
 }
 
+# JSON 字符串转义（问题 13-JSON）：反斜杠、双引号、控制字符（含换行）都必须
+# 转义 —— payload_ver 读的是载荷里的 VERSION 文件，版本串被污染时也要保证
+# status.json 仍是合法 JSON。纯 POSIX awk 实现，不依赖 jq。
+json_escape() { # $1=原始字符串；输出转义后的内容（不含两侧引号）
+  printf '%s' "$1" | awk '
+    BEGIN {
+      ORS = ""
+      # 0x01-0x1f 与 0x7f 统一转成 \u00XX；换行由 NR>1 的连接分支处理
+      for (i = 1; i < 32; i++) m[sprintf("%c", i)] = i
+      m[sprintf("%c", 127)] = 127
+    }
+    NR > 1 { printf "\\n" }
+    {
+      gsub(/\\/, "\\\\")
+      gsub(/"/, "\\\"")
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (c in m) printf "\\u%04x", m[c]
+        else printf "%s", c
+      }
+    }'
+}
+
 status_json_write() { # $1=status；把运行态落到 webroot/status.json，KSU 卡片可静态读
   _wj="$MODDIR/webroot/status.json"
   [ -d "$MODDIR/webroot" ] || return 0
+  # 问题 13：字符串字段先转义再插值（status/version）；数值字段都经过
+  # port_normalize 或算术运算，天然不含引号与控制字符
+  _js_status=$(json_escape "$1")
+  _js_ver=$(json_escape "$(payload_ver)")
+  # B1：恢复有效面板端口取值（旧版首行，问题 13 改造时被误删，导致
+  # heredoc 里的 ${_pp:-0} 恒为 0）。取不到时回退主端口，保持原有语义。
   _pp=$(panel_port_effective 2>/dev/null) || _pp="$PORT"
   _tmp="$RUNDIR/status.json.$$"
   cat <<EOF >"$_tmp" 2>/dev/null
-{"status":"$1","supervisor_pid":$$,"server_pid":${CHILD:-0},"uptime":${_up:-0},"restarts":${RESTARTS:-0},"fails":${FAILS:-0},"port":${PORT:-0},"panel_port":${_pp:-0},"version":"$(payload_ver)","ts":$(now_epoch)}
+{"status":"$_js_status","supervisor_pid":$$,"server_pid":${CHILD:-0},"uptime":${_up:-0},"restarts":${RESTARTS:-0},"fails":${FAILS:-0},"port":${PORT:-0},"panel_port":${_pp:-0},"version":"$_js_ver","ts":$(now_epoch)}
 EOF
   [ -s "$_tmp" ] || { rm -f "$_tmp" 2>/dev/null; return 0; }
   cmp -s "$_tmp" "$_wj" 2>/dev/null && { rm -f "$_tmp" 2>/dev/null; return 0; }
@@ -256,6 +287,10 @@ start_child() {
   RESTARTS=$((RESTARTS + 1))
   log_to "$SUPLOG" "拉起服务端（第 $RESTARTS 次）"
 
+  # 问题 3：记录本次子进程对应的载荷代次（读代次文件）。健康通过后的
+  # 提交只认「pending 的 txid == 这里的启动代次 == 磁盘当前代次」，
+  # 期间发生新切换就不再提交，防止删错别的代次的旧载荷。
+  CHILD_GENERATION=$(payload_generation_read 2>/dev/null)
   "$MODDIR/libexec/launch.sh" >>"$SRVLOG" 2>&1 &
   CHILD=$!
   CHILD_START=$(now_epoch)
@@ -321,12 +356,75 @@ on_signal() {
 trap 'on_signal' TERM INT HUP
 
 # ---------------------------------------------------------------------------
+# 健康启动成功后的提交入口（问题 3b / 问题 8）
+# 只在「pending 的 txid == 子进程启动时代次 == 磁盘当前代次（重读）」时提交；
+# 旧版遗留的无代次 pending 退回 tag 匹配，与历史行为兼容。update 锁的获取
+# 在 payload_commit_old 内部完成（短超时，拿不到本轮跳过下轮重试）。
+# ---------------------------------------------------------------------------
+supervise_commit_pending() {
+  _scp_disk=$(payload_generation_read)
+  if [ -s "$RUNDIR/update.pending" ]; then
+    _scp_line=$(head -n 1 "$RUNDIR/update.pending" 2>/dev/null) || _scp_line=""
+    _scp_tag=$(printf '%s\n' "$_scp_line" | awk '{print $1" "$2}')
+    _scp_txid=$(printf '%s\n' "$_scp_line" | awk '{print $4}')
+    if [ -n "$_scp_txid" ] || [ -n "$_scp_disk" ] || [ -n "$CHILD_GENERATION" ]; then
+      # 新式记账：三方代次完全一致才提交
+      if [ -n "$_scp_txid" ] && [ "$_scp_txid" = "$CHILD_GENERATION" ] \
+         && [ "$_scp_txid" = "$_scp_disk" ]; then
+        if payload_commit_old "$_scp_tag" "$_scp_txid"; then
+          log_to "$SUPLOG" "已提交代次 $_scp_txid 的事务旧载荷（$_scp_tag）"
+        else
+          log_to "$SUPLOG" "事务旧载荷暂未提交（代次 $_scp_txid），下一轮再试"
+        fi
+      else
+        log_to "$SUPLOG" "pending 属于其它代次（pending=${_scp_txid:-无} 启动=${CHILD_GENERATION:-无} 磁盘=${_scp_disk:-无}），本轮不提交"
+      fi
+    elif [ -n "$_scp_tag" ]; then
+      # 旧版遗留的 pending（无代次信息）：退回 tag 匹配
+      if payload_commit_old "$_scp_tag"; then
+        log_to "$SUPLOG" "已提交旧式记账的事务旧载荷（$_scp_tag）"
+      else
+        log_to "$SUPLOG" "事务旧载荷暂未提交（$_scp_tag），下一轮再试"
+      fi
+    fi
+  fi
+  # 问题 8：「已安装、未启动、未验证」的独立状态标记（更新前服务是停止的，
+  # 更新只切载荷不做健康验证）。该代次现在通过了健康检查 -> 提交并清除标记；
+  # 标记代次已不是磁盘代次时它不可能再被满足（代次从不回退），清掉防悬空。
+  if [ -f "$RUNDIR/update.pending-verify" ]; then
+    _scp_vtxid=$(awk 'NR==1{print $1; exit}' "$RUNDIR/update.pending-verify" 2>/dev/null)
+    if [ -n "$_scp_vtxid" ] && [ "$_scp_vtxid" = "$CHILD_GENERATION" ] \
+       && [ "$_scp_vtxid" = "$_scp_disk" ]; then
+      log_to "$SUPLOG" "未验证安装（代次 $_scp_vtxid）已通过健康检查，提交并清除标记"
+      if payload_commit_old "" "$_scp_vtxid"; then
+        rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+      else
+        log_to "$SUPLOG" "pending-verify 对应提交未完成，保留标记下一轮重试"
+      fi
+    elif [ -n "$_scp_vtxid" ] && [ "$_scp_vtxid" != "$_scp_disk" ]; then
+      log_to "$SUPLOG" "pending-verify 标记的代次（$_scp_vtxid）已不是当前代次（${_scp_disk:-无}），清除悬空标记"
+      rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+    fi
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # 启动前准备
 # ---------------------------------------------------------------------------
 log_to "$SUPLOG" "======== 守护进程启动 pid=$$ 端口=$PORT ========"
 
-# cgroup 逃逸：从 app 的 cgroup 里挪出来，避免被 app 的内存限制/冻结连坐
-cgroup_escape
+# 问题 6：中断恢复挪到取得实例锁之后（旧位置在加锁前，两个 supervisor 同时
+# 启动会竞争同一次恢复，且与活跃更新事务无互斥）。恢复逻辑本身是证据驱动
+# 的，临界区在 update 锁内（见 common.sh 的 payload_recover_interrupted）。
+payload_recover_interrupted
+
+# cgroup 逃逸：从 app 的 cgroup 里挪出来，避免被 app 的内存限制/冻结连坐。
+# 必须发生在拉起 server 子进程之前（子进程继承本进程的 cgroup 归属）；
+# 迁移不完整只告警不阻断启动（问题 4c：诚实上报，绝不静默成功）。
+if ! cgroup_escape; then
+  log_to "$SUPLOG" "警告：cgroup 逃逸不完全（部分控制器仍在 app 分组，详见上方逐控制器结果）"
+fi
 
 # 隐私遮蔽：把上游的 debug/last-request.json 顶成 /dev/null 软链
 privacy_shield
@@ -541,19 +639,11 @@ while [ "$STOP" = "0" ]; do
       log_to "$SUPLOG" "本次拉起成功，但仍保留此前 $FAILS 次快速失败计数以观察稳定性"
     fi
     write_state running
-    # R01：到这里才算「新载荷真的跑起来了」——start_child 已通过进程/端口/HTTP
-    # 联合健康检查。事务旧载荷的提交点放在这里（F-002），而不是 post-fs-data：
-    # 那时服务还没起，手里没有任何健康证据。
-    if [ -s "$RUNDIR/update.pending" ]; then
-      _sup_tag=$(awk '{print $1" "$2}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
-      if [ -n "$_sup_tag" ]; then
-        if payload_commit_old "$_sup_tag"; then
-          log_to "$SUPLOG" "已提交上一笔事务的旧载荷（$_sup_tag）"
-        else
-          log_to "$SUPLOG" "事务旧载荷暂未提交（$_sup_tag），下一轮启动再试"
-        fi
-      fi
-    fi
+    # R01（问题 3/8 修订）：到这里才算「新载荷真的跑起来了」—— start_child
+    # 已通过进程/端口/HTTP 联合健康检查。提交点仍在启动路径，但删除动作统一
+    # 走 payload_commit_old（内部自带 update 锁短超时与代次校验）：拿不到锁
+    # 就本轮跳过、下轮重试，绝不死等；代次不匹配绝不提交。
+    supervise_commit_pending
   else
     write_state starting-unhealthy
   fi

@@ -60,20 +60,20 @@ def find(rel, needle, start=1):
 
 
 def func(rel, name):
-    """取 name() { ... } 的完整原文（含收尾 }）。"""
+    """取 name() { ... } 的完整原文（含收尾 }）。
+
+    收尾以「第 0 列就是 }」为准，而不是数花括号配平：本仓所有顶层函数体都
+    以第 0 列的 } 结束，而函数体里会出现 `|| { ... }` 分组、awk 程序的
+    `BEGIN { ... }` 块，靠配平会被提前截断（曾因此把 hot_request_write 和
+    json_escape 切坏，用例直接语法错误）。
+    """
     lines = kl(rel)
     s = find(rel, name + '() {')
-    depth = 0
     out = []
     for ln in lines[s - 1:]:
         out.append(ln)
-        st = ln.strip()
-        if st == '{' or st.endswith('{'):
-            depth += 1
-        if st == '}' or st.startswith('}'):
-            depth -= 1
-            if depth <= 0 and st == '}':
-                return ''.join(out)
+        if ln.startswith('}'):
+            return ''.join(out)
     raise SystemExit('unbalanced function: ' + name)
 
 
@@ -204,11 +204,17 @@ metric old_kept "$(exists "$_old")"
 check('r01_post_fs_data_keeps_pending', {'pending_kept': '1', 'old_kept': '1'})
 
 sec9 = between('libexec/supervise.sh', '# 9) 拉起', 'done')
-run('r01_supervisor_commits_after_health', PRE + P('libexec/payload.sh') + r'''
+# localfix：提交动作从主循环内联块抽成 supervise_commit_pending()，切片里只剩调用，
+# 所以这里必须把函数本体一起带上，否则用例会静默地"什么都没提交"。
+sec9_commit = func('libexec/supervise.sh', 'supervise_commit_pending')
+run('r01_supervisor_commits_after_health', PRE + P('libexec/payload.sh') + sec9_commit + r'''
 mkdir -p "$PAYLOAD"; fx static "$PAYLOAD"
 mkdir -p "$APP_HOME/staged"; fx static_new "$APP_HOME/staged"
 payload_activate_staged "$APP_HOME/staged" new >/dev/null 2>&1
 _old=$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null)
+# localfix：提交必须三方代次一致（pending / 本次子进程启动代次 / 磁盘代次）。
+# start_child 被桩掉，所以这里手工把"本次子进程读到的代次"置为新载荷代次。
+CHILD_GENERATION=$(payload_generation_read)
 FAILS=0; LAUNCHES=0
 start_child() { LAUNCHES=$((LAUNCHES+1)); return 0; }
 write_state() { printf 'STATE=%s\n' "$1" >"$CASE/state.txt"; }
@@ -710,6 +716,86 @@ check('r15_autostart_and_stop_gate_launch', {'autostart_off_launches': '1'})
 
 for srv, th in servers.values():
     srv.shutdown(); srv.server_close(); th.join(5)
+
+# ====================================================== localfix-20261104
+# 这一节覆盖本轮融合进来的新行为：代次三方校验、热重启请求文件、
+# DNS 三态还原的文件比较原语、status.json 转义、开机入口统一投递。
+run('lf_generation_mismatch_blocks_commit', PRE + P('libexec/payload.sh')
+    + sec9_commit + r'''
+mkdir -p "$PAYLOAD"; fx static "$PAYLOAD"
+mkdir -p "$APP_HOME/staged"; fx static_new "$APP_HOME/staged"
+payload_activate_staged "$APP_HOME/staged" new >/dev/null 2>&1
+_old=$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null)
+# 子进程还停在上一代（切换后没拉起来、或健康检查命中的是旧进程）
+CHILD_GENERATION="generation-from-an-older-process"
+FAILS=0; LAUNCHES=0
+start_child() { LAUNCHES=$((LAUNCHES+1)); return 0; }
+write_state() { :; }
+log_to() { :; }
+''' + sec9 + r'''
+metric pending_kept "$(exists "$RUNDIR/update.pending")"
+metric old_kept "$(exists "$_old")"
+metric disk_generation_kept "$([ "$(payload_generation_read)" = "$(awk '{print $4}' "$RUNDIR/update.pending")" ] && printf 1 || printf 0)"
+''')
+check('lf_generation_mismatch_blocks_commit',
+      {'pending_kept': '1', 'old_kept': '1', 'disk_generation_kept': '1'})
+
+run('lf_hot_request_roundtrip', PRE + P('libexec/payload.sh')
+    + func('libexec/hot-restart.sh', 'hot_request_write')
+    + func('libexec/hot-restart.sh', 'hot_request_read')
+    + func('libexec/hot-restart.sh', 'hot_request_clear') + r'''
+HOT_REQ="$RUNDIR/hot-restart.request"
+metric empty_before "$([ -z "$(hot_request_read)" ] && printf 1 || printf 0)"
+hot_request_write 1 0; _w=$?
+metric write_rc "$_w"
+metric read_back "$(hot_request_read | awk '{print $1"|"$2}')"
+metric no_tmp_left "$([ -z "$(ls "$RUNDIR"/hot-restart.request.tmp.* 2>/dev/null)" ] && printf 1 || printf 0)"
+metric lock_released "$([ ! -d "$RUNDIR/hot-restart.req.lock.d" ] && printf 1 || printf 0)"
+hot_request_clear
+metric cleared "$([ ! -e "$HOT_REQ" ] && printf 1 || printf 0)"
+''')
+check('lf_hot_request_roundtrip',
+      {'empty_before': '1', 'write_rc': '0', 'read_back': '1|0',
+       'no_tmp_left': '1', 'lock_released': '1', 'cleared': '1'})
+
+run('lf_dns_file_same', PRE + P('libexec/payload.sh') + P('libexec/dns.sh') + r'''
+printf 'nameserver 1.1.1.1\nsearch lan\n' >"$CASE/a"
+printf 'nameserver 1.1.1.1\nsearch lan\n' >"$CASE/b"
+printf 'nameserver 8.8.8.8\n' >"$CASE/c"
+dns_file_same "$CASE/a" "$CASE/b" >/dev/null 2>&1; metric same_rc "$?"
+dns_file_same "$CASE/a" "$CASE/c" >/dev/null 2>&1; metric diff_rc "$?"
+dns_file_same "$CASE/a" "$CASE/missing" >/dev/null 2>&1; metric missing_rc "$?"
+dns_file_same "$CASE/missing" "$CASE/missing2" >/dev/null 2>&1; metric both_missing_rc "$?"
+''')
+check('lf_dns_file_same', {'same_rc': '0', 'diff_rc': '1',
+                          'missing_rc': '1', 'both_missing_rc': '1'})
+
+run('lf_json_escape', PRE + func('libexec/supervise.sh', 'json_escape') + r'''
+metric quote "$(json_escape 'a"b')"
+metric backslash "$(json_escape 'a\b')"
+metric multiline "$(json_escape "$(printf 'l1\nl2')")"
+metric plain "$(json_escape 'ok')"
+metric empty "$(json_escape '')"
+''')
+check('lf_json_escape', {'quote': 'a\\"b', 'backslash': 'a\\\\b',
+                         'multiline': 'l1\\nl2', 'plain': 'ok', 'empty': ''})
+
+run('lf_boot_entry_and_wget_guard', PRE + r'''
+BS="$MODDIR/libexec/boot-start.sh"
+metric dispatches_worker "$([ "$(grep -c 'boot-worker.sh' "$BS")" -ge 1 ] && printf 1 || printf 0)"
+metric no_inline_boot_wait "$(grep -c '^[^#]*wait_boot_completed' "$BS")"
+metric no_inline_svc_start "$(grep -c '^[^#]*svc_start' "$BS")"
+metric worker_present "$([ -f "$MODDIR/libexec/boot-worker.sh" ] && printf 1 || printf 0)"
+metric worker_locks "$(grep -c 'BOOT_LOCK' "$MODDIR/libexec/boot-worker.sh")"
+# wget 回退必须先撞 update_pin 闸门，再走到 wget 探测循环
+_g=$(grep -n 'cfg_get update_pin ""' "$MODDIR/libexec/updater.sh" | head -n 1 | cut -d: -f1)
+_w=$(grep -n 'for _wg in toybox' "$MODDIR/libexec/updater.sh" | head -n 1 | cut -d: -f1)
+metric guard_before_wget "$([ -n "$_g" ] && [ -n "$_w" ] && [ "$_g" -lt "$_w" ] && printf 1 || printf 0)"
+metric refusal_message "$(grep -c 'wget 回退无法保证传输安全' "$MODDIR/libexec/updater.sh")"
+''')
+check('lf_boot_entry_and_wget_guard',
+      {'dispatches_worker': '1', 'no_inline_boot_wait': '0', 'no_inline_svc_start': '0',
+       'worker_present': '1', 'guard_before_wget': '1', 'refusal_message': '1'})
 
 # ============================================================== R18
 run('r18_version_metadata', PRE + r'''

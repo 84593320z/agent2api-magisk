@@ -11,13 +11,74 @@
 
 最新构建在 **Releases** 页面（手机上直接点链接就能下）：
 
-- [agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.32/agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip) —— Magisk / KernelSU 模块包（musl 静态载荷）
-- [agent2api-magisk-v3.3.0-beta.7-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7/agent2api-magisk-v3.3.0-beta.7-arm64.zip) —— 上一版（magisk.31），保留备用
+- [agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.33/agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip) —— Magisk / KernelSU 模块包（musl 静态载荷，融合 localfix-20261104）
+- [agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.32/agent2api-magisk-v3.3.0-beta.7-magisk.32-arm64.zip) —— 上一版（magisk.32，R01–R19 修复），保留备用
+- [agent2api-magisk-v3.3.0-beta.7-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7/agent2api-magisk-v3.3.0-beta.7-arm64.zip) —— 更早一版（magisk.31），保留备用
 - [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 手机端 APK
 
 ---
 
-## 这一版（v3.3.0-beta.7 / magisk.32）改了什么
+## 这一版（v3.3.0-beta.7 / magisk.33）改了什么
+
+这一版把 2026-11-04 交来的 `localfix-20261104` 覆盖包**融合**进仓库：R01–R19 全部保留
+（其中三处被加强），另外补进一批事务与运行时能力。逐条对照见
+[docs/2026-11-04_localfix融合说明.md](docs/2026-11-04_localfix融合说明.md)。
+
+**输入包不是完整模块包**：只有脚本、`webroot/index.html`、`module.prop` 与 `docs/`，没有 `seed/`（服务端载荷）、
+`tools/`（curl/CA）、`zoneinfo/`、`META-INF/`；它的 `customize.sh` 也只是"把包内文件覆盖进已装目录再调
+`hotinstall.sh`"的补丁脚本。所以处理方式是**取其脚本、弃其安装器**：脚本与文档合进 `module/`，
+那份安装器存进 [overlay/](overlay/) 作参考（见 [overlay/README.md](overlay/README.md)），
+仓库的 `module/customize.sh`、`seed/`、`tools/`、`zoneinfo/`、`META-INF/` 一律保留。
+
+**更新事务（这一版最大的改动）**
+
+1. **先停服、再快照、最后才切**。旧流程是"切完再健康"，服务还在跑旧进程时也可能被判健康。
+   现在 staging → `upd_stop_service`（停服并核实真的退出）→ `payload_data_snapshot` →
+   原子切换 → 健康校验（并用 `/proc/<pid>/exe` 确认命中的就是新载荷进程）→ 提交。
+2. **数据也跟着回滚**。切换前把数据目录 `cp -a` 到 `$BACKUPDIR/data-prev`（另写 `data-prev.txid`），
+   并核验 `*.db` / `-wal` / `-shm` 的字节数；回滚时用 `$DATADIR.restore.$$` 中转、
+   `$DATADIR.upgraded.$$` 保全现场。新增 `a2a rollback --with-data` 走"旧程序 + 旧数据"一起回退；
+   不加这个开关时，若存在数据快照会明确提示"你会得到旧程序 + 新数据"。
+3. **代次绑定（txid）**。`update.pending` 从 3 个字段扩到 `tag pid path txid startticks`，
+   另有 `$RUNDIR/payload.generation` 与 `payload.switching` 记录切换现场。提交要求
+   "pending 的 txid = 本次子进程启动时读到的代次 = 磁盘代次"三方一致；无代次的旧 pending 回退到 tag 匹配。
+4. **"已安装未验证"独立状态**。更新时服务本来就是停的（`UPD_WAS_RUNNING!=1`），这种更新只切载荷、
+   不做健康验证，因此单独写 `$RUNDIR/update.pending-verify`，等下次开机/启动真正健康通过后再提交。
+
+**运行时与安全**
+
+5. **cgroup 逃逸重写**：逐行解析 `/proc/self/cgroup`，v1 按 `/proc/self/mountinfo` 找每个控制器
+   真正挂载点（优先 `$4=="/"` 的根挂载），v2 用 cgroup2 根；写 `tasks` 否则 `cgroup.procs`；
+   写完全部**回读** `/proc/<pid>/cgroup` 校验每个层级都到 `/`，任一失败就返回非零（不再"改一个当成功"）。
+   `cgroup_escape --check` 只读。
+6. **开机入口统一**：`boot-start.sh`、`boot-completed.sh` 都只投递，新文件 `libexec/boot-worker.sh`
+   独占 `boot.lock.d` 串行跑完整流程（等 boot_completed → 延迟 → 等网 → DNS 三件套 → 解释器修正 →
+   复核 autostart → 幂等启动），两个入口不再各跑一套。
+7. **热重启不再重复重启**：改成"请求文件 + 单 worker"。触发只写 `hot-restart.request` 并抢 worker 锁；
+   在跑的 worker 每轮重读最新请求、动作前重读 `autostart`，收尾有 ≤3 轮有界复检防丢失窗口。
+8. **卸载零删除保护**：缺 `svc_kill_all_module_procs` / `update_lock_acquire` 直接中止（一个文件都不删）；
+   进更新锁后停服，正常停不掉就强化停止，仍失败则中止；确认全退出才清锁与崩溃孤儿。
+9. **DNS 三态还原**：原文件"不存在 / 空 / 有内容"分别精确还原（空文件走 tmp+mv，原本不存在则删掉并核实），
+   还原后读回比对。
+10. **安全收紧**：`wget` 回退只在配置了 `update_pin`（固定 digest）时允许，否则明确拒绝并说明原因；
+    `update_sha_via_mirror=1` 会打印"镜像可同时伪造包与校验值"的 WARNING；`status.json` 走 `json_escape`；
+    WebUI 全部改成 DOM + `textContent`，不再拼 `innerHTML`。
+
+**验证**（两个套件都在 `test/`，可复跑）
+
+- `test/verify_fixes.py` —— **37 项全绿**：R01–R19 原 32 项，加上本轮新增的 5 项
+  （代次不符不提交、热重启请求往返、DNS 文件比较原语、JSON 转义、开机入口投递 + wget 闸门顺序）。
+- `test/verify_loop.py` —— **8 场景全绿**，并新增"拉起成功后确实走到 `supervise_commit_pending`"断言。
+- `sh -n` 全量 21 个 Shell 入口全过。
+
+> **仍然没有真机回归**：以上都在 Windows + msys `sh` 沙箱里跑，msys `sh` 不等于 Android BusyBox `ash`。
+> 安装、开机拉起、在线更新、`rollback --with-data` 这条完整链仍需上机确认。
+> 另外 `svc_start_impl` 在 `setsid` 前仍会清掉 `$RUNDIR/stop`，`boot-worker.sh` 复核 `autostart`
+> 但不复核 stop 标记与门禁——这两处原报告就列为"看到但未修"，这版沿用同样处理。
+
+---
+
+## 上一版（v3.3.0-beta.7 / magisk.32）改了什么
 
 magisk.31 发布后又做了一次**独立复审**：把"上次说已经修好的 19 项"逐条重新验证，结论是
 **13 项真解决了、6 项只是部分修复**，另外查出 **19 组新问题**（R01–R19：6 高 / 11 中 / 2 低）。

@@ -535,6 +535,21 @@ dns_apply_list() { # $1=候选（空格分隔）；去重、限 6 条、写入�
   return 0
 }
 
+# 逐字节比对两个文件是否一致（还原后的读回校验用）。
+# 优先 cmp；环境里没有 cmp 时退回 sha256_of（common.sh，多级兜底）。
+# 两个哈希都算不出来时按“不一致”处理：宁可误报校验失败走降级路径，
+# 也不能在没验证过的情况下宣布还原成功。
+dns_file_same() { # $1 $2
+  [ -f "$1" ] && [ -f "$2" ] || return 1
+  if command -v cmp >/dev/null 2>&1; then
+    cmp -s "$1" "$2"
+    return $?
+  fi
+  _dfs_a=$(sha256_of "$1")
+  _dfs_b=$(sha256_of "$2")
+  [ -n "$_dfs_a" ] && [ -n "$_dfs_b" ] && [ "$_dfs_a" = "$_dfs_b" ]
+}
+
 dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代 dns_write
   _emode=$(cfg_get dns_mode auto)
   if [ "$_emode" != "auto" ]; then dns_write "$_emode"; return $?; fi
@@ -550,9 +565,19 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
   # 只记 nameserver 会把 search/options/注释全部丢掉，回滚反而更糟。
   _eback="$TMPD/resolv.orig.$$"
   rm -f "$_eback" 2>/dev/null
+  # 初始状态分三种记录，候选全部失败时逐一精确还原（旧实现只认“非空”
+  # 一种，原文件不存在 / 存在但为空这两种都会还原错）。
+  _estate=absent
+  if [ -f "$DNSFILE" ]; then
+    if [ -s "$DNSFILE" ]; then
+      _estate=file
+    else
+      _estate=empty
+    fi
+  fi
   # R14：备份失败就不能开始改。旧实现无视 cp 失败，一旦四级候选全部不可用，
   # 回滚只能走「仅回填 nameserver」的降级路径，search/ndots/注释会被整段丢掉。
-  if [ -s "$DNSFILE" ]; then
+  if [ "$_estate" = "file" ]; then
     if ! cp -f "$DNSFILE" "$_eback" 2>/dev/null || [ ! -s "$_eback" ]; then
       rm -f "$_eback" 2>/dev/null
       log_to "$SUPLOG" "无法备份现有 DNS 配置（$_eback），放弃本次改写"
@@ -582,22 +607,55 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
       return 0
     fi
   done
-  if [ -s "$_eback" ]; then
+  # ---- 四级候选全部失败：按 _estate 精确还原初始状态。绝不能把最后一个
+  # 失败候选留在 $DNSFILE 里还日志声称“保留现有配置”；每一步写操作都核对
+  # 返回值，回写后读回比对（与备份逐字节一致 / 与预期状态一致）才算成功，
+  # 校验失败只报错误日志并返回非零，不得报告成功。
+  if [ "$_estate" = "file" ]; then
     if cp -f "$_eback" "$DNSFILE.restore.$$" 2>/dev/null \
        && chmod 644 "$DNSFILE.restore.$$" 2>/dev/null \
-       && mv -f "$DNSFILE.restore.$$" "$DNSFILE" 2>/dev/null; then
-      cp -f "$DNSFILE" "$DNS_CACHE" 2>/dev/null
-      log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置（$(dns_probe)）"
+       && mv -f "$DNSFILE.restore.$$" "$DNSFILE" 2>/dev/null \
+       && dns_file_same "$DNSFILE" "$_eback"; then
+      # DNS_CACHE 是“最后可用配置”的副本，跟着还原后的现役文件走（与
+      # dns_write / dns_apply_list 成功路径保持同一约定）；回写失败只警告。
+      if cp -f "$DNSFILE" "$DNS_CACHE" 2>/dev/null; then
+        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置并校验一致（$(dns_probe)）"
+      else
+        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已整文件还原原配置并校验一致；缓存副本回写失败（$DNS_CACHE）"
+      fi
     else
       rm -f "$DNSFILE.restore.$$" 2>/dev/null
-      [ -n "$_eorig" ] && dns_apply_list "$_eorig"
-      log_to "$SUPLOG" "DNS 分级兜底均未通过验活，整文件还原失败，仅回填 nameserver（$(dns_probe)）"
+      # 整文件还原失败（或还原后读回比对不符）：降级为仅回填原 nameserver。
+      # 降级路径同样要核对结果，失败就如实报错，不能再说“保留现有配置”。
+      if [ -n "$_eorig" ] && dns_apply_list "$_eorig" && [ -s "$DNSFILE" ]; then
+        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，整文件还原失败，已降级回填原 nameserver（$(dns_probe)）"
+      else
+        log_to "$SUPLOG" "DNS 分级兜底均未通过验活，整文件还原与降级回填均失败：$DNSFILE 可能残留失败候选，请人工检查"
+      fi
     fi
     rm -f "$_eback" 2>/dev/null
     return 1
   fi
-  [ -n "$_eorig" ] && dns_apply_list "$_eorig"
-  log_to "$SUPLOG" "DNS 分级兜底均未通过验活，保留现有配置（$(dns_probe)）"
+  if [ "$_estate" = "empty" ]; then
+    # 原文件存在但为空：还原成空文件（tmp + mv 原子替换，读回校验为空）。
+    _eempty="$DNSFILE.empty.$$"
+    if : >"$_eempty" 2>/dev/null \
+       && chmod 644 "$_eempty" 2>/dev/null \
+       && mv -f "$_eempty" "$DNSFILE" 2>/dev/null \
+       && [ -f "$DNSFILE" ] && [ ! -s "$DNSFILE" ]; then
+      log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已还原为初始的空配置文件"
+    else
+      rm -f "$_eempty" 2>/dev/null
+      log_to "$SUPLOG" "DNS 分级兜底均未通过验活，还原空配置失败：$DNSFILE 可能残留失败候选，请人工检查"
+    fi
+    return 1
+  fi
+  # 初始状态：原文件不存在 → 删除候选留下的文件，还原“不存在”。
+  if rm -f "$DNSFILE" 2>/dev/null && [ ! -e "$DNSFILE" ]; then
+    log_to "$SUPLOG" "DNS 分级兜底均未通过验活，已删除候选文件，还原初始的不存在状态"
+  else
+    log_to "$SUPLOG" "DNS 分级兜底均未通过验活，删除候选文件失败：$DNSFILE 可能残留失败候选，请人工检查"
+  fi
   return 1
 }
 

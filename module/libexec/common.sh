@@ -601,23 +601,124 @@ sha256_of() {
 # ---------------------------------------------------------------------------
 
 # 1) cgroup 逃逸。
-#    service.sh 有时会被塞进某个 app 的 cgroup（/apps/...）。那个 cgroup 有
-#    内存上限，而且 app 被杀/被冻结时整组进程一起完蛋 —— 表现为"服务莫名其妙
-#    没了，日志里啥也没有"。把守护进程挪到 cgroup 根就免疫。
-cgroup_escape() {
-  [ "$(cfg_get cgroup_escape 1)" = "1" ] || return 0
-  [ -w /sys/fs/cgroup/cgroup.procs ] || return 0
-  _cg=$(head -n 1 /proc/self/cgroup 2>/dev/null)
-  case "$_cg" in
-    *"/apps/"*|*"/background"*|*"/foreground"*|*"/top-app"*) ;;
-    *) return 0 ;;
-  esac
-  if echo $$ >/sys/fs/cgroup/cgroup.procs 2>/dev/null; then
-    log_to "$SUPLOG" "已从 app cgroup 逃逸到根 cgroup"
-  else
-    log_to "$SUPLOG" "cgroup 逃逸失败（继续运行，不影响功能）"
+#    service.sh / hot-restart.sh 有时会被塞进某个 app 的 cgroup。那个 cgroup
+#    有内存上限，而且 app 被杀/被冻结时整组进程一起完蛋 —— 表现为"服务莫名
+#    其妙没了，日志里啥也没有"。把守护进程挪到各控制器层级根就免疫。
+#    旧实现的三个洞（问题 4）：只看 /proc/self/cgroup 第一行（本机是 hybrid
+#    模式，freezer 恰好在根，真正被困的 cpuset/cpu 在后面的行里）；只写 v2
+#    统一层级的 /sys/fs/cgroup/cgroup.procs（本机 cpuset 挂在 /dev/cpuset、
+#    cpu 挂在 /dev/cpuctl，路径完全对不上）；写失败也返回成功（静默假成功）。
+#    新实现：逐行解析 /proc/self/cgroup；v1 控制器行按 /proc/self/mountinfo
+#    找到该控制器的挂载点（fstype=cgroup 且 superopts 含控制器名），把本
+#    进程 PID 写进挂载根的 tasks（无 tasks 再用 cgroup.procs）；v2 行
+#    （0::/path）写统一层级挂载根的 cgroup.procs。每次写入后回读
+#    /proc/<pid>/cgroup 核验，逐控制器记录结果；任一控制器仍在非根 app 路径
+#    就如实返回非零，调用方记警告但不阻断启动。
+#    函数自包含：只依赖 /proc 与 awk，不依赖 common.sh 的其它状态或路径
+#    （cfg_get 仅在存在时用于配置门控），可整体提取到独立脚本测试。
+#    --check 为只读检查模式：只打印每个控制器当前路径与计划动作，不写任何
+#    文件。注意：本函数迁移的是"当前 shell 进程"自身，必须直接调用（不能放
+#    进命令替换），调用方后续拉起的子进程会继承迁移后的归属。
+cgroup_escape() { # $1 可选 --check：只读检查模式
+  _cge_mode=run
+  [ "${1:-}" = "--check" ] && _cge_mode=check
+  # 配置门控：模块内按 settings.conf（默认开）；单独提取测试时没有 cfg_get
+  # 就直接执行，保证测试环境行为完整。
+  if [ "$_cge_mode" = "run" ] && command -v cfg_get >/dev/null 2>&1; then
+    [ "$(cfg_get cgroup_escape 1)" = "1" ] || return 0
   fi
-  return 0
+  _cge_pid=$$
+  _cge_cg=/proc/$_cge_pid/cgroup
+  [ -r "$_cge_cg" ] || { printf 'cgroup_escape: 无法读取 %s\n' "$_cge_cg"; return 1; }
+  _cge_bad=0
+  _cge_moved=0
+  while IFS= read -r _cge_line; do
+    [ -n "$_cge_line" ] || continue
+    _cge_hier=${_cge_line%%:*}
+    _cge_rest=${_cge_line#*:}
+    _cge_ctrls=${_cge_rest%%:*}
+    _cge_path=${_cge_rest#*:}
+    if [ "$_cge_path" = "/" ]; then
+      # 已在该层级根：视为成功，不写（问题 4b）。检查模式也要报告。
+      if [ "$_cge_mode" = "check" ]; then
+        printf 'cgroup_escape: [%s] 当前 / ：已在层级根，无需迁移\n' "${_cge_ctrls:-cgroup2}"
+      fi
+      continue
+    fi
+    # 找该层级的挂载点：v1 按控制器名匹配 cgroup 挂载，v2 找 cgroup2 挂载。
+    # 挂载根一律从 mountinfo 解析，不硬编码（本机 cpuset 在 /dev/cpuset、
+    # cpu 在 /dev/cpuctl，根本不在 /sys/fs/cgroup 下）。
+    if [ -z "$_cge_ctrls" ]; then
+      _cge_want=cgroup2
+    else
+      _cge_want=${_cge_ctrls%%,*}
+    fi
+    _cge_mnt=$(awk -v want="$_cge_want" '
+      {
+        sep = 0
+        for (i = 1; i <= NF; i++) if ($i == "-") { sep = i; break }
+        if (!sep) next
+        fst = $(sep + 1)
+        if (want == "cgroup2") {
+          if (fst != "cgroup2") next
+        } else {
+          if (fst != "cgroup") next
+          hit = 0
+          for (i = sep + 3; i <= NF; i++) {
+            n = split($i, a, ",")
+            for (j = 1; j <= n; j++) if (a[j] == want) hit = 1
+          }
+          if (!hit) next
+        }
+        # 优先 root 字段为 "/" 的挂载（bind 子树挂载的根不是层级根），
+        # 没有再退到第一个匹配挂载。
+        if ($4 == "/") { print $5; exit }
+        if (m == "") m = $5
+      }
+      END { if (m != "") print m }
+    ' /proc/self/mountinfo 2>/dev/null)
+    # v1 层级根的迁移入口是 tasks（noprefix 模式直接在挂载根），没有再用 cgroup.procs
+    if [ -z "$_cge_ctrls" ]; then
+      _cge_target=cgroup.procs
+    elif [ -n "$_cge_mnt" ] && [ -e "$_cge_mnt/tasks" ]; then
+      _cge_target=tasks
+    else
+      _cge_target=cgroup.procs
+    fi
+    if [ "$_cge_mode" = "check" ]; then
+      if [ -z "$_cge_mnt" ]; then
+        printf 'cgroup_escape: [%s] 当前 %s ：mountinfo 中找不到挂载点，无法迁移\n' "$_cge_ctrls" "$_cge_path"
+      else
+        printf 'cgroup_escape: [%s] 当前 %s ：计划写入 %s/%s 迁到层级根\n' "$_cge_ctrls" "$_cge_path" "$_cge_mnt" "$_cge_target"
+      fi
+      _cge_bad=1
+      continue
+    fi
+    if [ -z "$_cge_mnt" ]; then
+      printf 'cgroup_escape: [%s] 当前 %s ：mountinfo 中找不到挂载点，无法迁移\n' "$_cge_ctrls" "$_cge_path"
+      _cge_bad=1
+      continue
+    fi
+    if printf '%s\n' "$_cge_pid" >"$_cge_mnt/$_cge_target" 2>/dev/null; then
+      # 回读核验（问题 4c）：按层级号重读 /proc/<pid>/cgroup，确认已到根
+      _cge_now=$(awk -F: -v h="$_cge_hier" '$1 == h {print $3; exit}' "$_cge_cg" 2>/dev/null)
+      if [ "$_cge_now" = "/" ]; then
+        printf 'cgroup_escape: [%s] 已从 %s 迁到层级根（%s/%s）\n' "$_cge_ctrls" "$_cge_path" "$_cge_mnt" "$_cge_target"
+        _cge_moved=1
+      else
+        printf 'cgroup_escape: [%s] 写入成功但仍停在 %s（期望 /），如实上报\n' "$_cge_ctrls" "${_cge_now:-未知}"
+        _cge_bad=1
+      fi
+    else
+      # 写失败（只读挂载/权限不足）必须如实报告，不得静默成功（问题 4d）
+      printf 'cgroup_escape: [%s] 写入 %s/%s 失败（只读挂载或权限不足），如实上报\n' "$_cge_ctrls" "$_cge_mnt" "$_cge_target"
+      _cge_bad=1
+    fi
+  done <"$_cge_cg"
+  if [ "$_cge_bad" = "0" ] && [ "$_cge_moved" = "1" ]; then
+    printf 'cgroup_escape: 全部控制器已就位（含本次迁移的层级）\n'
+  fi
+  [ "$_cge_bad" = "0" ]
 }
 
 # 2) 隐私遮蔽：上游会把完整请求正文写到 debug/last-request.json。
@@ -641,39 +742,107 @@ privacy_shield() {
 
 # 3) 开机残留：上次升级/卸载中途被打断，会在 APP_HOME 里留下
 #    payload.new.* / payload.old / payload.rollback.* / upd.* 这些目录，
-#    最坏情况把 /data 撑满。这里扫一遍清掉（只清"确定是临时垃圾"的）。
+#    最坏情况把 /data 撑满。这里按证据恢复（只动"确定已死事务"的现场）。
+#    问题 6：恢复是证据驱动的 —— 只在「切换进行中标记(payload.switching)
+#    已过期（>120s）」或「pending 明确属于已死事务（pid+启动代次对不上）」
+#    且「当前载荷确实缺失/损坏」时才动手；绝不因瞬时缺失就判定上一事务
+#    死亡。临界区用 update 锁短超时包裹：拿不到锁说明有活跃事务，本轮
+#    不动作。调用点（supervise.sh）已挪到取得实例锁之后。
 payload_recover_interrupted() {
   # 必须校验 ELF、完整 lib 和 UI；不能只凭主 ELF 存在就认定切换完成。
-  _valid=0
   # 完整性判定统一走 payload_validate：它会先区分静态/动态载荷，
   # 静态包本来就没有 lib/ld-linux-aarch64.so.1，硬要求会让中断恢复永远失败。
-  payload_validate "$PAYLOAD" >/dev/null 2>&1 && _valid=1
-  if [ "$_valid" != "1" ]; then
-    for _old in "$APP_HOME"/payload.*.old.* "$APP_HOME/payload.old" "$APP_HOME/payload.rollback.old" "$BACKUPDIR/prev"; do
-      [ -d "$_old" ] || continue
-      if payload_validate "$_old" >/dev/null 2>&1; then
-        # R09：移开"坏 current"失败时必须放弃这一次恢复。旧实现忽略 mv 的
-        # 返回码继续往下 mv，old 会被嵌进坏目录（payload/下再套一层 old 名），
-        # 结果 current 仍然坏、唯一回滚副本也被毁掉，函数还照样 return 0 报成功。
-        if [ -e "$PAYLOAD" ]; then
-          if ! mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null; then
-            log_to "$SUPLOG" "无法移开不完整的当前载荷，跳过本次恢复：$_old"
-            continue
-          fi
+  _pri_valid=0
+  payload_validate "$PAYLOAD" >/dev/null 2>&1 && _pri_valid=1
+  if [ "$_pri_valid" = "1" ]; then
+    # 载荷完好：切换早已完成或从未开始。只清掉可能残留的切换标记。
+    if [ -f "$RUNDIR/payload.switching" ]; then
+      rm -f "$RUNDIR/payload.switching" 2>/dev/null
+      log_to "$SUPLOG" "清除残留的载荷切换标记（当前载荷完好）"
+    fi
+    return 0
+  fi
+  # 载荷不完整：收集「上一事务已死」的证据
+  _pri_evidence=0
+  _pri_reason=""
+  if [ -f "$RUNDIR/payload.switching" ]; then
+    _pri_sw_ts=$(awk 'NR==1{print $2; exit}' "$RUNDIR/payload.switching" 2>/dev/null)
+    case "$_pri_sw_ts" in ''|*[!0-9]*) _pri_sw_ts=0 ;; esac
+    _pri_age=$(( $(now_epoch) - _pri_sw_ts ))
+    [ "$_pri_age" -lt 0 ] && _pri_age=0
+    if [ "$_pri_age" -gt 120 ]; then
+      _pri_evidence=1
+      _pri_reason="切换标记已过期 ${_pri_age}s"
+    else
+      # 标记还新：可能真有事务在跑（或刚死），本轮不动
+      log_to "$SUPLOG" "载荷不完整但切换标记仅 ${_pri_age}s（<=120s），跳过恢复等下轮"
+      return 0
+    fi
+  fi
+  if [ "$_pri_evidence" != "1" ] && [ -s "$RUNDIR/update.pending" ]; then
+    # pending 属于已死事务：登记的 pid 已不存在或启动代次对不上
+    _pri_pid=$(awk 'NR==1{print $2; exit}' "$RUNDIR/update.pending" 2>/dev/null)
+    _pri_ticks=$(awk 'NR==1{print $5; exit}' "$RUNDIR/update.pending" 2>/dev/null)
+    case "$_pri_pid$_pri_ticks" in
+      ''|*[!0-9]*) ;;
+      *)
+        if ! pid_alive "$_pri_pid" \
+           || [ "$(proc_start_ticks "$_pri_pid" 2>/dev/null)" != "$_pri_ticks" ]; then
+          _pri_evidence=1
+          _pri_reason="pending 属于已死事务（pid=$_pri_pid）"
         fi
-        if mv "$_old" "$PAYLOAD" 2>/dev/null && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
-          payload_fix_perms "$PAYLOAD"
-          log_to "$SUPLOG" "已恢复中断的载荷切换：$_old"
-          rm -rf "$APP_HOME/payload.incomplete.$$"
-          break
+        ;;
+    esac
+  fi
+  if [ "$_pri_evidence" != "1" ]; then
+    log_to "$SUPLOG" "载荷不完整但没有已死事务的证据，跳过恢复（避免误伤活跃事务）"
+    return 0
+  fi
+  log_to "$SUPLOG" "检测到中断的载荷事务（$_pri_reason），尝试恢复"
+  # 临界区：update 锁短超时。已持有（如 upd_recover_activation 在事务内调用）
+  # 则直接复用；拿不到说明有活跃事务，本轮不动作。
+  _pri_outer_token=${UPDATE_LOCK_TOKEN:-}
+  _pri_outer_path=${UPDATE_LOCK_PATH:-}
+  _pri_locked=0
+  if ! update_lock_is_self "$RUNDIR/update.lock.d"; then
+    if update_lock_acquire "$RUNDIR/update.lock.d" 5 >/dev/null 2>&1; then
+      _pri_locked=1
+    else
+      log_to "$SUPLOG" "拿不到 update 锁（有活跃更新事务），本轮跳过载荷恢复"
+      return 0
+    fi
+  fi
+  for _old in "$APP_HOME"/payload.*.old.* "$APP_HOME"/payload.old "$APP_HOME"/payload.rollback.old "$BACKUPDIR/prev"; do
+    [ -d "$_old" ] || continue
+    if payload_validate "$_old" >/dev/null 2>&1; then
+      # R09：移开"坏 current"失败时必须放弃这一次恢复。旧实现忽略 mv 的
+      # 返回码继续往下 mv，old 会被嵌进坏目录（payload/下再套一层 old 名），
+      # 结果 current 仍然坏、唯一回滚副本也被毁掉，函数还照样 return 0 报成功。
+      if [ -e "$PAYLOAD" ]; then
+        if ! mv "$PAYLOAD" "$APP_HOME/payload.incomplete.$$" 2>/dev/null; then
+          log_to "$SUPLOG" "无法移开不完整的当前载荷，跳过本次恢复：$_old"
+          continue
         fi
-        # 换上去的仍然不可用：把刚移开的目录放回原位，别把 current 留空。
-        if [ -d "$APP_HOME/payload.incomplete.$$" ] && [ ! -e "$PAYLOAD" ]; then
-          mv "$APP_HOME/payload.incomplete.$$" "$PAYLOAD" 2>/dev/null
-        fi
-        log_to "$SUPLOG" "恢复中断载荷失败（$_old 换上去后仍未通过校验）"
       fi
-    done
+      if mv "$_old" "$PAYLOAD" 2>/dev/null && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+        payload_fix_perms "$PAYLOAD"
+        log_to "$SUPLOG" "已恢复中断的载荷切换：$_old"
+        rm -rf "$APP_HOME/payload.incomplete.$$"
+        # 恢复成功：清掉切换标记，避免下次开机再次进入恢复判定
+        rm -f "$RUNDIR/payload.switching" 2>/dev/null
+        break
+      fi
+      # 换上去的仍然不可用：把刚移开的目录放回原位，别把 current 留空。
+      if [ -d "$APP_HOME/payload.incomplete.$$" ] && [ ! -e "$PAYLOAD" ]; then
+        mv "$APP_HOME/payload.incomplete.$$" "$PAYLOAD" 2>/dev/null
+      fi
+      log_to "$SUPLOG" "恢复中断载荷失败（$_old 换上去后仍未通过校验）"
+    fi
+  done
+  if [ "$_pri_locked" = "1" ]; then
+    update_lock_release "$RUNDIR/update.lock.d"
+    UPDATE_LOCK_TOKEN=$_pri_outer_token
+    UPDATE_LOCK_PATH=$_pri_outer_path
   fi
   return 0
 }
@@ -717,6 +886,16 @@ sweep_stale_dirs() {
     rm -rf "$_d" 2>/dev/null
   done
   # $TMPD 里除了 upd.* 还有解包残留
+  # 切换标记是中断恢复的证据：载荷完好时它是残留垃圾可以清；载荷不完整时
+  # 必须保留给 payload_recover_interrupted（它在 post-fs-data 里先于本函数
+  # 执行，走到这里还留着说明恢复被跳过或没做成，留给下次开机再试）。
+  if [ -f "$RUNDIR/payload.switching" ] && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+    rm -f "$RUNDIR/payload.switching" 2>/dev/null
+  fi
+  # 数据快照/回滚（问题 1）的可重建临时物：中断的快照副本与回滚中转目录。
+  # data-prev（快照本体）与 DATADIR.upgraded.*（升级后数据的现场保全）绝不清。
+  rm -rf "$BACKUPDIR/data-prev.new" 2>/dev/null
+  rm -rf "$DATADIR".restore.* 2>/dev/null
   [ -d "$TMPD" ] && rm -rf "$TMPD"/* 2>/dev/null
   return 0
 }

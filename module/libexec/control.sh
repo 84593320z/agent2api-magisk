@@ -143,6 +143,19 @@ svc_start_impl() {
   [ -x "$MODDIR/libexec/supervise.sh" ] || {
     say "启动失败：$MODDIR/libexec/supervise.sh 不存在或不可执行"; return 1;
   }
+  # 问题 4-入口：本函数是所有 supervisor 的实际拉起点，而 control.sh 常在
+  # Root 管理器上下文里执行 —— WebUI 经 ksu.exec 调 a2a start/restart、
+  # action.sh 的 [执行] 按钮等，进程会继承 KSU App 的 cgroup
+  # （cpuset:/top-app、cpu:/top-app），app 被杀/被冻结时整组连坐，这正是
+  # 历次"后台服务莫名消失"事故的入口。supervise.sh 自身启动后还会再逃逸
+  # 一次，但那发生在 exec 之后；这里先把"当前 shell"迁到各控制器层级根，
+  # spawn 出的 supervisor 才能从干净的分组起步。尽力而为：迁移不完整只记
+  # 警告日志，绝不阻断启动（与 supervise.sh 侧同一条原则）。
+  if command -v cgroup_escape >/dev/null 2>&1; then
+    if ! cgroup_escape >>"$SUPLOG" 2>&1; then
+      log_to "$SUPLOG" "警告：svc_start 前 cgroup 逃逸不完全（部分控制器仍在 app 分组，详见上方逐控制器结果），继续启动"
+    fi
+  fi
   if command -v setsid >/dev/null 2>&1; then
     setsid "$MODDIR/libexec/supervise.sh" >>"$SUPLOG" 2>&1 </dev/null &
   else
@@ -276,14 +289,21 @@ svc_stop() {
 svc_restart() { svc_stop || return 1; sleep 1; svc_start; }
 
 # 找残留：排除调用者、父进程、当前 supervisor；命令行必须带本模块真实路径。
+# $1 可选 --include-self：卸载/强化模式 —— 不再排除当前 supervisor（卸载时
+# 它必须退出，否则删完身份它还会继续拉起服务），并把两个后台执行体
+# （boot-worker、hot-restart worker）一并纳入扫描。无参数调用（supervise、
+# updater 等运行时路径）的语义保持不变，绝不波及 worker。
 svc_stray_pids() {
+  _sp_mode="${1:-}"
   _self="$$"
   _sup=$(svc_supervisor_pid 2>/dev/null)
   _ppid=$(sed 's/.*) //' "/proc/$$/stat" 2>/dev/null | awk '{print $2}')
   for _p in /proc/[0-9]*; do
     _pid="${_p#/proc/}"
     [ "$_pid" = "$_self" ] && continue
-    [ "$_pid" = "$_sup" ] && continue
+    if [ "$_sp_mode" != "--include-self" ] && [ "$_pid" = "$_sup" ]; then
+      continue
+    fi
     [ "$_pid" = "$_ppid" ] && continue
     [ -r "$_p/cmdline" ] || continue
     _cl=$(tr '\0' ' ' <"$_p/cmdline" 2>/dev/null)
@@ -296,6 +316,16 @@ svc_stray_pids() {
       *"$HOMEDIR/plugins/"*|*"$HOMEDIR/providers/"*|*"$HOMEDIR/kernels/"*)
         printf '%s ' "$_pid" ;;
     esac
+    # 卸载/强化模式：supervisor 与两个后台 worker 不算"残留"，但卸载时
+    # 必须一起退出（否则它们会在卸载后把服务重新拉起来）；同样只按本模块
+    # 真实路径精确匹配，绝不 pkill -f。
+    if [ "$_sp_mode" = "--include-self" ]; then
+      case "$_cl" in
+        *"$MODDIR/libexec/supervise.sh"*|\
+        *"$MODDIR/libexec/boot-worker.sh"*|*"$MODDIR/libexec/hot-restart.sh"*)
+          printf '%s ' "$_pid" ;;
+      esac
+    fi
   done
   return 0
 }
@@ -310,4 +340,39 @@ svc_kill_stray() {
     case " $(svc_stray_pids 2>/dev/null) " in *" $_pid "*) kill -KILL "$_pid" 2>/dev/null ;; esac
   done
   return 0
+}
+
+# 卸载/强化停止（问题 5）：覆盖本模块全部进程身份 —— 当前 supervisor、
+# server、插件、boot-worker 与 hot-restart worker（后两个是可能常驻的后台
+# 执行体，不清理它们会在卸载后把服务重新拉起来）。与 svc_kill_stray 的
+# 区别：经 --include-self 扫描，不排除当前 supervisor。TERM（带超时）→
+# KILL → 逐个核实退出；全部退出返回 0；仍存活的 pid 列在 stderr 并返回 1，
+# 调用方（uninstall.sh）必须据此中止，不得继续删除任何状态与数据。
+svc_kill_all_module_procs() {
+  _kap_pids=$(svc_stray_pids --include-self 2>/dev/null)
+  [ -n "$_kap_pids" ] || return 0
+  for _kap_pid in $_kap_pids; do kill -TERM "$_kap_pid" 2>/dev/null; done
+  _kap_i=0
+  while [ "$_kap_i" -lt 10 ]; do
+    _kap_pids=$(svc_stray_pids --include-self 2>/dev/null)
+    [ -z "$_kap_pids" ] && return 0
+    sleep 1
+    _kap_i=$((_kap_i + 1))
+  done
+  # 等待期间 PID 可能死亡后被复用；每轮重扫后再逐个复核，只杀仍在最新
+  # 扫描结果里的 pid，绝不按旧列表盲杀（与 svc_kill_stray 同一套防御）。
+  for _kap_pid in $_kap_pids; do
+    case " $(svc_stray_pids --include-self 2>/dev/null) " in
+      *" $_kap_pid "*) kill -KILL "$_kap_pid" 2>/dev/null ;;
+    esac
+  done
+  _kap_i=0
+  while [ "$_kap_i" -lt 5 ]; do
+    _kap_pids=$(svc_stray_pids --include-self 2>/dev/null)
+    [ -z "$_kap_pids" ] && return 0
+    sleep 1
+    _kap_i=$((_kap_i + 1))
+  done
+  printf '仍有模块进程存活：%s\n' "$_kap_pids" >&2
+  return 1
 }

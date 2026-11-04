@@ -40,9 +40,12 @@ if [ -d "$MODDIR/libexec" ]; then
 fi
 chmod 700 "$CFGDIR" "$DATADIR" 2>/dev/null
 
-# 运行期残留：pid / 锁 / stop 标记，一律清（这个时刻不可能有活进程）
+# 运行期残留：pid / 锁 / stop 标记，一律清（这个时刻不可能有活进程）。
+# boot.lock.d 与 hot-restart.req.lock.d 同属运行期锁：boot-worker / 热重启
+# worker 都在本阶段之后才会被投递，此刻这两把锁必然 stale，与其余锁同口径
+# 清掉，不留给 update_lock_acquire 的僵死回收慢慢兜底。
 rm -f "$RUNDIR/stop" "$RUNDIR/server.pid" "$RUNDIR/server.start" "$RUNDIR/supervisor.pid" "$RUNDIR/supervisor.start" "$RUNDIR/hot-restart.state" "$RUNDIR/state" 2>/dev/null
-rm -rf "$RUNDIR/lock" "$RUNDIR/service.lock.d" "$RUNDIR/hot-restart.lock.d" "$RUNDIR/update.lock.d" 2>/dev/null
+rm -rf "$RUNDIR/lock" "$RUNDIR/service.lock.d" "$RUNDIR/hot-restart.lock.d" "$RUNDIR/update.lock.d" "$RUNDIR/boot.lock.d" "$RUNDIR/hot-restart.req.lock.d" 2>/dev/null
 
 # 先恢复两次 rename 之间断电的现场，再清临时目录。
 payload_recover_interrupted
