@@ -836,7 +836,7 @@ check('lf_boot_entry_and_wget_guard',
 
 # ============================================================== R18
 run('r18_version_metadata', PRE + r'''
-_bin=$(strings "$MODDIR/seed/agent2api-server" 2>/dev/null | grep -Eo 'agent2api/[0-9][0-9A-Za-z.+-]*' | head -n 1 | sed 's|^agent2api/||')
+_bin=$(strings "$MODDIR/seed/agent2api-server" 2>/dev/null | grep -Eo 'agent2api/[0-9][0-9A-Za-z.+-]*' | sort -u | sed 's|^agent2api/||')
 _ver=$(sed -n 's/^ver=//p' "$MODDIR/seed/VERSION" | head -n 1)
 metric binary "$_bin"
 metric version_file "$_ver"
@@ -846,13 +846,22 @@ metric prop_mentions_payload "$(grep -c "载荷 v$_ver" "$MODDIR/module.prop")"
 ''')
 # 模块号会随发布递增，这里只钉「载荷版本必须与二进制一致」和「描述里点明载荷版本」，
 # 不把 magisk.NN 写死在断言里，否则每次发版都要改测试。
-check_fn('r18_version_metadata', lambda out: (
-    'binary=3.4.1' in out
-    and 'version_file=3.4.1' in out
-    and 'consistent=1' in out
-    and 'module_prop=v3.4.1 (magisk.' in out
-    and 'prop_mentions_payload=1' in out
-))
+def r18_metadata_consistent(out):
+    import re
+    metrics = dict(line[7:].split('=', 1) for line in out.splitlines()
+                   if line.startswith('METRIC ') and '=' in line)
+    binary = metrics.get('binary', '')
+    return (
+        re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', binary) is not None
+        and metrics.get('version_file') == binary
+        and metrics.get('consistent') == '1'
+        and re.fullmatch(r'v' + re.escape(binary) + r' \(magisk\.[1-9][0-9]*\)',
+                         metrics.get('module_prop', '')) is not None
+        and metrics.get('prop_mentions_payload') == '1'
+    )
+
+
+check_fn('r18_version_metadata', r18_metadata_consistent)
 
 # ============================================================== R19
 boot_src = txt('libexec/boot-start.sh')

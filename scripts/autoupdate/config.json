@@ -1,0 +1,13 @@
+{
+  "upstream": "aimod-cc/Agent2API",
+  "repository": "84593320z/agent2api-magisk",
+  "branch": "main",
+  "last_version": "3.4.1",
+  "last_commit": "3ff4b8215d0d65c3451ca74923e90964ed7dbf59",
+  "module_revision": 37,
+  "mobile_version_code": 30401,
+  "certificate_sha256": "d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f",
+  "asset": "agent2api-server-linux-arm64.tar.gz",
+  "max_asset_bytes": 104857600,
+  "max_source_bytes": 209715200
+}

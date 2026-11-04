@@ -17,6 +17,10 @@ magisk.37 在已发布的 magisk.36 上修复 Android 官方新插件启动及�
 - 升级验收：[docs/upgrade-3.4.1/report.md](docs/upgrade-3.4.1/report.md)。
 - 上轮修复：[docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md](docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md)。
 
+### 上游自动同步
+
+仓库现包含每小时检测、精确来源校验、模块与手机端构建、分离原证书签名、幂等 Release 和失败 PR 的 Actions。手动试运行选择 `build_current=true`，仅生成验收 artifacts；使用和恢复机制见 [自动同步说明](docs/auto-sync.md)。
+
 ### magisk.37 真机修复
 
 - 新插件安装后同步 glibc 启动桥接，保留官方插件原字节与签名。

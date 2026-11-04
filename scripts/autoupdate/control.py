@@ -1,0 +1,197 @@
+"""Trusted orchestration; never execute code from an upstream checkout with credentials."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import urllib.request
+import urllib.error
+
+ROOT = Path(__file__).resolve().parents[2]
+
+def version(tag):
+    m = re.fullmatch(r'v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
+    if not m:
+        raise ValueError('Only stable numeric semantic versions are accepted')
+    return tuple(map(int, m.groups()))
+
+def dump(path, obj):
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+
+def request(url, token=None, data=None, method='GET', binary=False):
+    if not url.startswith(('https://api.github.com/', 'https://uploads.github.com/')):
+        raise ValueError('Untrusted API endpoint')
+    headers = {'Accept': 'application/octet-stream' if binary else 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'agent2api-autoupdate'}
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    if data is not None:
+        headers['Content-Type'] = 'application/json'
+        data = json.dumps(data).encode()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method=method), timeout=180) as r:
+            body = r.read()
+            return body if binary else (json.loads(body) if body else None)
+    except urllib.error.HTTPError as e:
+        raise RuntimeError('GitHub HTTP ' + str(e.code)) from None
+
+def detect(config, token=None, releases=None, ref_lookup=None):
+    repo = config['upstream']
+    base = 'https://api.github.com/repos/' + repo
+    releases = releases if releases is not None else request(base + '/releases?per_page=100', token)
+    stable = [r for r in releases if not r['draft'] and not r['prerelease'] and re.fullmatch(r'v?\d+\.\d+\.\d+', r['tag_name'])]
+    if not stable:
+        raise ValueError('No stable upstream release')
+    release = max(stable, key=lambda r: version(r['tag_name']))
+    v = version(release['tag_name'])
+    if v <= version(config['last_version']):
+        return {'changed': False, 'version': config['last_version'], 'tag': release['tag_name']}
+    assets = [a for a in release['assets'] if a['name'] == config['asset']]
+    if len(assets) != 1:
+        raise ValueError('Missing or ambiguous arm64 asset')
+    asset = assets[0]
+    digest = asset.get('digest') or ''
+    if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
+        raise ValueError('Upstream asset lacks pinned SHA-256 digest')
+    if not 0 < asset['size'] <= config['max_asset_bytes']:
+        raise ValueError('Asset size exceeds configured limit')
+    lookup = ref_lookup or (lambda url: request(url, token))
+    ref = lookup(base + '/git/ref/tags/' + release['tag_name'])['object']
+    for _ in range(5):
+        if ref['type'] == 'commit':
+            break
+        if ref['type'] != 'tag':
+            raise ValueError('Tag does not resolve to commit')
+        ref = lookup(base + '/git/tags/' + ref['sha'])['object']
+    if ref['type'] != 'commit' or not re.fullmatch('[0-9a-f]{40}', ref['sha']):
+        raise ValueError('Invalid pinned upstream commit')
+    ver = '.'.join(map(str, v))
+    return {'changed': True, 'version': ver, 'tag': release['tag_name'], 'commit': ref['sha'], 'release_id': release['id'], 'published_at': release['published_at'], 'asset_id': asset['id'], 'asset_size': asset['size'], 'asset_sha256': digest[7:], 'upstream': repo, 'module_revision': config['module_revision'] + 1, 'mobile_version_code': max(v[0]*10000+v[1]*100+v[2], config['mobile_version_code']+1)}
+
+def download(plan, out, token=None):
+    if not plan.get('changed'):
+        return
+    data = request(f"https://api.github.com/repos/{plan['upstream']}/releases/assets/{plan['asset_id']}", token, binary=True)
+    if len(data) != plan['asset_size'] or hashlib.sha256(data).hexdigest() != plan['asset_sha256']:
+        raise ValueError('Downloaded asset differs from upstream digest/size')
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    Path(out).write_bytes(data)
+
+def release_specs(plan):
+    apk = f"Agent2API-{plan['version']}-mod.apk"
+    module = f"agent2api-magisk-v{plan['version']}-magisk.{plan['module_revision']}-arm64.zip"
+    return {
+        f"v{plan['version']}-magisk.{plan['module_revision']}": {module, apk, 'signature.json', 'plan.json', 'provenance.json', 'elf-compatibility.json', 'mobile-build.json', 'full-regression.txt'},
+        f"apk-v{plan['version']}-mod": {apk, 'signature.json'},
+    }
+
+
+def release_refs(repo, plan, token=None):
+    base = 'https://api.github.com/repos/' + repo
+    refs = {}
+    for tag in release_specs(plan):
+        matches = request(base + '/git/matching-refs/tags/' + tag, token)
+        exact = [r for r in matches if r['ref'] == 'refs/tags/' + tag]
+        if exact:
+            obj = exact[0]['object']
+            if obj['type'] != 'commit' or not re.fullmatch('[0-9a-f]{40}', obj['sha']):
+                raise ValueError('Release tag must point directly to a commit')
+            refs[tag] = obj['sha']
+    if len(set(refs.values())) > 1:
+        raise ValueError('Release tags disagree on checkpoint commit')
+    return refs
+
+
+def releases_complete(config, plan, token=None):
+    """Verify exact inventories and downloaded bytes, not merely a checksum filename."""
+    base = 'https://api.github.com/repos/' + config['repository']
+    specs = release_specs(plan)
+    refs = release_refs(config['repository'], plan, token)
+    if set(refs) != set(specs):
+        return False
+    releases = request(base + '/releases?per_page=100', token)
+    for tag, names in specs.items():
+        matches = [r for r in releases if r['tag_name'] == tag]
+        if len(matches) != 1 or matches[0]['draft'] or matches[0]['prerelease']:
+            return False
+        assets = matches[0]['assets']
+        by_name = {a['name']: a for a in assets}
+        if len(by_name) != len(assets) or set(by_name) != names | {'SHA256SUMS.txt'}:
+            return False
+        bodies = {}
+        for name, asset in by_name.items():
+            digest = asset.get('digest', '')
+            if asset.get('state') != 'uploaded' or not isinstance(asset.get('size'), int) or not 0 < asset['size'] <= 512 * 1024 * 1024 or not re.fullmatch('sha256:[0-9a-f]{64}', digest):
+                return False
+            data = request(base + '/releases/assets/' + str(asset['id']), token, binary=True)
+            if len(data) != asset['size'] or hashlib.sha256(data).hexdigest() != digest[7:]:
+                return False
+            bodies[name] = data
+        checks = {}
+        try:
+            for line in bodies['SHA256SUMS.txt'].decode('utf-8').splitlines():
+                match = re.fullmatch(r'([0-9a-f]{64})  ([^/\\\\]+)', line)
+                if not match or match[2] in checks:
+                    return False
+                checks[match[2]] = match[1]
+        except UnicodeDecodeError:
+            return False
+        if set(checks) != names or any(hashlib.sha256(bodies[n]).hexdigest() != checks[n] for n in names):
+            return False
+        if 'plan.json' in names:
+            try:
+                if json.loads(bodies['plan.json']) != plan:
+                    return False
+            except (ValueError, UnicodeDecodeError):
+                return False
+    return True
+
+
+def select_plan(config, token=None, upstream_token=None):
+    previous = config.get('last_plan')
+    if previous and not releases_complete(config, previous, token):
+        return dict(previous, retry=True)
+    plan = detect(config, upstream_token or token)
+    if plan.get('changed'):
+        plan['run_id'] = os.getenv('GITHUB_RUN_ID', '')
+    return plan
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument('command', choices=['detect', 'download', 'advance'])
+    p.add_argument('--config', type=Path, default=ROOT/'scripts/autoupdate/config.json')
+    p.add_argument('--plan', type=Path, default=Path('automation-out/plan.json'))
+    p.add_argument('--output', default='automation-out/server.tar.gz')
+    a = p.parse_args()
+    config = json.loads(a.config.read_text())
+    if a.command == 'detect':
+        plan = select_plan(config, os.getenv('GH_TOKEN'), os.getenv('UPSTREAM_TOKEN'))
+        dump(a.plan, plan)
+        if os.getenv('GITHUB_OUTPUT'):
+            with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+                f.write('changed=' + str(plan['changed']).lower() + '\n')
+                f.write('retry=' + str(bool(plan.get('retry'))).lower() + '\n')
+                f.write('run_id=' + str(plan.get('run_id', '')) + '\n')
+        print(json.dumps(plan))
+    else:
+        plan = json.loads(a.plan.read_text())
+        if a.command == 'download':
+            download(plan, a.output, os.getenv('UPSTREAM_TOKEN') or os.getenv('GH_TOKEN'))
+        else:
+            assert plan['changed']
+            if plan.get('retry'):
+                assert plan['version']==config['last_version'] and plan['commit']==config['last_commit']
+            else:
+                assert version(plan['version']) > version(config['last_version'])
+                for key in ('module_revision', 'mobile_version_code'):
+                    assert plan[key] > config[key]
+                    config[key] = plan[key]
+                config.update(last_version=plan['version'], last_commit=plan['commit'])
+                config['last_plan'] = plan
+            dump(a.config, config)
+
+if __name__ == '__main__':
+    main()
