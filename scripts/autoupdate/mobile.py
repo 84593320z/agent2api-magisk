@@ -398,7 +398,8 @@ def build(prepared, output, *, tag=None, commit=None, version_code=None):
         init = stage / 'unsigned.init.gradle'
         init.write_text(gradle_init(), encoding='utf-8')
         try:
-            run(['bash', './gradlew', '--no-daemon', '--console=plain', '-I', init,
+            run(['bash', './gradlew', '--no-daemon', '--console=plain',
+                 *(['-Dorg.gradle.java.home=' + str(Path(java_home).resolve())] if java_home else []), '-I', init,
                  '-PdevAppIdSuffix=.mod', '-PmobileVersionName=' + meta['version'],
                  '-PmobileVersionCode=' + str(meta['version_code']), 'assembleRelease'], cwd=android, env=env)
         finally:

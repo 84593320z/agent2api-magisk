@@ -291,9 +291,10 @@ class MobileTests(unittest.TestCase):
             return subprocess.CompletedProcess(args, 0, b'', b'')
 
         with patch.object(mobile.sys, 'platform', 'linux'), patch.object(mobile, 'run', fake_run), \
-             patch.dict(os.environ, {'ANDROID_SDK_ROOT': str(sdk), 'A2A_KEYSTORE': 'never-read'}):
+             patch.dict(os.environ, {'ANDROID_SDK_ROOT': str(sdk), 'JAVA_HOME': str(self.base / 'jdk-21'), 'A2A_KEYSTORE': 'never-read'}):
             result = mobile.build(output, self.base / 'built')
         gradle = next(args for args, _ in commands if args[0] == 'bash')
+        self.assertIn('-Dorg.gradle.java.home=' + str((self.base / 'jdk-21').resolve()), gradle)
         self.assertIn('-PdevAppIdSuffix=.mod', gradle)
         self.assertIn('-PmobileVersionCode=123456', gradle)
         self.assertIn('-PmobileVersionName=1.2.3', gradle)
