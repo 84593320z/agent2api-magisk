@@ -64,9 +64,9 @@ fi
 # --- 兜底：自解包 -----------------------------------------------------------
 ui_print "- 走兜底解包流程"
 
-TMPD=/data/local/tmp/agent2api_install.$$
-rm -rf "$TMPD"
-mkdir -p "$TMPD" || abort "无法创建临时目录 $TMPD"
+_A2A_INSTALL_TMP=/data/local/tmp/agent2api_install.$$
+rm -rf "$_A2A_INSTALL_TMP"
+mkdir -p "$_A2A_INSTALL_TMP" || abort "无法创建临时目录 $_A2A_INSTALL_TMP"
 
 UNZIP=""
 # unzip 本身就是命令，不能再拼一次子命令；只有 busybox 需要 "busybox unzip"。
@@ -81,20 +81,20 @@ done
 [ -n "$UNZIP" ] || abort "找不到 unzip，请改用 Magisk 管理器 App 安装"
 
 # shellcheck disable=SC2086
-$UNZIP -o "$ZIPFILE" -d "$TMPD" >/dev/null 2>&1 || abort "解包失败：$ZIPFILE"
+$UNZIP -o "$ZIPFILE" -d "$_A2A_INSTALL_TMP" >/dev/null 2>&1 || abort "解包失败：$ZIPFILE"
 
-MODID=$(sed -n 's/^id=//p' "$TMPD/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
+MODID=$(sed -n 's/^id=//p' "$_A2A_INSTALL_TMP/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
 [ -n "$MODID" ] || abort "module.prop 里没有 id 字段"
 
 MODPATH="/data/adb/modules_update/$MODID"
 rm -rf "$MODPATH"
 mkdir -p "$MODPATH" || abort "无法创建 $MODPATH"
-cp -R "$TMPD"/. "$MODPATH"/ || abort "复制模块文件失败"
+cp -R "$_A2A_INSTALL_TMP"/. "$MODPATH"/ || abort "复制模块文件失败"
 rm -rf "$MODPATH/META-INF"
 
 # 让 customize.sh 看到与 Magisk 一致的环境
 export MODPATH
-export TMPDIR="$TMPD"
+export TMPDIR="$_A2A_INSTALL_TMP"
 export ZIPFILE
 export OUTFD
 export API
@@ -130,6 +130,6 @@ if [ -f "$MODPATH/customize.sh" ]; then
   MODPATH="$MODPATH" . "$MODPATH/customize.sh" || abort "customize.sh 执行失败"
 fi
 
-rm -rf "$TMPD"
+rm -rf "$_A2A_INSTALL_TMP"
 ui_print "- 安装完成，重启后生效"
 exit 0

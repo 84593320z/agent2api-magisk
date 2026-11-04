@@ -28,8 +28,8 @@ for name,info in elf['files'].items():
     assert p.read_bytes()==old, 'bundled runtime changed: '+name
 assert b'/data/a2a/resolv' in (seed/'lib/libc.so.6').read_bytes()
 assert 'ver=3.4.1\n' in (seed/'VERSION').read_text(encoding='utf-8')
-assert 'version=v3.4.1 (magisk.36)\n' in (ROOT/'module/module.prop').read_text(encoding='utf-8')
-archive=ROOT/'dist/agent2api-magisk-v3.4.1-magisk.36-arm64.zip'
+assert 'version=v3.4.1 (magisk.37)\n' in (ROOT/'module/module.prop').read_text(encoding='utf-8')
+archive=ROOT/'dist/agent2api-magisk-v3.4.1-magisk.37-arm64.zip'
 with zipfile.ZipFile(archive) as z:
     assert z.testzip() is None
     for i in z.infolist():

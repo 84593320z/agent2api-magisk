@@ -1,0 +1,24 @@
+BASELINE_WITHOUT_BRIDGE
+SPAWN_ERROR=2 No such file or directory
+MODE=spawn
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+MODE=spawnp
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+MODE=execve
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+MODE=execvp
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+MODE=execv
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+MODE=execvpe
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+NEGATIVE_NONEXECUTABLE
+SPAWN_ERROR=13 Permission denied
+c4cf018b340e594395d9a52da25aa2198cb75472e7a1196655a10ac7851af853  /data/adb/agent2api/data/plugins/.a2a-bridge-test/test
+c4cf018b340e594395d9a52da25aa2198cb75472e7a1196655a10ac7851af853  /data/local/tmp/phone-shim-test

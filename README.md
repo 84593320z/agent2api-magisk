@@ -7,15 +7,23 @@
 
 ---
 
-## 最新版本：v3.4.1 / magisk.36
+## 最新版本：v3.4.1 / magisk.37
 
-本轮在原仓库 `f8e474d59c885e247cbeb179cf2e8f99a4ddbbb4` 加上复审修复后升级；源码、验收证据与发布产物对应同一轮升级。
+magisk.37 在已发布的 magisk.36 上修复 Android 官方新插件启动及运行临时目录问题；服务端仍为 3.4.1，APK 沿用现有 3.4.1-mod。
 
-- **[下载 Magisk / KernelSU 模块 v3.4.1 · magisk.36](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.4.1-magisk.36)**：`agent2api-magisk-v3.4.1-magisk.36-arm64.zip`（也可运行 `python pack.py` 生成）。
+- **[下载 Magisk / KernelSU 模块 v3.4.1 · magisk.37](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.4.1-magisk.37)**：`agent2api-magisk-v3.4.1-magisk.37-arm64.zip`（也可运行 `python pack.py` 生成）。
 - **[下载手机端 APK 3.4.1-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.4.1-mod)**：`Agent2API-3.4.1-mod.apk`，包名 `com.agent2api.mobile.mod`，版本 `3.4.1 / 30401`。
-- 校验清单、完整升级补丁与变更文件 ZIP 随模块 Release 附带；发布说明见 [docs/release-3.4.1.md](docs/release-3.4.1.md)。
+- 校验清单、完整升级补丁与变更文件 ZIP 随模块 Release 附带；发布说明见 [magisk.37](docs/release-magisk37.md)，此前升级说明见 [magisk.36](docs/release-3.4.1.md)。
 - 升级验收：[docs/upgrade-3.4.1/report.md](docs/upgrade-3.4.1/report.md)。
 - 上轮修复：[docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md](docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md)。
+
+### magisk.37 真机修复
+
+- 新插件安装后同步 glibc 启动桥接，保留官方插件原字节与签名。
+- supervisor 使用持久运行 TMPDIR，状态 JSON 原子 printf；fallback 安装清理变量隔离。
+- 真机 providers 3.4.1 / web 3.4.2 安装、握手、服务重启通过，两个 host 崩溃次数为 0。
+- 541 项集成检查、19 项 Shell 语法检查、六入口真机正负对照、50 次连续 spawnp 通过。
+- [手机修复验收与证据](docs/phone-fix-20261104/2026-11-04_手机修复验收-agent2api-report.md)。
 
 ### 服务端与面板
 

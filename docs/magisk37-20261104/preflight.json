@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "baseline": "adf3690643c5da649e523acbd396048e14679b55",
+  "remote_main_unchanged_before_commit": true,
+  "unchanged_seed_and_apk_source_files": 288,
+  "phonefix_zip_vs_magisk37_changed_members": [
+    "module.prop"
+  ],
+  "deployed_production_hashes_match": {
+    "common.sh": "194f657878dbaaa3f789a6ee18a5d19ee3cdb48d60da1f228b5fca1ba04e1e56",
+    "supervise.sh": "a593939393bee87316656e2c62d636018dd8b5028a93d507ea218b8937dec4e4",
+    "launch.sh": "1f2a01e82d5c172ce3d0313a1ea0c9e23194589bc736f46cf4d0f296b284025d",
+    "plugin.sh": "93051e36658237b4f67e4f531d0b80dfac2667c5c639750d7542a3e3cdf8de92",
+    "plugin-spawn.so": "149873216e2dc7a5b54ca2e848a7adb94dc1f8c9791f5b4ce3188f73fc78239f"
+  },
+  "module_sha256": "48a9d74e5da0d98121c5375522ad7156aa6bf4fa753fb6ea6ec34a244b47df23",
+  "module_bytes": 20174354
+}

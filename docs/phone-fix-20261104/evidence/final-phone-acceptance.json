@@ -1,0 +1,102 @@
+{
+  "host": {
+    "running": true,
+    "crashes": 0,
+    "lastError": null,
+    "disabled": false
+  },
+  "providers": 36,
+  "packs": [
+    {
+      "id": "agent2api-web-providers",
+      "version": "3.4.2",
+      "enabled": true,
+      "entryPresent": true,
+      "compatibilityError": null,
+      "updateRequired": false,
+      "requiredVersion": "3.4.1",
+      "signed": true,
+      "host": {
+        "crashes": 0,
+        "disabled": false,
+        "lastError": null,
+        "providers": [
+          "chatglm",
+          "deepseek-web",
+          "tabbit",
+          "tabbit-intl"
+        ],
+        "running": true
+      }
+    },
+    {
+      "id": "agent2api-providers",
+      "version": "3.4.1",
+      "enabled": true,
+      "entryPresent": true,
+      "compatibilityError": null,
+      "updateRequired": false,
+      "requiredVersion": "3.4.1",
+      "signed": true,
+      "host": {
+        "crashes": 0,
+        "disabled": false,
+        "lastError": null,
+        "providers": [
+          "cline-free",
+          "cline-pass",
+          "demo",
+          "commandcode",
+          "modelscope",
+          "modelscope-intl",
+          "orcaterm",
+          "kuku",
+          "monkeycode",
+          "monkeycode-intl",
+          "lobsterai",
+          "loomy",
+          "qoder",
+          "qoder-intl",
+          "qwenwork",
+          "qwenwork-intl",
+          "raccoon",
+          "atomcode",
+          "autoclaw",
+          "autoclaw-intl",
+          "officeace",
+          "zcode",
+          "zcode-intl",
+          "workbuddy",
+          "workbuddy-intl",
+          "trae",
+          "catpaw",
+          "accio",
+          "accio-cn",
+          "codearts",
+          "antigravity",
+          "doubaowork",
+          "kiro",
+          "astudio"
+        ],
+        "running": true
+      }
+    }
+  ],
+  "integrity": [
+    {
+      "id": "agent2api-providers",
+      "version": "3.4.1",
+      "binary_sha256": "b8b4f0d16255c3efd9794f5d69c4390a2042d72bee9ca96ce48e75501078b5d4",
+      "archive_sha256": "c7ecf7248e9ae5846b00ed6461cff295c9ac8a3a2e7b369bd6146799fc43ee82",
+      "exact_official_archive_bytes": true
+    },
+    {
+      "id": "agent2api-web-providers",
+      "version": "3.4.2",
+      "binary_sha256": "0505a5fb12503de2957df6d1e632a3fc6eff89f23c01935e379cd50394bbf165",
+      "archive_sha256": "d36ae6c393678ab39bbd06cfc25bfd483ad62ba03e96e0e4875723f37740bce9",
+      "exact_official_archive_bytes": true
+    }
+  ],
+  "sequential_spawn_repetitions": 50
+}

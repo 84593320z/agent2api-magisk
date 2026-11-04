@@ -1,0 +1,100 @@
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0
+CHILD argv0=original-plugin-argv0 arg=space argument cwd=/data/local/tmp env=preserved
+STATUS=0

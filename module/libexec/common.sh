@@ -121,6 +121,10 @@ ensure_layout() {
             "$TMPD" "$HOMEDIR" "$BACKUPDIR" "$DLDIR" "$A2A_LIVE" 2>/dev/null
   # 配置和数据库里可能有 API Key / 面板密码，收紧到 700
   chmod 700 "$CFGDIR" "$DATADIR" 2>/dev/null
+  # Never inherit an installer/manager cache as supervisor temporary storage.
+  [ -d "$TMPD" ] && [ -w "$TMPD" ] || return 1
+  TMPDIR=$TMPD
+  export TMPDIR
   live_link_refresh
 }
 

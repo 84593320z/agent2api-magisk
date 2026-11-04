@@ -1,0 +1,40 @@
+SERVICE
+======= Agent2API =======
+ 模块版本 : v3.4.1 (magisk.36)
+ 载荷版本 : 3.4.1
+ 状态     : 运行中（supervisor=23696, server=24522，已运行 8m48s）
+ 端口     : 3065 [LISTEN]
+ 重启次数 : 1
+ 面板地址 :
+  http://127.0.0.1:3065/m.html
+ DNS      : 配置=119.29.29.29 系统实际=119.29.29.29
+ 时区     : 跟随系统（Asia/Shanghai）
+ 数据目录 : /data/adb/agent2api/data
+ 日志目录 : /data/adb/agent2api/logs
+TMPDIR
+TMPDIR=/data/adb/agent2api/tmp
+SHIM
+7513350000-7513351000 r--p 00000000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513351000-7513360000 ---p 00001000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513360000-7513362000 r-xp 00000000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513362000-7513371000 ---p 00012000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513371000-7513372000 r--p 00001000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513372000-7513381000 ---p 00022000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+7513381000-7513382000 rw-p 00001000 fe:24 686560                         /data/adb/modules/agent2api/libexec/plugin-spawn.so
+HEALTH
+{"status":"ok"}LOG
+[2026-11-04 20:15:31] 停止服务端 pid=28955（SIGTERM，等它自己收尾）
+[2026-11-04 20:15:33] 守护进程退出
+[2026-11-04 20:16:17] ======== 守护进程启动 pid=29096 端口=3065 ========
+[2026-11-04 20:16:19] DNS 生效并验证通过：119.29.29.29 223.5.5.5 2400:3200::1 2402:4e00:: 
+[2026-11-04 20:16:19] 拉起服务端（第 1 次）
+[2026-11-04 20:16:19] 启动服务端：port=3065 host=127.0.0.1 tz=Asia/Shanghai
+[2026-11-04 20:16:21] 服务端健康检查通过：port=3065 pid=29940
+[2026-11-04 20:25:01] 收到终止信号，准备退出
+[2026-11-04 20:25:01] 停止服务端 pid=29940（SIGTERM，等它自己收尾）
+[2026-11-04 20:25:03] 守护进程退出
+[2026-11-04 20:25:06] ======== 守护进程启动 pid=23696 端口=3065 ========
+[2026-11-04 20:25:07] DNS 生效并验证通过：119.29.29.29 223.5.5.5 2400:3200::1 2402:4e00:: 
+[2026-11-04 20:25:08] 拉起服务端（第 1 次）
+[2026-11-04 20:25:08] 启动服务端：port=3065 host=127.0.0.1 tz=Asia/Shanghai
+[2026-11-04 20:25:09] 服务端健康检查通过：port=3065 pid=24522

@@ -177,9 +177,8 @@ status_json_write() { # $1=status；把运行态落到 webroot/status.json，KSU
   # heredoc 里的 ${_pp:-0} 恒为 0）。取不到时回退主端口，保持原有语义。
   _pp=$(panel_port_effective 2>/dev/null) || _pp="$PORT"
   _tmp="$RUNDIR/status.json.$$"
-  cat <<EOF >"$_tmp" 2>/dev/null
-{"status":"$_js_status","supervisor_pid":$$,"server_pid":${CHILD:-0},"uptime":${_up:-0},"restarts":${RESTARTS:-0},"fails":${FAILS:-0},"port":${PORT:-0},"panel_port":${_pp:-0},"version":"$_js_ver","ts":$(now_epoch)}
-EOF
+  # printf avoids mksh's implicit here-document temporary file entirely.
+  printf '%s\n' "{\"status\":\"$_js_status\",\"supervisor_pid\":$$,\"server_pid\":${CHILD:-0},\"uptime\":${_up:-0},\"restarts\":${RESTARTS:-0},\"fails\":${FAILS:-0},\"port\":${PORT:-0},\"panel_port\":${_pp:-0},\"version\":\"$_js_ver\",\"ts\":$(now_epoch)}" >"$_tmp" 2>/dev/null
   [ -s "$_tmp" ] || { rm -f "$_tmp" 2>/dev/null; return 0; }
   cmp -s "$_tmp" "$_wj" 2>/dev/null && { rm -f "$_tmp" 2>/dev/null; return 0; }
   chmod 644 "$_tmp" 2>/dev/null

@@ -1,0 +1,40 @@
+{
+  "module": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module",
+  "shell": "C:\\Users\\Y-H\\.dsh\\profiles\\desktop\\node_modules\\@dsh-ops\\bash-win32-x64\\usr\\bin\\sh.EXE",
+  "source_sha256": {
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\libexec\\common.sh": "194f657878dbaaa3f789a6ee18a5d19ee3cdb48d60da1f228b5fca1ba04e1e56",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\libexec\\supervise.sh": "a593939393bee87316656e2c62d636018dd8b5028a93d507ea218b8937dec4e4",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\META-INF\\com\\google\\android\\update-binary": "c0b91dcfbca346249c202e9f8cb48275c3816aeb17e6ed30581ed4e18fa4d9ce",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\customize.sh": "63ec14190495593f2b56883fcdd0f888e1c41f155896ac378d4d2b90334bc421"
+  },
+  "tests": [
+    {
+      "name": "production status printf: running/unverified/stopped, JSON escapes, invalid TMPDIR",
+      "status": "PASS"
+    },
+    {
+      "name": "production ensure_layout replaces inherited TMPDIR and exports to child",
+      "status": "PASS"
+    },
+    {
+      "name": "production ensure_layout reports invalid TMPD instead of exporting it",
+      "status": "PASS"
+    },
+    {
+      "name": "static production contracts: no heredoc, persistent TMPDIR, isolated fallback cleanup",
+      "status": "PASS"
+    },
+    {
+      "name": "fallback same-shell customize variable mutation cleans installer only (mock rm)",
+      "status": "PASS"
+    },
+    {
+      "name": "negative controls expose old inherited-TMPDIR and fallback TMPD collision",
+      "status": "PASS"
+    }
+  ],
+  "passed": 6,
+  "failed": 0,
+  "blocked": 0,
+  "coverage": "host sh production fragments; no actual Android/mksh, no C dynamic spawn test"
+}

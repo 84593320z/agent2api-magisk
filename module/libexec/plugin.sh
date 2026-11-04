@@ -151,6 +151,10 @@ interp_fix_tree() { # $1=目录  $2=静默(1)
 # 上游插件装在 AGENT2API_PROXY_HOME(= $DATADIR) 下面；不同版本目录布局略有
 # 差异，所以两处都扫，扫不到就算了（不影响主服务）。
 plugin_interp_fix() {
+  # Dynamic server uses synchronous spawn adaptation. Keep signed packages intact.
+  if [ -r "$MODDIR/libexec/plugin-spawn.so" ] && command -v payload_is_static >/dev/null 2>&1 && ! payload_is_static; then
+    return 0
+  fi
   [ "$(cfg_get plugin_interp 1)" = "1" ] || return 0
   [ -x "$LDSO_LINK" ] || live_link_refresh
   if [ ! -x "$LDSO_LINK" ]; then

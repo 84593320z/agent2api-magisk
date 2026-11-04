@@ -1,0 +1,665 @@
+== 1. shell 语法检查（sh -n） ==
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/post-fs-data.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/customize.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/service.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/uninstall.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/common.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/payload.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/updater.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/supervise.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/control.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/dns.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/launch.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/a2a
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/libexec/timezone.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/action.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/boot-completed.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/../module/hotinstall.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/txn_test.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/recovery_boundary_cases.sh
+  ok   /e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/test/dns_identity_test.sh
+
+== 2. 事务/DNS/CLI 故障注入测试 ==
+
+== T0 journal 读写往返 ==
+  ok   T0 write rc
+  ok   T0 phase
+  ok   T0 txid
+  ok   T0 old_payload
+  ok   T0 new_built
+  ok   T0 reload tag
+  ok   T0 reload old
+  ok   T0 reload built
+  ok   T0 clear rc
+  ok   T0 phase after clear
+
+== T1 更新健康失败：回滚数据前新版必须已停止 ==
+  ok   T1 更新返回失败
+  ok   T1 数据换入时服务已停(无BUG标记)
+  ok   T1 确实发生了数据回滚
+  ok   T1 数据回到升级前快照
+  ok   T1 载荷回到 1.0.0
+  ok   T1 journal 已收尾
+  ok   T1 服务已恢复运行
+  ok   T1 sweep 后无残留旧载荷目录
+
+== T1b 新版停不下来：rollback-blocked 保全现场 ==
+  ok   T1b 更新返回失败
+  ok   T1b journal=rollback-blocked
+  ok   T1b 数据未被回滚(仍是新版现场)
+  ok   T1b 载荷保持新版
+  ok   T1b 未发生数据换入
+  ok   T1b 停服被拒有记录
+  ok   T1b sweep 保留 journal 引用的旧载荷
+
+== T2 切换中崩溃：开机恢复不受 120s 门槛限制 ==
+  ok   T2 崩溃注入生效(rc=77)
+  ok   T2 崩溃后 PAYLOAD 缺失
+  ok   T2 journal=switching
+  ok   T2 旧载荷被 journal 记录
+  ok   T2 开机恢复成功
+  ok   T2 载荷恢复 1.0.0
+  ok   T2 journal 已清
+  ok   T2 无残留切换目录
+  ok   T2 switching 标记被清
+
+== T3 数据回滚中断：开机补完换入，不留空 data ==
+  ok   T3 开机恢复成功
+  ok   T3 data 补完换入(快照内容)
+  ok   T3 journal 已清
+  ok   T3 无残留中转/移开目录
+
+== T4 sweep 保护 journal 引用目录 ==
+  ok   T4 journal 引用的旧载荷保留
+  ok   T4 journal 引用的数据中转保留
+  ok   T4 无主 payload.new.* 被清
+  ok   T4 无 journal 后无主目录被清(payload)
+  ok   T4 无 journal 后无主目录被清(data)
+
+== T5 静态载荷无 loader 也可启动检查 ==
+  ok   T5 静态载荷无 lib/ld-linux
+  ok   T5 静态载荷通过
+  ok   T5 动态载荷 loader 不可执行被拒
+  ok   T5 提示动态链接器缺失
+  ok   T5 动态载荷 loader 可执行通过
+  ok   T5 服务端缺失被拒
+  ok   T5 提示载荷缺失
+
+== T6 网络变化重算 DNS ==
+  ok   T6 网络变化触发重算
+  ok   T6 网络未变化不重算
+
+== T7 DNS 缓存恢复 live 文件 ==
+  ok   T7 返回成功
+  ok   T7 live 文件已恢复
+  ok   T7 缓存保留
+  ok   T7 无缓存走静态兜底
+
+== T8 回滚不完整：保持停止、保全体、journal=rollback-failed ==
+  ok   T8 更新返回失败
+  ok   T8 journal=rollback-failed
+  ok   T8 服务保持停止(未重启)
+  ok   T8 没有重启事件
+  ok   T8 载荷未被假装回滚(仍2.0.0)
+  ok   T8 数据已回到升级前快照
+  ok   T8 数据快照保留
+
+== T9 journal 恢复受 update 锁约束 ==
+  ok   T9 拿到活锁时不恢复也不报错
+  ok   T9 journal 原样保留
+  ok   T9 载荷未被换回(仍缺失)
+  ok   T9 旧载荷仍在
+  ok   T9 日志说明锁占用
+  ok   T9 锁释放后恢复成功
+  ok   T9 载荷恢复正常
+  ok   T9 journal 已清
+
+== T10 数据换入中断收尾：三种现场 ==
+  ok   T10a 返回成功
+  ok   T10a 快照真的换入
+  ok   T10a 中转目录已清
+  ok   T10a 没有留下移开副本
+  ok   T10b 返回成功
+  ok   T10b 快照换入
+  ok   T10b 移开副本已清
+  ok   T10c 返回成功
+  ok   T10c 数据保持快照
+  ok   T10c 残留已清
+
+== T11 补提交只在健康通过后执行 ==
+  ok   T11 健康失败保留唯一回滚副本
+  ok   T11 健康失败保留 pending
+  ok   T11 健康通过后提交删除旧载荷
+
+== T12 DNS lastgood 绑定网络身份、缓存参与兜底 ==
+  ok   T12a 返回成功
+  ok   T12a 未沿用别的网络的 DNS
+  ok   T12a 改用当前系统的 DNS
+  ok   T12a 新身份已记录
+  ok   T12b 身份匹配时沿用 lastgood
+  ok   T12c 缓存兜底成功
+  ok   T12c 发布缓存里的解析器
+  ok   T12d 跨网缓存不兜底
+  ok   T12d 没有把跨网解析器写进 live
+  ok   T12d 日志说明原因
+
+== T13 customize 先停服再恢复 ==
+  ok   T13 加载 control.sh 在恢复之前
+  ok   T13 停服判定在恢复之前
+  ok   T13 运行期恢复模式
+  ok   T13 停不下来必须中止
+  ok   T13 失败也会拉起原服务
+
+=== 99 checked / 99 passed / 0 failed ===
+  ok   txn_test.sh
+
+== 2b. DNS 完整身份行为回归 ==
+PASS refresh cross-netid cache-only rejected
+PASS refresh failure preserves old identity
+PASS refresh failure has no new lastgood
+PASS refresh failure preserves exact old cache
+PASS refresh failure has no success timestamp
+PASS same-netid iface rejected
+PASS same-netid iface no live publication
+PASS same-netid iface metadata unchanged
+PASS same-netid vpn rejected
+PASS same-netid vpn no live publication
+PASS same-netid vpn metadata unchanged
+PASS same-netid both rejected
+PASS same-netid both no live publication
+PASS same-netid both metadata unchanged
+PASS legacy full-identity cache restores absent live
+PASS legacy recovery content
+PASS legacy cache upgraded to atomic full identity
+PASS new format same identity cache recovery
+PASS new format recovered nameserver
+PASS embedded identity rejects prewritten new metadata
+PASS direct ensure succeeds
+PASS direct ensure synchronizes all metadata
+PASS direct ensure content-bound identity
+PASS direct ensure lastgood identity
+PASS follow_system=default status
+PASS follow_system=default priority
+PASS follow_system=0 status
+PASS follow_system=0 priority
+PASS follow_system=1 status
+PASS follow_system=1 priority
+PASS follow_system=2 status
+PASS follow_system=2 priority
+PASS liveness reports failure
+PASS liveness preserves original metadata
+PASS liveness preserves original cache bytes
+PASS liveness no new lastgood identity
+PASS liveness clears publish lock
+PASS liveness restores live bytes
+PASS live_copy reports failure
+PASS live_copy preserves original metadata
+PASS live_copy preserves original cache bytes
+PASS live_copy no new lastgood identity
+PASS live_copy clears publish lock
+PASS live_copy restores live bytes
+PASS live_rename reports failure
+PASS live_rename preserves original metadata
+PASS live_rename preserves original cache bytes
+PASS live_rename no new lastgood identity
+PASS live_rename clears publish lock
+PASS live_chmod reports failure
+PASS live_chmod preserves original metadata
+PASS live_chmod preserves original cache bytes
+PASS live_chmod no new lastgood identity
+PASS live_chmod clears publish lock
+PASS live_chmod restores live bytes
+PASS cache_copy reports failure
+PASS cache_copy preserves original metadata
+PASS cache_copy preserves original cache bytes
+PASS cache_copy no new lastgood identity
+PASS cache_copy clears publish lock
+PASS cache_copy restores live bytes
+PASS cache_rename reports failure
+PASS cache_rename preserves original metadata
+PASS cache_rename preserves original cache bytes
+PASS cache_rename no new lastgood identity
+PASS cache_rename clears publish lock
+PASS cache_rename restores live bytes
+PASS cache_chmod reports failure
+PASS cache_chmod preserves original metadata
+PASS cache_chmod preserves original cache bytes
+PASS cache_chmod no new lastgood identity
+PASS cache_chmod clears publish lock
+PASS cache_chmod restores live bytes
+PASS metadata_copy reports failure
+PASS metadata_copy preserves original metadata
+PASS metadata_copy preserves original cache bytes
+PASS metadata_copy no new lastgood identity
+PASS metadata_copy clears publish lock
+PASS metadata_copy restores live bytes
+PASS metadata_rename reports failure
+PASS metadata_rename preserves original metadata
+PASS metadata_rename preserves original cache bytes
+PASS metadata_rename no new lastgood identity
+PASS metadata_rename clears publish lock
+PASS metadata_rename restores live bytes
+PASS metadata_chmod reports failure
+PASS metadata_chmod preserves original metadata
+PASS metadata_chmod preserves original cache bytes
+PASS metadata_chmod no new lastgood identity
+PASS metadata_chmod clears publish lock
+PASS metadata_chmod restores live bytes
+PASS identity_drift reports failure
+PASS identity_drift preserves original metadata
+PASS identity_drift preserves original cache bytes
+PASS identity_drift no new lastgood identity
+PASS identity_drift clears publish lock
+PASS identity_drift restores live bytes
+PASS cache with incomplete identity rejected
+PASS unusable cache rejected
+PASS dns_write auto cross-identity cache rejected
+PASS dns_write failure preserves metadata
+PASS dns_write auto same-identity recovery
+PASS dns_write recovery metadata
+PASS real bootstrap static publication succeeds
+PASS bootstrap shares identity publication
+PASS bootstrap bound cache content
+PASS dns_write cache failure is nonzero
+PASS dns_write cache failure preserves identity
+PASS lastgood mirror failure does not undo successful publication
+PASS lastgood embeds successful identity
+PASS lastgood contains only filtered published addresses
+PASS new lastgood identity overrides stale mirror on recovery
+PASS lastgood restores validated address
+PASS lastgood header rejects relabeled split mirror
+PASS lastgood rename failure preserves DNS success
+PASS lastgood rename leaves exact old content
+PASS lastgood rename leaves exact old mirror
+PASS lastgood rename successful cache remains bound
+PASS lastgood chmod failure preserves DNS success
+PASS lastgood chmod leaves exact old content
+PASS lastgood chmod leaves exact old mirror
+PASS lastgood chmod successful cache remains bound
+PASS second metadata rename failure returns nonzero
+PASS partially advanced metadata rolled back
+PASS partially advanced metadata leaves old cache
+PASS dead publisher lock recovered
+PASS dead publisher recovery binds new identity
+PASS active publisher lock rejects concurrent publication
+PASS active publisher lock leaves metadata unchanged
+PASS active publisher lock leaves cache unchanged
+
+130 checked / 130 passed / 0 failed
+Evidence directory: /tmp/a2a-dns-identity.8DxW61
+  ok   dns_identity_test.sh
+
+== 3. Python verify 套件 ==
+r01_activate_registers_pending               rc=0   {"pending_written": "1", "old_payload_intact": "1", "new_version_live": "v2.0.0"}
+r01_post_fs_data_keeps_pending               rc=0   {"pending_kept": "1", "old_kept": "1"}
+r01_supervisor_commits_after_health          rc=0   {"launches": "1", "pending_gone": "1", "old_payload_gone": "1", "live_version": "v2.0.0"}
+r01_updater_commit_keeps_identity            rc=0   {"installed": "1", "identity_kept": "1", "identity_cleared": "1", "committed_flag": "1"}
+r02_pending_write_failure_aborts             rc=0   {"activation_rc": "1", "active_cleared": "1", "old_dir_reported": "0"}
+r02_commit_delete_failure_reports_error      rc=0   {"commit_rc": "1", "old_kept": "1", "pending_kept": "1"}
+r03_commit_rejects_foreign_generation        rc=0   {"foreign_rc": "1", "foreign_kept": "1", "foreign_pending_kept": "1", "match_rc": "0", "old_deleted": "1", "pending_cleared": "1"}
+r04_rollback_converges_pending               rc=0   {"before_version": "v2.0.0", "after_version": "v1.0.0", "pending_gone": "1", "committed": "1", "failed_version_removed": "0"}
+r05_static_payload_functions                 rc=0   {"static_validate": "0", "static_perms": "0", "static_smoke": "0", "dyn_validate": "0", "dyn_perms": "0", "dyn_smoke": "1", "broken_validate": "1"}
+r05_static_launch_skips_loader               rc=0   {"launch_reached": "1"}
+r05_customize_static_detection               rc=0   {"static_hit": "0", "dyn_hit": "1"}
+r06_stop_cleans_dead_owner                   rc=0   {"outer": "1", "stop_rc": "0", "instance_lock_gone": "1", "outer_token_ok": "1", "service_owner_intact": "1"}
+r07_reentrant_start_keeps_lock               rc=0   {"acq": "1", "reentrant_rc": "0", "token_kept": "1", "owner_kept": "1", "owner_freed": "1"}
+r06b_stop_timeout_keeps_state                rc=0   {"stop_rc": "1", "pid_kept": "1", "stop_marker": "1"}
+r08_reaper_generation_guard                  rc=0   {"acquire_rc": "1", "live_owner_kept": "1", "live_token": "livetoken"}
+r09_recovery_no_nesting                      rc=0   {"recovery_rc": "0", "old_intact": "1", "no_nest": "1"}
+r10_zoneinfo_rollback_without_flag           rc=0   {"zone_version": "old", "aux_restored": "old-tz", "old_dir_gone": "1"}
+r11_cfg_set_roundtrip                        rc=0   {"lf_rc": "1", "cr_rc": "1", "plain_rc": "0", "plain_val": "plain", "space_rc": "0", "space_val": "has space", "hash_rc": "0", "hash_val": "has # hash", "quote_rc": "0", "quote_val": "it's", "injected_absent": "ABSENT", "dedup": "1", "last_wins": "v3"}
+r12_health_proxy_independent                 rc=0   {"direct": "0", "proxied": "0", "proxied_upper": "0"}
+r12_health_status_matrix                     rc=0   {"ok": "0", "degraded": "0", "bad": "1", "truncated": "1"}
+r12_health_ipv6_wildcard                     rc=0   {"explicit": "0", "urls": "http://[::1]:23253/health http://127.0.0.1:23253/health ", "wildcard": "0", "bracket_wildcard": "0"}
+r13_liveness_curl_status                     rc=0   {"ok": "0", "truncated": "1", "refused": "1", "probe_off": "0"}
+r14_dns_backup_failure_blocks                rc=0   {"ensure_rc": "1", "search_kept": "1", "backup_left": "0"}
+r14_dns_success_cleans_backup                rc=0   {"ensure_rc": "0", "backup_left": "0", "nameserver_rewritten": "4"}
+r17_natural_death_still_counts               rc=0   {"fails_after_70s": "1", "fails_after_kill": "1"}
+r16_backoff_releases_wake                    rc=0   {"releases_after_backoff": "1", "wake_after_backoff": "0", "releases_after_fuse": "1", "giveup": "1"}
+r16_port_conflict_releases_wake              rc=0   {"releases": "1", "wake": "0", "launches": "0"}
+r15_backoff_rechecks_state                   rc=0   {"gate_launches": "0", "autooff_launches": "0", "stop_launches": "0", "normal_launches": "1"}
+r16_take_wake_on_relaunch                    rc=0   {"takes": "1", "wake": "1", "takes_when_off": "0"}
+r15_autostart_and_stop_gate_launch           rc=0   {"autostart_off_launches": "1"}
+lf_generation_mismatch_blocks_commit         rc=0   {"pending_kept": "1", "old_kept": "1", "disk_generation_kept": "1"}
+lf_hot_request_roundtrip                     rc=0   {"empty_before": "1", "write_rc": "0", "read_back": "1|0", "no_tmp_left": "1", "lock_released": "1", "cleared": "1"}
+lf_dns_file_same                             rc=0   {"same_rc": "0", "diff_rc": "1", "missing_rc": "1", "both_missing_rc": "1"}
+lf_json_escape                               rc=0   {"quote": "a\\\"b", "backslash": "a\\\\b", "multiline": "l1\\nl2", "plain": "ok", "empty": ""}
+lf_boot_entry_and_wget_guard                 rc=0   {"dispatches_worker": "1", "no_inline_boot_wait": "0", "no_inline_svc_start": "0", "worker_present": "1", "worker_locks": "6", "guard_before_wget": "1", "refusal_message": "1"}
+r18_version_metadata                         rc=0   {"binary": "3.4.1", "version_file": "3.4.1", "consistent": "1", "module_prop": "v3.4.1 (magisk.37)", "prop_mentions_payload": "1"}
+r19_boot_helper_module_dir                   rc=0   {"resolved": "/e/AI/tmp/agent2api-audit-20261104/reverify/phone-repair/module", "has_prop": "1", "is_fallback": "0"}
+
+=== 37 checked / 37 passed / 0 failed ===
+  ok   verify_fixes.py
+fast_crash_fuse              rc=0   FINAL fails=6 giveup=1 launches=6 releases=192 takes=7 clock=6000 commits=6
+natural_death_70s            rc=0   FINAL fails=7 giveup=1 launches=5 releases=195 takes=6 clock=6000 commits=3
+backoff_keepawake_off        rc=0   FINAL fails=6 giveup=1 launches=6 releases=12 takes=4 clock=600 commits=6
+backoff_autostart_off        rc=0   FINAL fails=3 giveup=0 launches=3 releases=19 takes=4 clock=600 commits=3
+backoff_gate_blocked         rc=0   FINAL fails=3 giveup=0 launches=3 releases=11 takes=4 clock=630 commits=3
+backoff_stop_marker          rc=0   FINAL fails=3 giveup=0 launches=3 releases=2 takes=4 clock=90 commits=3
+port_conflict_holds          rc=0   FINAL fails=0 giveup=0 launches=0 releases=5 takes=1 clock=240 commits=0
+
+=== 8 checked / 8 passed / 0 failed ===
+  ok   verify_loop.py
+  ok   verify_fixes.py '/tmp/repro.sh' -> '/tmp/repro.sh'
+  ok   verify_fixes.py '/data/adb/agent2api' -> '/data/adb/agent2api'
+  ok   verify_fixes.py 'C:\\Users\\x\\repro.sh' -> '/c/Users/x/repro.sh'
+  ok   verify_fixes.py 'c:/Users/x/repro.sh' -> '/c/Users/x/repro.sh'
+  ok   verify_fixes.py 'relative/path.sh' -> 'relative/path.sh'
+  ok   verify_loop.py '/tmp/repro.sh' -> '/tmp/repro.sh'
+  ok   verify_loop.py '/data/adb/agent2api' -> '/data/adb/agent2api'
+  ok   verify_loop.py 'C:\\Users\\x\\repro.sh' -> '/c/Users/x/repro.sh'
+  ok   verify_loop.py 'c:/Users/x/repro.sh' -> '/c/Users/x/repro.sh'
+  ok   verify_loop.py 'relative/path.sh' -> 'relative/path.sh'
+
+=== 10 checked / 10 passed / 0 failed ===
+  ok   verify_paths.py
+PASS data-fail {"rc": "1", "payload": "old", "data": "new-schema", "journal": "rollback-failed", "running": "0", "restart": "no"}
+PASS payload-fail {"rc": "1", "payload": "2.0.0", "data": "old-schema", "journal": "rollback-failed", "running": "0", "restart": "no"}
+PASS missing-snapshot {"rc": "1", "payload": "old", "data": "new-schema", "journal": "rollback-failed", "running": "0", "restart": "no"}
+PASS first-rename {"injected": "91", "rc": "0", "data": "old-schema", "journal": ""}
+PASS signal-data-fail {"rc": "1", "payload": "old", "data": "new-schema", "journal": "rollback-failed", "running": "0"}
+PASS signal-payload-fail {"rc": "1", "payload": "new", "data": "old-schema", "journal": "rollback-failed", "running": "0"}
+PASS customize-orphan {"rc": "77", "payload": "new", "data": "new-schema", "journal": "rollback-blocked", "running": "0", "continued": "0", "killed": "1"}
+PASS customize-recover-fail {"rc": "77", "payload": "old", "data": "new-schema", "journal": "rollback-blocked", "running": "0", "continued": "0", "killed": "0"}
+PASS customize-stop-fail {"rc": "77", "running": "0", "starts": "0"}
+PASS commit-unhealthy {"old": "yes", "pending": "yes"}
+PASS commit-healthy {"old": "no", "pending": "no"}
+PASS snapshot-no-id {"rc": "1", "data": "new-schema"}
+PASS snapshot-wrong-id {"rc": "1", "data": "new-schema"}
+PASS second-rename {"rc": "0", "data": "old-schema", "journal": "", "restored": "no"}
+PASS after-second-rename {"rc": "0", "data": "old-schema", "journal": "", "restored": "no"}
+PASS restore-rename-fail {"rc": "1", "data": "new-schema", "journal": "rolling-back", "restored": "yes"}
+PASS recovered-data-retry {"rc": "0", "data": "old-schema", "journal": ""}
+PASS contradictory-data {"rc": "1", "tmp": "yes", "aside": "yes", "data": "old-schema"}
+PASS supervisor-recovery-fail {"rc": "1", "starts": "0"}
+PASS boot-recovery-fail {"rc": "1", "layout": "0"}
+PASS customize-safe-fail {"rc": "77", "running": "1", "starts": "1"}
+PASS first-rename-return-fail {"first": "1", "rc": "0", "data": "old-schema", "journal": ""}
+PASS payload-rename-retry {"injected": "91", "rc": "0", "payload": "old", "data": "old-schema", "journal": "", "marker": "tx-payload-retry", "oldpath": "no"}
+PASS payload-complete-retry {"injected": "91", "rc": "0", "payload": "old", "data": "old-schema", "journal": "", "marker": "tx-payload-retry", "oldpath": "no"}
+PASS payload-marker-fail {"injected": "1", "rc": "1", "payload": "new", "data": "new-schema", "journal": "started", "marker": "none", "oldpath": "yes"}
+25/25 recovery boundaries passed
+  ok   recovery_boundary_test.py
+  ok   required source: apk-mod\src\components\GatewaySwitches.tsx
+  ok   required source: apk-mod\src\api\switches.ts
+  ok   required source: apk-mod\src\pages\SettingsPage.tsx
+  ok   required source: apk-mod\a2a-mobile-mod.patch
+  ok   required source: test\verify_frontend_runtime.mjs
+  ok   SettingsPage uses split GatewaySwitches component
+  ok   patch new-file snapshot matches: api/switches.ts
+  ok   patch new-file snapshot matches: components/GatewaySwitches.tsx
+  ok   patch new-file snapshot matches: lib/discover.ts
+  ok   Node runtime available (NODE_BINARY or PATH)
+
+Executing real component/API runtime regression:
+ok   RR08 replaces missing keys and disables unknown [immediate updater]
+ok   reject GET issued before PUT after completed PUT [immediate updater]
+ok   reject GET issued during PUT after completed PUT [immediate updater]
+ok   late GET cannot restore value after failed PUT [immediate updater]
+ok   GET responses are ordered by latest request [immediate updater]
+ok   different-key PUTs are globally serial and preserve pending intent [immediate updater]
+ok   failed write does not stop serial queue [immediate updater]
+ok   pending intent survives missing read endpoint [immediate updater]
+ok   duplicate same-key event is ignored without losing pending ownership [immediate updater]
+ok   actual API invalid echo becomes unknown in component {} [immediate updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":false} [immediate updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":"true"} [immediate updater]
+ok   actual API valid echo confirms component target [immediate updater]
+ok   RR08 replaces missing keys and disables unknown [deferred React updater]
+ok   reject GET issued before PUT after completed PUT [deferred React updater]
+ok   reject GET issued during PUT after completed PUT [deferred React updater]
+ok   late GET cannot restore value after failed PUT [deferred React updater]
+ok   GET responses are ordered by latest request [deferred React updater]
+ok   different-key PUTs are globally serial and preserve pending intent [deferred React updater]
+ok   failed write does not stop serial queue [deferred React updater]
+ok   pending intent survives missing read endpoint [deferred React updater]
+ok   duplicate same-key event is ignored without losing pending ownership [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {} [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":false} [deferred React updater]
+ok   actual API invalid echo becomes unknown in component {"debugMode":"true"} [deferred React updater]
+ok   actual API valid echo confirms component target [deferred React updater]
+ok   already queued GET updater rechecks write-intent barrier on commit
+ok   GET updater queued during PUT rechecks write-settlement barrier
+ok   queued older GET updater loses to a later GET before commit
+ok   deferred earlier PUT cannot overwrite a later failed pending key
+ok   later confirmed endpoint response may resolve another failed key
+ok   unmounted component ignores late GET and PUT state updates
+ok   API strict confirmation sanitize=false
+ok   API rejects sanitize=false echo {}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":true}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":0}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":"false"}
+ok   API rejects sanitize=false echo {"sanitizeBlacklistFingerprints":null}
+ok   API rejects sanitize=false echo null
+ok   API rejects sanitize=false echo []
+ok   API strict confirmation sanitize=true
+ok   API rejects sanitize=true echo {}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":false}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":1}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":"true"}
+ok   API rejects sanitize=true echo {"sanitizeBlacklistFingerprints":null}
+ok   API rejects sanitize=true echo null
+ok   API rejects sanitize=true echo []
+ok   API strict confirmation developerRoleCompat=false
+ok   API rejects developerRoleCompat=false echo {}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":true}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":0}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":"false"}
+ok   API rejects developerRoleCompat=false echo {"developerRoleCompat":null}
+ok   API rejects developerRoleCompat=false echo null
+ok   API rejects developerRoleCompat=false echo []
+ok   API strict confirmation developerRoleCompat=true
+ok   API rejects developerRoleCompat=true echo {}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":false}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":1}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":"true"}
+ok   API rejects developerRoleCompat=true echo {"developerRoleCompat":null}
+ok   API rejects developerRoleCompat=true echo null
+ok   API rejects developerRoleCompat=true echo []
+ok   API strict confirmation cors=false
+ok   API rejects cors=false echo {}
+ok   API rejects cors=false echo {"corsEnabled":true}
+ok   API rejects cors=false echo {"corsEnabled":0}
+ok   API rejects cors=false echo {"corsEnabled":"false"}
+ok   API rejects cors=false echo {"corsEnabled":null}
+ok   API rejects cors=false echo null
+ok   API rejects cors=false echo []
+ok   API strict confirmation cors=true
+ok   API rejects cors=true echo {}
+ok   API rejects cors=true echo {"corsEnabled":false}
+ok   API rejects cors=true echo {"corsEnabled":1}
+ok   API rejects cors=true echo {"corsEnabled":"true"}
+ok   API rejects cors=true echo {"corsEnabled":null}
+ok   API rejects cors=true echo null
+ok   API rejects cors=true echo []
+ok   API strict confirmation debug=false
+ok   API rejects debug=false echo {}
+ok   API rejects debug=false echo {"debugMode":true}
+ok   API rejects debug=false echo {"debugMode":0}
+ok   API rejects debug=false echo {"debugMode":"false"}
+ok   API rejects debug=false echo {"debugMode":null}
+ok   API rejects debug=false echo null
+ok   API rejects debug=false echo []
+ok   API strict confirmation debug=true
+ok   API rejects debug=true echo {}
+ok   API rejects debug=true echo {"debugMode":false}
+ok   API rejects debug=true echo {"debugMode":1}
+ok   API rejects debug=true echo {"debugMode":"true"}
+ok   API rejects debug=true echo {"debugMode":null}
+ok   API rejects debug=true echo null
+ok   API rejects debug=true echo []
+ok   API strict confirmation captcha=false
+ok   API rejects captcha=false echo {}
+ok   API rejects captcha=false echo {"captchaEnabled":true}
+ok   API rejects captcha=false echo {"captchaEnabled":0}
+ok   API rejects captcha=false echo {"captchaEnabled":"false"}
+ok   API rejects captcha=false echo {"captchaEnabled":null}
+ok   API rejects captcha=false echo null
+ok   API rejects captcha=false echo []
+ok   API strict confirmation captcha=true
+ok   API rejects captcha=true echo {}
+ok   API rejects captcha=true echo {"captchaEnabled":false}
+ok   API rejects captcha=true echo {"captchaEnabled":1}
+ok   API rejects captcha=true echo {"captchaEnabled":"true"}
+ok   API rejects captcha=true echo {"captchaEnabled":null}
+ok   API rejects captcha=true echo null
+ok   API rejects captcha=true echo []
+ok   API strict confirmation modelsDev=false
+ok   API rejects modelsDev=false echo {}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":true}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":0}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":"false"}
+ok   API rejects modelsDev=false echo {"modelsDevEnabled":null}
+ok   API rejects modelsDev=false echo null
+ok   API rejects modelsDev=false echo []
+ok   API strict confirmation modelsDev=true
+ok   API rejects modelsDev=true echo {}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":false}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":1}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":"true"}
+ok   API rejects modelsDev=true echo {"modelsDevEnabled":null}
+ok   API rejects modelsDev=true echo null
+ok   API rejects modelsDev=true echo []
+ok   API strict confirmation failoverBackoff=false
+ok   API rejects failoverBackoff=false echo {}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":true}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":0}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":"false"}
+ok   API rejects failoverBackoff=false echo {"routingFailoverBackoff":null}
+ok   API rejects failoverBackoff=false echo null
+ok   API rejects failoverBackoff=false echo []
+ok   API strict confirmation failoverBackoff=true
+ok   API rejects failoverBackoff=true echo {}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":false}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":1}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":"true"}
+ok   API rejects failoverBackoff=true echo {"routingFailoverBackoff":null}
+ok   API rejects failoverBackoff=true echo null
+ok   API rejects failoverBackoff=true echo []
+ok   API strict confirmation sink=false
+ok   API rejects sink=false echo {}
+ok   API rejects sink=false echo {"routingSink":true}
+ok   API rejects sink=false echo {"routingSink":0}
+ok   API rejects sink=false echo {"routingSink":"false"}
+ok   API rejects sink=false echo {"routingSink":null}
+ok   API rejects sink=false echo null
+ok   API rejects sink=false echo []
+ok   API strict confirmation sink=true
+ok   API rejects sink=true echo {}
+ok   API rejects sink=true echo {"routingSink":false}
+ok   API rejects sink=true echo {"routingSink":1}
+ok   API rejects sink=true echo {"routingSink":"true"}
+ok   API rejects sink=true echo {"routingSink":null}
+ok   API rejects sink=true echo null
+ok   API rejects sink=true echo []
+ok   API strict confirmation breaker=false
+ok   API rejects breaker=false echo {}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":true}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":0}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":"false"}
+ok   API rejects breaker=false echo {"routingBreakerEnabled":null}
+ok   API rejects breaker=false echo null
+ok   API rejects breaker=false echo []
+ok   API strict confirmation breaker=true
+ok   API rejects breaker=true echo {}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":false}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":1}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":"true"}
+ok   API rejects breaker=true echo {"routingBreakerEnabled":null}
+ok   API rejects breaker=true echo null
+ok   API rejects breaker=true echo []
+ok   captcha current-side boolean echo {"localPanel":false,"next":false}
+ok   captcha current-side boolean echo {"localPanel":false,"next":true}
+ok   captcha current-side boolean echo {"localPanel":true,"next":false}
+ok   captcha current-side boolean echo {"localPanel":true,"next":true}
+ok   fetchSwitches deduplicates routing and preserves partial unknown
+ok   unknown switch and invalid requested type reject before HTTP
+
+=== 182 checked / 182 passed / 0 failed ===
+  ok   runtime behavior suite exits zero
+
+=== integration: 11 checked / 11 passed / 0 failed ===
+  ok   verify_frontend.py
+SKIP 当前环境无法创建符号链接
+  ok   out==apk 被拒绝
+  ok   out==apk 没有截断源包
+  ok   硬链接别名被拒绝
+  ok   硬链接别名没有截断源包
+  ok   大小写别名被拒绝
+  ok   大小写别名没有截断源包
+  ok   out 在 web 内被拒绝
+  ok   被拒绝时没有生成输出
+  ok   正常打包成功
+  ok   网页资源已替换
+  ok   新增资源已写入
+  ok   resources.arsc 仍为 STORED
+  ok   旧签名条目已删除
+  ok   cordova 占位保留
+  ok   输出包 CRC 完整
+  ok   没有残留临时文件
+  ok   缺少 index.html 时失败
+  ok   失败时旧输出原样保留
+  ok   输出路径不可替换时失败
+  ok   输出路径仍是目录(未被破坏)
+  ok   替换失败不留临时文件
+
+=== 21 checked / 21 passed / 0 failed ===
+  ok   repack_test.py
+  ok   带冒号的泄露指纹被拒
+  ok   拒绝时说明原因
+  ok   小写无冒号写法同样被拒
+  ok   其它指纹放行
+  ok   拒绝把私钥写进仓库
+  ok   被拒绝时没有留下目录
+  ok   生成新 keystore 成功
+  ok   keystore 已生成
+  ok   口令文件已生成
+  ok   能读回新证书指纹
+  ok   新指纹不等于泄露指纹
+  ok   不覆盖已有 keystore
+
+=== 12 checked / 12 passed / 0 failed ===
+  ok   sign_test.py
+{
+  "module": "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module",
+  "shell": "C:\\Users\\Y-H\\.dsh\\profiles\\desktop\\node_modules\\@dsh-ops\\bash-win32-x64\\usr\\bin\\sh.EXE",
+  "source_sha256": {
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\libexec\\common.sh": "194f657878dbaaa3f789a6ee18a5d19ee3cdb48d60da1f228b5fca1ba04e1e56",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\libexec\\supervise.sh": "a593939393bee87316656e2c62d636018dd8b5028a93d507ea218b8937dec4e4",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\META-INF\\com\\google\\android\\update-binary": "c0b91dcfbca346249c202e9f8cb48275c3816aeb17e6ed30581ed4e18fa4d9ce",
+    "E:\\AI\\tmp\\agent2api-audit-20261104\\reverify\\phone-repair\\module\\customize.sh": "63ec14190495593f2b56883fcdd0f888e1c41f155896ac378d4d2b90334bc421"
+  },
+  "tests": [
+    {
+      "name": "production status printf: running/unverified/stopped, JSON escapes, invalid TMPDIR",
+      "status": "PASS"
+    },
+    {
+      "name": "production ensure_layout replaces inherited TMPDIR and exports to child",
+      "status": "PASS"
+    },
+    {
+      "name": "production ensure_layout reports invalid TMPD instead of exporting it",
+      "status": "PASS"
+    },
+    {
+      "name": "static production contracts: no heredoc, persistent TMPDIR, isolated fallback cleanup",
+      "status": "PASS"
+    },
+    {
+      "name": "fallback same-shell customize variable mutation cleans installer only (mock rm)",
+      "status": "PASS"
+    },
+    {
+      "name": "negative controls expose old inherited-TMPDIR and fallback TMPD collision",
+      "status": "PASS"
+    }
+  ],
+  "passed": 6,
+  "failed": 0,
+  "blocked": 0,
+  "coverage": "host sh production fragments; no actual Android/mksh, no C dynamic spawn test"
+}
+  ok   phone_runtime_test.py
+
+=== 全部通过 ===

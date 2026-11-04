@@ -172,6 +172,16 @@ log_to "$SUPLOG" "启动服务端：port=$CFG_PORT host=$CFG_HOST tz=${TZ:-unset
 if payload_is_static; then
   exec "$SERVER_BIN"
 fi
+# Loader-local preload is consumed for this server only; it is not inherited
+# as LD_PRELOAD by Android/bionic tools or the plugins themselves.
+if [ -r "$A2A_DIR/plugin-spawn.so" ]; then
+  exec "$LOADER" \
+    --preload "$A2A_DIR/plugin-spawn.so" \
+    --argv0 agent2api-server \
+    --inhibit-cache \
+    --library-path "$PLIB" \
+    "$SERVER_BIN"
+fi
 exec "$LOADER" \
   --argv0 agent2api-server \
   --inhibit-cache \
