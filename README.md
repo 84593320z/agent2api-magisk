@@ -11,19 +11,31 @@
 
 最新构建在 **Releases** 页面（手机上直接点链接就能下）：
 
-- [agent2api-magisk-v3.4.0-magisk.34-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.34/agent2api-magisk-v3.4.0-magisk.34-arm64.zip) —— Magisk / KernelSU 模块包（同步上游 v3.4.0 正式版，musl 静态载荷）
+- [agent2api-magisk-v3.4.0-magisk.35-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.35/agent2api-magisk-v3.4.0-magisk.35-arm64.zip) —— Magisk / KernelSU 模块包（v3.4.0 载荷 + 复审 RR-01..RR-12 修复）
+- [agent2api-magisk-v3.4.0-magisk.34-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.34/agent2api-magisk-v3.4.0-magisk.34-arm64.zip) —— 上一构建（**存在已确认缺陷，勿用**，仅留作对照）
 - [agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.33/agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip) —— 上一版（magisk.33，融合 localfix-20261104），保留备用
 - [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 手机端 APK
 
 ---
 
-## 这一版（v3.4.0 / magisk.34）改了什么
+## 这一版（v3.4.0 / magisk.35）改了什么
+
+载荷仍是上游 v3.4.0，本版只修模块壳与工具链：按独立复审报告逐条修完 **RR-01..RR-12**。
+
+- **事务/恢复**：回滚失败不再被 `|| printf` 吞掉（停服保现场、journal 记 `rollback-failed`）；按 journal 恢复前先取 update 锁；`customize` 热安装先停服再替换、装完自动拉起；数据换入判据改为 aside 存在性，不再「目标非空即完成」。
+- **守护/DNS**：巡检补提交加健康门控（健康检查失败保留唯一回滚副本）；lastgood 与 `DNS_CACHE` 都绑定网络身份，跨网不沿用旧 LAN 解析器。
+- **前端/工具**：开关页不再合并旧键（失败端点保持不可操作）；`repack.py` 拒绝同源输出并改原子替换；测试脚本 `posix()` 不再破坏 Linux 路径。
+- **签名**：新增 `apk-mod/sign-tool.sh` / `signing.md`，泄露的旧证书指纹进黑名单；**旧包请勿再用**。
+
+逐条根因、改法与负向验收见 [docs/fixes-v3.4.0-20261104/report-2.md](docs/fixes-v3.4.0-20261104/report-2.md)。
+
+### 上游 v3.4.0 同步内容（magisk.34 起）
 
 **同步上游 [aimod-cc/Agent2API](https://github.com/aimod-cc/Agent2API) v3.4.0 正式版**（上游 2026-11-03 发布）。
 
 - 载荷 `seed/agent2api-server` + `seed/ui` 整体换成 **v3.4.0**：由 [84593320z/agent2api-musl](https://github.com/84593320z/agent2api-musl) CI 按上游 `v3.4.0` tag 构建的 musl 静态 arm64 包（无 `PT_INTERP`，解析器路径已等长改写为 `/data/a2a/resolv`）。
-- `seed/VERSION` 同步为 `ver=3.4.0`；`module.prop` → `v3.4.0 (magisk.34)`，壳与载荷版本这次是**对齐**的。
-- 模块壳脚本（libexec 全家、安装器、守护）**零改动**——上一版 localfix-20261104 的全部修复原样保留，本版只换载荷。
+- `seed/VERSION` 同步为 `ver=3.4.0`；`module.prop` → `v3.4.0 (magisk.NN)`（当前 `magisk.35`），壳与载荷版本是对齐的。
+- magisk.34 相对上一版的模块壳脚本（libexec 全家、安装器、守护）**零改动**——localfix-20261104 的全部修复原样保留；magisk.35 的脚本改动见上一节。
 - 在线更新（`a2a update`）默认仍指上游官方 glibc 包；`seed/lib` 的 glibc 运行时保留不动，动态载荷升级路径依旧可用。
 
 上游 v3.4.0 的主要变化（摘自上游 Release）：会话图片压缩、DeepSeek(dsh) 客户端接管、Trae 模型 ID 收敛（`-solo` 后缀迁移）、路由工作台模型筛选、插件安装等待在途请求、上游请求备用入口 + DNS 容错、更新检查诊断、账号存储快照缓存、阻塞线程池、豆包生图修复等 20 项。

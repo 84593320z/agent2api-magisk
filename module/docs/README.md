@@ -15,7 +15,7 @@
 ## 1. 一分钟安装
 
 1. 确认手机是 **arm64**（2016 年后的机器基本都是）且已 root（Magisk / KernelSU / APatch 都行）。
-2. 把 `agent2api-magisk-v3.4.0-magisk.34.zip` 传到手机。
+2. 把 `agent2api-magisk-v3.4.0-magisk.35.zip` 传到手机。
 3. **Magisk**：Magisk App → 模块 → 从本地安装 → 选 zip → 重启。
    **KernelSU / APatch**：管理器 → 模块 → 安装 → 选 zip → 重启。
 4. 重启后打开浏览器：`http://127.0.0.1:3065/m.html`
@@ -230,14 +230,14 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor; echo ---; sh /data/adb/agent2api/b
 产物（每次构建都会重新算，实际值看同目录的 `.zip.sha256`）：
 
 ```
-dist/agent2api-magisk-v3.4.0-magisk.34.zip    约 30 MB（musl 静态载荷 + 完整 IANA zoneinfo）
+dist/agent2api-magisk-v3.4.0-magisk.35.zip    约 30 MB（musl 静态载荷 + 完整 IANA zoneinfo）
 ```
 
 刷之前想先核对一下的话（手机端或电脑端都行）：
 
 ```sh
-sha256sum agent2api-magisk-v3.4.0-magisk.34.zip
-cat    agent2api-magisk-v3.4.0-magisk.34.zip.sha256
+sha256sum agent2api-magisk-v3.4.0-magisk.35.zip
+cat    agent2api-magisk-v3.4.0-magisk.35.zip.sha256
 ```
 
 ---

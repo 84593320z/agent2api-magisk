@@ -237,7 +237,9 @@ sh test/run.sh --full        # 194 项断言，exit 0（日志 `evidence/run-ful
 - 补丁：`../audit-fixes-v3.4.0-round2.patch`（`2ef0000..21db64e`，123793 字节，
   sha256 `d4d5d901b00f86608b0156f21214b9909cd34437d19b078a48c601a7bed86cac`）；两轮合计补丁 `../audit-fixes-v3.4.0-all.patch`（`23b881d..21db64e`，
   223666 字节，sha256 `0106d495a54c9466c0037b2df83b032cae94c20cf988bc58e4ccf1b4e56372c6`）。
-- 包：`dist/agent2api-magisk-v3.4.0-magisk.34-arm64.zip`（936 条目，18509904 字节，
-  sha256 `ec92a2874face9c2a61de9152fcd625843df06546d86ea069c22dada2228573a`）。
-  该包由 `21db64e` 重建、`ZipFile.testzip()` 通过，但**未做真机安装验收**，不能对外称
-  「已验收」；第一轮包（`adde5f2e…`）不得继续分发。
+- 包：`dist/agent2api-magisk-v3.4.0-magisk.35-arm64.zip`（936 条目，18509944 字节，
+  sha256 `b20817b65ef556d3d7d494d24465ba3aba9f3ee95f63bb65ac73bb2da5e8fdf2`），随
+  GitHub Release `v3.4.0-magisk.35` 发布；`module.prop` 已随之升到 `v3.4.0 (magisk.35)`、
+  `versionCode=2026110435`。构建 `21db64e` 时打出的 `magisk.34` 命名包仅本地留存，不发布。
+  该包**未做真机安装验收**，不能对外称「已验收」；上一版 `magisk.34`（`adde5f2e…`，
+  含 11 项已确认缺陷）已在 Release 说明中标注勿用。
