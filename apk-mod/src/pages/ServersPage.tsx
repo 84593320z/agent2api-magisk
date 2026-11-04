@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Icon } from '../components/Icon'
-import { PageHead, SectionHead, ErrorNote } from '../components/ui'
+import { PageHead, PageIntro, SectionHead, ErrorNote } from '../components/ui'
 import { store, useStore } from '../state/store'
 import { probe } from '../api/client'
 import { baseLabel, normalizeBase } from '../lib/servers'
 import { discoverLocalGateways } from '../lib/discover'
 import { t } from '../i18n'
+import { Button, Card, Label, Input } from '@ui'
+import { Badge } from '@ui'
 
 /**
  * 服务器配置（仅 APK）。
@@ -20,7 +22,9 @@ import { t } from '../i18n'
  * 各报一次错要好得多。探活成功顺带显示网关版本，用户能确认连的是对的那台。
  */
 export function ServersPage() {
-  const { servers, server } = useStore()
+  const { servers, server, stack } = useStore()
+  /** 压栈进来（登录层的「换一台服务器」）而不是首次启动时的整屏 */
+  const stacked = stack.length > 0
   const [editing, setEditing] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [draftBase, setDraftBase] = useState('')
@@ -42,7 +46,7 @@ export function ServersPage() {
     const found = await discoverLocalGateways()
     setFinding(false)
     if (found.length === 0) {
-      setError(t('没有在 127.0.0.1 上找到网关。确认模块已启动（ctl status），或手动填地址。'))
+      setError(t('没有在 127.0.0.1 上找到网关。确认模块已启动（a2a status），或手动填地址。'))
       return
     }
     const known = new Set(servers.map(entry => entry.base))
@@ -64,6 +68,28 @@ export function ServersPage() {
     setProbed(null)
   }
 
+  /** 头部两个按钮：自动发现 + 手动添加（压栈与整屏两种形态共用） */
+  const headActions = (
+    <>
+      <Button
+        size='touch-sm'
+        variant='ghost'
+        type='button'
+        className='m-btn m-ghost m-sm'
+        onClick={() => void discover()}
+        disabled={finding}
+        title={t('在 127.0.0.1 上扫描本机网关')}
+      >
+        <Icon name='bolt' />
+        {finding ? t('查找中…') : t('自动发现')}
+      </Button>
+      <Button size='touch-sm' variant='default' type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
+        <Icon name='plus' />
+        {t('添加')}
+      </Button>
+    </>
+  )
+
   const startEdit = (id: string) => {
     const entry = servers.find(item => item.id === id)
     if (!entry) return
@@ -83,7 +109,7 @@ export function ServersPage() {
   const save = async () => {
     const base = normalizeBase(draftBase)
     if (!base) {
-      setError(t('地址格式不对。填「IP:端口」即可，例如 192.168.1.23:3065'))
+      setError(t('地址格式不对。填「IP 或域名:端口」，可带 http:// 或 https://，例如 192.168.1.23:3065'))
       return
     }
     setBusy(true)
@@ -91,7 +117,7 @@ export function ServersPage() {
     const result = await probe(base)
     setBusy(false)
     if (!result.ok) {
-      setError(t('连不上这台网关。确认地址与端口正确、网关已启动，且已开启「局域网访问」'))
+      setError(t('连不上这台网关。确认地址与端口正确、网关已启动，且已开启「局域网访问」；用 https 时还要确认证书有效'))
       return
     }
     setProbed({ version: result.version })
@@ -104,49 +130,68 @@ export function ServersPage() {
     setProbed(null)
     store.toast(t('已保存'))
     // 换到新服务器后立刻拉一次会话；没登录会弹登录层
-    void store.refresh(true)
+    void store.refresh(true).then(() => {
+      // 这一屏是从登录层的「换一台服务器」压进来的：保存完退回原页，
+      // 登录层（需要的话）会重新盖上来，用户不会卡在服务器列表里
+      if (store.get().stack.length > 0) store.back()
+    })
   }
 
   return (
     <div className='m-page'>
-      <PageHead
-        title={t('服务器')}
-        subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
-        actions={
-          <>
-            <button
-              type='button'
-              className='m-btn m-ghost m-sm'
-              onClick={() => void discover()}
-              disabled={finding}
-              title={t('在 127.0.0.1 上扫描本机网关')}
-            >
-              <Icon name='bolt' />
-              {finding ? t('查找中…') : t('自动发现')}
-            </button>
-            <button type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
-              <Icon name='plus' />
-              {t('添加')}
-            </button>
-          </>
-        }
-      />
+      {/* 作为二级页压栈进来时顶部已有返回栏，标题不再重复一遍 */}
+      {stacked ? (
+        <PageIntro
+          subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
+          actions={headActions}
+        />
+      ) : (
+        <PageHead
+          title={t('服务器')}
+          subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
+          actions={headActions}
+        />
+      )}
 
       {error ? <ErrorNote text={error} /> : null}
+
+      {/* 一台都没配时把「自动发现」摆到面前：模块就装在这台手机上，用户不该被要求填 127.0.0.1 */}
+      {servers.length === 0 && !editing ? (
+        <div className='m-section' style={{ marginTop: 0 }}>
+          <Card className='m-card m-card-pad'>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>{t('网关装在这台手机上？')}</div>
+            <div style={{ fontSize: 11.5, color: 'var(--m-text-3)', marginTop: 6, lineHeight: 1.7 }}>
+              {t('如果用的是 Magisk 模块，网关就在本机环回地址上。点下面的按钮自动找，不用手动填地址。')}
+            </div>
+            <Button
+              size='default'
+              variant='default'
+              type='button'
+              className='m-btn'
+              onClick={() => void discover()}
+              disabled={finding}
+              style={{ width: '100%', marginTop: 10 }}
+            >
+              <Icon name='bolt' />
+              {finding ? t('正在查找…') : t('自动发现本机网关')}
+            </Button>
+          </Card>
+        </div>
+      ) : null}
 
       {/* 编辑表单：新增与修改共用 */}
       {editing ? (
         <div className='m-section' style={{ marginTop: 0 }}>
-          <div className='m-card m-card-pad'>
+          <Card className='m-card m-card-pad'>
             <div style={{ fontSize: 13, fontWeight: 600 }}>
               {editing === 'new' ? t('添加服务器') : t('编辑服务器')}
             </div>
-            <label style={{ display: 'block', marginTop: 12 }}>
+            <Label style={{ display: 'block', marginTop: 12 }}>
               <span style={{ fontSize: 12, color: 'var(--m-text-3)' }}>{t('地址')}</span>
-              <input
+              <Input
                 value={draftBase}
                 onChange={event => setDraftBase(event.target.value)}
-                placeholder='192.168.1.23:3065'
+                placeholder='192.168.1.23:3065 或 https://gw.example.com'
                 inputMode='url'
                 autoCapitalize='off'
                 autoCorrect='off'
@@ -165,13 +210,13 @@ export function ServersPage() {
                   fontFamily: 'var(--m-mono)',
                 }}
               />
-            </label>
+            </Label>
             <div style={{ fontSize: 11.5, color: 'var(--m-text-3)', marginTop: 6, lineHeight: 1.6 }}>
-              {t('只填「IP:端口」即可，不写端口默认 3065。地址里的 /m、/v1 会自动去掉。')}
+              {t('填「IP 或域名:端口」。协议可写 http:// 或 https://，不写默认 http；http 不写端口默认 3065，https 默认 443。地址里的 /m、/v1 会自动去掉。')}
             </div>
-            <label style={{ display: 'block', marginTop: 12 }}>
+            <Label style={{ display: 'block', marginTop: 12 }}>
               <span style={{ fontSize: 12, color: 'var(--m-text-3)' }}>{t('备注名（可选）')}</span>
-              <input
+              <Input
                 value={draftName}
                 onChange={event => setDraftName(event.target.value)}
                 placeholder={t('例如：家里、公司')}
@@ -188,27 +233,27 @@ export function ServersPage() {
                   fontSize: 16,
                 }}
               />
-            </label>
+            </Label>
             <div className='m-btn-row' style={{ marginTop: 14 }}>
-              <button type='button' className='m-btn m-ghost' onClick={cancel} disabled={busy}>
+              <Button size='touch' variant='outline' type='button' className='m-btn m-ghost w-full' onClick={cancel} disabled={busy}>
                 {t('取消')}
-              </button>
-              <button type='button' className='m-btn' onClick={() => void save()} disabled={busy || !draftBase.trim()}>
+              </Button>
+              <Button size='touch' variant='default' type='button' className='m-btn w-full' onClick={() => void save()} disabled={busy || !draftBase.trim()}>
                 {busy ? t('正在连接…') : t('连接并保存')}
-              </button>
+              </Button>
             </div>
-          </div>
+          </Card>
         </div>
       ) : null}
 
       <div className='m-section'>
         <SectionHead title={t('已添加的服务器')} />
         {servers.length === 0 ? (
-          <div className='m-card m-card-pad' style={{ fontSize: 12.5, color: 'var(--m-text-2)', lineHeight: 1.7 }}>
-            {t('还没有添加服务器。网关跑在本机模块里时点「自动发现」即可；连别的机器就点「添加」，填它的局域网 IP 与端口。')}
-          </div>
+          <Card className='m-card m-card-pad' style={{ fontSize: 12.5, color: 'var(--m-text-2)', lineHeight: 1.7 }}>
+            {t('还没有添加服务器。点右上角「添加」，填入网关所在机器的 IP 或域名与端口。')}
+          </Card>
         ) : (
-          <div className='m-card'>
+          <Card className='m-card'>
             {servers.map(entry => {
               const current = server?.id === entry.id
               return (
@@ -223,28 +268,31 @@ export function ServersPage() {
                   >
                     <Icon name='server' />
                   </span>
-                  <button
+                  <Button size='default' variant='ghost'
                     type='button'
                     className='m-grow'
                     onClick={() => {
                       store.switchServer(entry.id)
-                      void store.refresh(true)
+                      void store.refresh(true).then(() => {
+                        // 从登录层压进来的：选完这台就退回原页，登录层按新服务器重新弹
+                        if (store.get().stack.length > 0) store.back()
+                      })
                     }}
                     style={{ border: 0, background: 'none', textAlign: 'left', padding: 0 }}
                   >
                     <div className='m-t1' style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       {entry.name || baseLabel(entry.base)}
                       {current ? (
-                        <span className='m-badge m-badge-brand' style={{ height: 18, fontSize: 10.5 }}>
+                        <Badge variant='brand' shape='tag' className='m-badge m-badge-brand' style={{ height: 18, fontSize: 10.5 }}>
                           {t('当前')}
-                        </span>
+                        </Badge>
                       ) : null}
                     </div>
                     <div className='m-t2 m-mono' style={{ fontSize: 11.5 }}>
                       {baseLabel(entry.base)}
                     </div>
-                  </button>
-                  <button
+                  </Button>
+                  <Button size='icon-touch' variant='outline'
                     type='button'
                     className='m-icon-btn'
                     aria-label={t('编辑')}
@@ -252,8 +300,8 @@ export function ServersPage() {
                     style={{ width: 30, height: 30, boxShadow: 'none' }}
                   >
                     <Icon name='edit' />
-                  </button>
-                  <button
+                  </Button>
+                  <Button size='icon-touch' variant='outline'
                     type='button'
                     className='m-icon-btn'
                     aria-label={t('删除')}
@@ -265,18 +313,18 @@ export function ServersPage() {
                     style={{ width: 30, height: 30, boxShadow: 'none', color: 'var(--m-danger)' }}
                   >
                     <Icon name='trash' />
-                  </button>
+                  </Button>
                 </div>
               )
             })}
-          </div>
+          </Card>
         )}
       </div>
 
       <div className='m-section' style={{ paddingBottom: 8 }}>
-        <div className='m-card m-card-pad' style={{ fontSize: 11.5, color: 'var(--m-text-3)', lineHeight: 1.7 }}>
+        <Card className='m-card m-card-pad' style={{ fontSize: 11.5, color: 'var(--m-text-3)', lineHeight: 1.7 }}>
           {t('每台服务器的登录状态各自独立保存，切换后不用重新登录。地址改掉后需要重新登录。')}
-        </div>
+        </Card>
       </div>
     </div>
   )

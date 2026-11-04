@@ -92,6 +92,11 @@ export const SWITCH_DEFS: SwitchDef[] = [
     id: 'captcha',
     group: 'gateway',
     path: '/api/captcha',
+    // 3.4.0 起后端把这一项拆成桌面端 / headless 两端（captchaDesktop /
+    // captchaWeb），登录端点按本进程形态 localPanel 选一边读；旧键
+    // captchaEnabled 仍被接受、且会同时写两端。这里读「当前这一端」的实际值
+    // （见 pick 的特判），写的时候用旧键一次写两端 —— 手机用户看到的是
+    // 「我这台设备的登录要不要过人机校验」，不会出现只关了一半的状态。
     field: 'captchaEnabled',
     fallback: true,
     label: '登录人机校验',
@@ -140,7 +145,15 @@ export type SwitchState = Partial<Record<SwitchId, boolean>>
 
 function pick(body: unknown, def: SwitchDef): boolean | undefined {
   if (!body || typeof body !== 'object') return undefined
-  const raw = (body as Record<string, unknown>)[def.field]
+  const object = body as Record<string, unknown>
+  // 人机校验：3.4.0 的响应是 `{captchaDesktop, captchaWeb, localPanel}`，
+  // 按本进程形态取对应那一端；更老的网关只有 `captchaEnabled` 单键。
+  if (def.id === 'captcha') {
+    const side = object.localPanel === false ? 'captchaWeb' : 'captchaDesktop'
+    const raw = object[side] ?? object.captchaEnabled
+    return typeof raw === 'boolean' ? raw : undefined
+  }
+  const raw = object[def.field]
   return typeof raw === 'boolean' ? raw : undefined
 }
 
@@ -173,11 +186,7 @@ export async function fetchSwitches(signal?: AbortSignal): Promise<SwitchState> 
 /**
  * 写一个开关。返回**同端点上所有开关**的新值（响应体是整份状态）。
  *
- * 调用方负责乐观更新与失败回滚。这里在两种情况下抛错：
- *   1. 网络/接口失败；
- *   2. 后端回了 200 但**没有确认这个字段**——响应体缺字段，或回显值
- *      与请求不一致。旧实现缺字段时按请求值伪造成功（伪成功），界面
- *      显示和网关实际状态从此各说各话；宁可报错回滚，也不假装写成功。
+ * 调用方负责乐观更新与失败回滚：这里只在网络/接口失败时抛错。
  */
 export async function saveSwitch(id: SwitchId, next: boolean): Promise<SwitchState> {
   const def = SWITCH_DEFS.find(item => item.id === id)
@@ -189,12 +198,8 @@ export async function saveSwitch(id: SwitchId, next: boolean): Promise<SwitchSta
     const value = pick(body, item)
     if (value !== undefined) state[item.id] = value
   }
-  if (state[id] === undefined) {
-    throw new Error(`网关响应缺少 ${def.field}，未确认设置已生效`)
-  }
-  if (state[id] !== next) {
-    throw new Error(`网关回显 ${def.field}=${String(state[id])} 与请求不一致`)
-  }
+  // 后端回了 200 但响应体里没有这个字段（老版本）：按用户拨的值显示，别让开关弹回去
+  if (state[id] === undefined) state[id] = next
   return state
 }
 

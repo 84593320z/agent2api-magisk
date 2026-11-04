@@ -1,25 +1,25 @@
 diff --git a/desktop-tauri/mobile/src/App.tsx b/desktop-tauri/mobile/src/App.tsx
-index 14bc897..23e3acc 100644
+index b8172d2..5f3b5ba 100644
 --- a/desktop-tauri/mobile/src/App.tsx
 +++ b/desktop-tauri/mobile/src/App.tsx
 @@ -1,4 +1,4 @@
 -import React, { useEffect } from 'react'
 +import React, { useEffect, useRef } from 'react'
+ import { AppFrame } from '@ui'
  import { store, useStore, bootstrapTheme } from './state/store'
  import { TabBar, Toast, AuthGate, ThemeSync } from './components/Shell'
- import { PwaNotice } from './components/PwaNotice'
-@@ -20,6 +20,8 @@ import { DocsPage } from './pages/DocsPage'
- import { AgentPage } from './pages/AgentPage'
- import { ServersPage } from './pages/ServersPage'
+@@ -25,6 +25,8 @@ import type { ScreenId } from './lib/routes'
  import { NavBar } from './components/NavBar'
+ import { t } from './i18n'
+ import { RequiredUpdateGate } from './components/RequiredUpdateGate'
 +import { discoverLocalGateways } from './lib/discover'
 +import { baseLabel } from './lib/servers'
- import { t } from './i18n'
  
  /**
-@@ -88,6 +90,42 @@ export function App() {
-     document.title = needsServer ? `${t('服务器')} · Agent2API` : `${def.title} · Agent2API`
-   }, [def.title, needsServer])
+  * 路由表。
+@@ -92,6 +94,42 @@ export function App() {
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [])
  
 +  /**
 +   * APK 首次启动：自动发现本机网关。
@@ -57,15 +57,15 @@ index 14bc897..23e3acc 100644
 +    // eslint-disable-next-line react-hooks/exhaustive-deps
 +  }, [state.packaged, state.server])
 +
-   if (needsServer) {
-     return (
-       <div className='m-app'>
+   /**
+    * 安卓物理返回键。
+    *
 diff --git a/desktop-tauri/mobile/src/api/switches.ts b/desktop-tauri/mobile/src/api/switches.ts
 new file mode 100644
-index 0000000..9896af6
+index 0000000..e64fdc6
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/api/switches.ts
-@@ -0,0 +1,196 @@
+@@ -0,0 +1,209 @@
 +/**
 + * 网关功能开关：与桌面面板「设置 → 网关」里的那组开关**同一批端点、同一批字段**。
 + *
@@ -160,6 +160,11 @@ index 0000000..9896af6
 +    id: 'captcha',
 +    group: 'gateway',
 +    path: '/api/captcha',
++    // 3.4.0 起后端把这一项拆成桌面端 / headless 两端（captchaDesktop /
++    // captchaWeb），登录端点按本进程形态 localPanel 选一边读；旧键
++    // captchaEnabled 仍被接受、且会同时写两端。这里读「当前这一端」的实际值
++    // （见 pick 的特判），写的时候用旧键一次写两端 —— 手机用户看到的是
++    // 「我这台设备的登录要不要过人机校验」，不会出现只关了一半的状态。
 +    field: 'captchaEnabled',
 +    fallback: true,
 +    label: '登录人机校验',
@@ -208,7 +213,15 @@ index 0000000..9896af6
 +
 +function pick(body: unknown, def: SwitchDef): boolean | undefined {
 +  if (!body || typeof body !== 'object') return undefined
-+  const raw = (body as Record<string, unknown>)[def.field]
++  const object = body as Record<string, unknown>
++  // 人机校验：3.4.0 的响应是 `{captchaDesktop, captchaWeb, localPanel}`，
++  // 按本进程形态取对应那一端；更老的网关只有 `captchaEnabled` 单键。
++  if (def.id === 'captcha') {
++    const side = object.localPanel === false ? 'captchaWeb' : 'captchaDesktop'
++    const raw = object[side] ?? object.captchaEnabled
++    return typeof raw === 'boolean' ? raw : undefined
++  }
++  const raw = object[def.field]
 +  return typeof raw === 'boolean' ? raw : undefined
 +}
 +
@@ -262,12 +275,190 @@ index 0000000..9896af6
 +export function switchesOf(group: SwitchGroup): SwitchDef[] {
 +  return SWITCH_DEFS.filter(def => def.group === group)
 +}
+diff --git a/desktop-tauri/mobile/src/components/GatewaySwitches.tsx b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
+new file mode 100644
+index 0000000..cee4f08
+--- /dev/null
++++ b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
+@@ -0,0 +1,172 @@
++import { useCallback, useEffect, useRef, useState } from 'react'
++import { Card, Switch } from '@ui'
++import { SectionHead } from './ui'
++import { t } from '../i18n'
++import {
++  SWITCH_DEFS,
++  fetchSwitches,
++  saveSwitch,
++  type SwitchDef,
++  type SwitchId,
++  type SwitchState,
++} from '../api/switches'
++
++/**
++ * 网关功能开关（APK 专用）。
++ *
++ * 桌面面板的「设置 → 网关」里有这 9 个开关；手机端原本只能看，改一项要开电脑。
++ * 这里把它们搬到手机上，端点与字段和桌面端完全一致（表格在 api/switches.ts）。
++ *
++ * ── 三条必须守住的规则 ────────────────────────────────────────
++ * 1. **读不到就是未知，未知就禁用。** 端点失败时该键从 state 里消失，开关变灰，
++ *    绝不用旧值冒充——否则用户看到「已开启」，其实服务端根本没这个状态。
++ *    所以每轮回读都是**整份替换**（不是把新值并进旧对象）。
++ * 2. **写是串行的。** 同一端点上连点两个开关，后端返回的是整份状态；并发写会让
++ *    先发的响应覆盖后发的。这里用一条 promise 链把 PUT 排队。
++ * 3. **在途的值不被回读覆盖。** 5 秒轮询可能在 PUT 落地前回来，把用户刚拨的值
++ *    冲掉。pending 表记着在途意图，回读时用它盖住对应键；PUT 回来就清掉。
++ */
++export function GatewaySwitches() {
++  const [state, setState] = useState<SwitchState>({})
++  const [ready, setReady] = useState(false)
++  const [error, setError] = useState('')
++  const [busy, setBusy] = useState<Set<SwitchId>>(() => new Set())
++
++  /** 在途写入：id → 目标值。回读时盖住这些键 */
++  const pending = useRef<Map<SwitchId, boolean>>(new Map())
++  /** 回读代次：后发的请求回来时，先发的作废 */
++  const epoch = useRef(0)
++  /** 写队列：PUT 串行 */
++  const chain = useRef<Promise<void>>(Promise.resolve())
++  const alive = useRef(true)
++
++  const load = useCallback(async () => {
++    const mine = ++epoch.current
++    const next = await fetchSwitches()
++    if (!alive.current || mine !== epoch.current) return
++    // 整份替换：这一轮没返回的键 = 该端点失败 = 未知（渲染成禁用）
++    setState(() => {
++      const merged: SwitchState = {}
++      for (const id of Object.keys(next) as SwitchId[]) merged[id] = next[id]
++      for (const [id, value] of pending.current) merged[id] = value
++      return merged
++    })
++    setReady(true)
++  }, [])
++
++  useEffect(() => {
++    alive.current = true
++    void load().catch(() => {
++      if (alive.current) setError(t('读取网关开关失败，稍后自动重试'))
++    })
++    const timer = window.setInterval(() => {
++      // 页面在后台时不必打扰网关；回到前台由 visibilitychange 立刻补一次
++      if (document.visibilityState === 'hidden') return
++      void load().catch(() => {})
++    }, 5000)
++    const onVisible = () => {
++      if (document.visibilityState === 'visible') void load().catch(() => {})
++    }
++    document.addEventListener('visibilitychange', onVisible)
++    return () => {
++      alive.current = false
++      window.clearInterval(timer)
++      document.removeEventListener('visibilitychange', onVisible)
++    }
++  }, [load])
++
++  const toggle = (id: SwitchId, next: boolean) => {
++    pending.current.set(id, next)
++    setError('')
++    setState(prev => ({ ...prev, [id]: next }))
++    setBusy(prev => new Set(prev).add(id))
++    chain.current = chain.current.then(async () => {
++      try {
++        const patch = await saveSwitch(id, next)
++        if (!alive.current) return
++        setState(prev => {
++          const merged: SwitchState = { ...prev }
++          for (const [key, value] of Object.entries(patch) as [SwitchId, boolean][]) {
++            // 别的键可能正被用户拨动，不能被这次响应盖回去
++            if (!pending.current.has(key)) merged[key] = value
++          }
++          return merged
++        })
++      } catch {
++        if (!alive.current) return
++        // 写失败：这个键回到「未知」而不是假装回到旧值——真实状态在服务端，
++        // 下一轮回读会拿到；在此之前禁用比显示一个可能是错的开关好。
++        setState(prev => {
++          const merged: SwitchState = { ...prev }
++          delete merged[id]
++          return merged
++        })
++        setError(t('开关保存失败，请检查网关是否可达'))
++      } finally {
++        pending.current.delete(id)
++        if (alive.current) {
++          setBusy(prev => {
++            const copy = new Set(prev)
++            copy.delete(id)
++            return copy
++          })
++        }
++      }
++    })
++  }
++
++  const groups: { key: string; title: string; items: SwitchDef[] }[] = [
++    { key: 'gateway', title: t('网关行为'), items: SWITCH_DEFS.filter(def => def.group === 'gateway') },
++    { key: 'protection', title: t('路由自愈'), items: SWITCH_DEFS.filter(def => def.group === 'protection') },
++  ]
++
++  return (
++    <>
++      {groups.map(group => (
++        <div className='m-section' key={group.key}>
++          <SectionHead title={group.title} />
++          <Card className='m-card'>
++            {group.items.map((def, index) => {
++              const value = state[def.id]
++              const disabled = !ready || value === undefined || busy.size > 0
++              return (
++                <div
++                  key={def.id}
++                  className='m-row'
++                  style={{
++                    alignItems: 'center',
++                    gap: 12,
++                    padding: '12px 14px',
++                    borderTop: index === 0 ? 'none' : '1px solid var(--m-line)',
++                  }}
++                >
++                  <div className='m-grow'>
++                    <div className='m-t1'>{t(def.label)}</div>
++                    <div className='m-t2' style={{ lineHeight: 1.55 }}>
++                      {ready && value === undefined ? t('当前读不到这一项的状态') : t(def.hint)}
++                    </div>
++                  </div>
++                  <Switch
++                    checked={value === true}
++                    disabled={disabled}
++                    size='touch'
++                    aria-label={t(def.label)}
++                    onCheckedChange={next => toggle(def.id, next === true)}
++                  />
++                </div>
++              )
++            })}
++          </Card>
++          {group.key === 'gateway' && !ready ? (
++            <div className='m-t2' style={{ padding: '6px 4px 0' }}>{t('正在读取网关状态…')}</div>
++          ) : null}
++        </div>
++      ))}
++      {error ? (
++        <div className='m-section' style={{ marginTop: -6 }}>
++          <div className='m-t2' style={{ color: 'var(--m-danger)' }}>{error}</div>
++        </div>
++      ) : null}
++    </>
++  )
++}
 diff --git a/desktop-tauri/mobile/src/lib/discover.ts b/desktop-tauri/mobile/src/lib/discover.ts
 new file mode 100644
-index 0000000..0fa7404
+index 0000000..d0af614
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/lib/discover.ts
-@@ -0,0 +1,97 @@
+@@ -0,0 +1,139 @@
 +/**
 + * 本机网关自动发现。
 + *
@@ -289,8 +480,21 @@ index 0000000..0fa7404
 + *
 + * ── 为什么要看响应体而不是只看 200 ────────────────────────────
 + * 3065 是常用端口，别的服务也可能在那儿返回 200（甚至是任意 JSON）。
-+ * `/health` 的响应里有 `authRequired` / `chatApiUrl` / `upstreamConfigured`
-+ * 这些本家特征字段，命中才认。
++ * 这里用**两段判据**，任一段命中即认：
++ *
++ *   1. `/health` 是完整摘要（桌面形态）：带 `transport` / `authRequired` /
++ *      `upstreamConfigured` / `defaultModel` 这些本家字段。
++ *   2. `/health` 只有 `{"status":"ok"}`（headless 形态，见下）+ 
++ *      `/api/panel/status` 回 `{registered:boolean}` 的信封。
++ *
++ * 第 2 段是 3.1.2 版在真机上踩过的坑：模块跑的 headless 服务会把面板闸门
++ * 打开（`access::panel_gate()`），这时 `/health` **只回答进程活着**，整份
++ * 摘要不外泄（见 server/api/health.rs 的注释）。只认第 1 段的实现在手机上
++ * 永远探不到自家网关。`/api/panel/status` 挂在 public 路由上（登录页要先问
++ * 「注册过没有」），刚好可以当第二指纹——它的响应形状是本家独有的信封
++ * `{success:true,data:{registered:bool}}`。
++ *
++ * 两段都只看**形状**，不要求管理员已注册：没注册的网关同样要能被发现。
 + */
 +
 +import { normalizeBase } from './servers'
@@ -311,28 +515,19 @@ index 0000000..0fa7404
 +  version?: string
 +}
 +
-+/** 单个候选的探测：超时、非 200、非 JSON、特征不符都算「不是」 */
-+async function probeCandidate(base: string, timeoutMs: number): Promise<Found | null> {
++/** 带超时的 GET + JSON；任何异常都归一成 null */
++async function getJson(url: string, timeoutMs: number): Promise<Record<string, unknown> | null> {
 +  const controller = new AbortController()
 +  const timer = setTimeout(() => controller.abort(), timeoutMs)
 +  try {
-+    const response = await fetch(`${base}/health`, {
++    const response = await fetch(url, {
 +      signal: controller.signal,
++      cache: 'no-store',
 +      headers: { Accept: 'application/json' },
 +    })
 +    if (!response.ok) return null
-+    const body = (await response.json().catch(() => null)) as Record<string, unknown> | null
-+    if (!body || typeof body !== 'object') return null
-+    // 本家网关的 /health 一定带这几个字段之一（见 server/api/health.rs）
-+    const marker =
-+      'authRequired' in body ||
-+      'chatApiUrl' in body ||
-+      'upstreamConfigured' in body ||
-+      'defaultModel' in body ||
-+      'authApiBase' in body
-+    if (!marker) return null
-+    const version = typeof body.version === 'string' ? body.version : undefined
-+    return { base, version }
++    const body: unknown = await response.json().catch(() => null)
++    return body && typeof body === 'object' ? (body as Record<string, unknown>) : null
 +  } catch {
 +    return null
 +  } finally {
@@ -340,12 +535,50 @@ index 0000000..0fa7404
 +  }
 +}
 +
++/** 第 1 段：完整摘要形态的 `/health` */
++function hasHealthMarker(body: Record<string, unknown> | null): boolean {
++  if (!body) return false
++  if (typeof body.status !== 'string') return false
++  return (
++    'transport' in body ||
++    'authRequired' in body ||
++    'upstreamConfigured' in body ||
++    'defaultModel' in body ||
++    'chatApiUrl' in body ||
++    'authApiBase' in body
++  )
++}
++
++/** 第 2 段：headless 形态下的面板指纹（`{success,data:{registered}}` 信封） */
++function hasPanelMarker(body: Record<string, unknown> | null): boolean {
++  if (!body) return false
++  const data = body.data
++  if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).registered === 'boolean') {
++    return true
++  }
++  return typeof body.registered === 'boolean'
++}
++
++/** 单个候选的探测：超时、非 200、非 JSON、特征不符都算「不是」 */
++async function probeCandidate(base: string, timeoutMs: number): Promise<Found | null> {
++  const health = await getJson(`${base}/health`, timeoutMs)
++  if (hasHealthMarker(health)) {
++    const version = typeof health?.version === 'string' ? health.version : undefined
++    return { base, ...(version ? { version } : {}) }
++  }
++  // headless：/health 只有 {"status":"ok"}，再问一次面板指纹
++  const panel = await getJson(`${base}/api/panel/status`, timeoutMs)
++  if (hasPanelMarker(panel)) return { base }
++  return null
++}
++
 +/**
 + * 扫环回地址找网关。
 + *
 + * 21 个候选**并发**探测，每个 1.2 秒超时 —— 最坏 1.2 秒出结果（不是 21 × 1.2）。
 + * 环回连接要么立刻拒绝（毫秒级），要么立刻成功，长超时只用来兜住
-+ * 「端口被防火墙 DROP」这种极端情况。
++ * 「端口被防火墙 DROP」这种极端情况。headless 形态的候选会多打一次
++ * `/api/panel/status`，仍然是并发且共用同一组超时。
 + */
 +export async function discoverLocalGateways(timeoutMs = 1200): Promise<Found[]> {
 +  const candidates = PORTS.map(port => normalizeBase(`127.0.0.1:${port}`)).filter(Boolean)
@@ -366,18 +599,18 @@ index 0000000..0fa7404
 +  return found
 +}
 diff --git a/desktop-tauri/mobile/src/pages/ServersPage.tsx b/desktop-tauri/mobile/src/pages/ServersPage.tsx
-index 8828c7d..bb81412 100644
+index 9e53104..d9c546c 100644
 --- a/desktop-tauri/mobile/src/pages/ServersPage.tsx
 +++ b/desktop-tauri/mobile/src/pages/ServersPage.tsx
-@@ -4,6 +4,7 @@ import { PageHead, SectionHead, ErrorNote } from '../components/ui'
+@@ -4,6 +4,7 @@ import { PageHead, PageIntro, SectionHead, ErrorNote } from '../components/ui'
  import { store, useStore } from '../state/store'
  import { probe } from '../api/client'
  import { baseLabel, normalizeBase } from '../lib/servers'
 +import { discoverLocalGateways } from '../lib/discover'
  import { t } from '../i18n'
- 
- /**
-@@ -26,6 +27,34 @@ export function ServersPage() {
+ import { Button, Card, Label, Input } from '@ui'
+ import { Badge } from '@ui'
+@@ -30,6 +31,34 @@ export function ServersPage() {
    const [busy, setBusy] = useState(false)
    const [error, setError] = useState('')
    const [probed, setProbed] = useState<{ version?: string } | null>(null)
@@ -396,7 +629,7 @@ index 8828c7d..bb81412 100644
 +    const found = await discoverLocalGateways()
 +    setFinding(false)
 +    if (found.length === 0) {
-+      setError(t('没有在 127.0.0.1 上找到网关。确认模块已启动（ctl status），或手动填地址。'))
++      setError(t('没有在 127.0.0.1 上找到网关。确认模块已启动（a2a status），或手动填地址。'))
 +      return
 +    }
 +    const known = new Set(servers.map(entry => entry.base))
@@ -412,252 +645,109 @@ index 8828c7d..bb81412 100644
  
    const startAdd = () => {
      setEditing('new')
-@@ -84,10 +113,22 @@ export function ServersPage() {
-         title={t('服务器')}
-         subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
-         actions={
--          <button type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
--            <Icon name='plus' />
--            {t('添加')}
--          </button>
-+          <>
-+            <button
-+              type='button'
-+              className='m-btn m-ghost m-sm'
-+              onClick={() => void discover()}
-+              disabled={finding}
-+              title={t('在 127.0.0.1 上扫描本机网关')}
-+            >
-+              <Icon name='bolt' />
-+              {finding ? t('查找中…') : t('自动发现')}
-+            </button>
-+            <button type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
-+              <Icon name='plus' />
-+              {t('添加')}
-+            </button>
-+          </>
-         }
-       />
+@@ -39,6 +68,28 @@ export function ServersPage() {
+     setProbed(null)
+   }
  
-@@ -164,7 +205,7 @@ export function ServersPage() {
-         <SectionHead title={t('已添加的服务器')} />
-         {servers.length === 0 ? (
-           <div className='m-card m-card-pad' style={{ fontSize: 12.5, color: 'var(--m-text-2)', lineHeight: 1.7 }}>
--            {t('还没有添加服务器。点右上角「添加」，填入网关所在机器的局域网 IP 与端口。')}
-+            {t('还没有添加服务器。网关跑在本机模块里时点「自动发现」即可；连别的机器就点「添加」，填它的局域网 IP 与端口。')}
-           </div>
-         ) : (
-           <div className='m-card'>
-diff --git a/desktop-tauri/mobile/src/pages/SettingsPage.tsx b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
-index ff628f5..237c8f8 100644
---- a/desktop-tauri/mobile/src/pages/SettingsPage.tsx
-+++ b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
-@@ -1,10 +1,11 @@
--import { useState } from 'react'
-+import { useCallback, useEffect, useRef, useState } from 'react'
- import { PageIntro, SectionHead, IconButton } from '../components/ui'
- import { Icon } from '../components/Icon'
- import { ThemeSwitch } from './MorePage'
- import { store, useStore } from '../state/store'
- import { locale, localeOptions, setLocale } from '../i18n'
- import { storeApiKey } from '../api/client'
-+import { fetchSwitches, saveSwitch, switchesOf, type SwitchId, type SwitchState } from '../api/switches'
- import { usePwa } from '../lib/usePwa'
- import { applyUpdate, promptInstall } from '../lib/pwa'
- import { apiBase, baseLabel } from '../lib/servers'
-@@ -100,6 +101,9 @@ export function SettingsPage() {
-         </div>
-       </div>
- 
-+      {/* 网关功能开关：与桌面面板同一份服务端配置，双向同步（见 api/switches.ts） */}
-+      {session ? <GatewaySwitches /> : null}
-+
-       <div className='m-section'>
-         <SectionHead title={t('外观')} />
-         <div className='m-card'>
-@@ -335,7 +339,7 @@ export function SettingsPage() {
-             </span>
-             <div className='m-grow'>
-               <div className='m-t1'>{t('Agent2API 手机端')}</div>
--              <div className='m-t2'>{t('与网关同源的面板；完整管理功能在桌面端')}</div>
-+              <div className='m-t2'>{t('3.1.2-mod · 本机网关自动发现 + 功能开关双向同步')}</div>
-             </div>
-           </div>
-           <div className='m-row' style={{ borderTop: '1px solid var(--m-line)' }}>
-@@ -356,3 +360,176 @@ export function SettingsPage() {
-   )
- }
- 
-+
-+/* ─── 网关功能开关（与桌面面板双向同步）─────────────────────── */
-+
-+/**
-+ * 开关行：左侧标题 + 说明，右侧拨动开关。
-+ *
-+ * 说明文字常驻（不做 tooltip）：这些开关的名字（「限流垫底」「失败退避」）
-+ * 不看说明基本猜不出行为，手机上没有 hover 可看，藏起来等于没有。
-+ */
-+function SwitchRow({
-+  label,
-+  hint,
-+  checked,
-+  disabled,
-+  onChange,
-+}: {
-+  label: string
-+  hint: string
-+  checked: boolean
-+  disabled?: boolean
-+  onChange: (next: boolean) => void
-+}) {
-+  return (
-+    <div className='m-row' style={{ alignItems: 'flex-start' }}>
-+      <div className='m-grow'>
-+        <div className='m-t1'>{label}</div>
-+        <div className='m-t2' style={{ marginTop: 2, lineHeight: 1.55 }}>
-+          {hint}
-+        </div>
-+      </div>
-+      <button
-+        type='button'
-+        role='switch'
-+        aria-checked={checked}
-+        aria-label={label}
-+        disabled={disabled}
-+        onClick={() => onChange(!checked)}
-+        style={{
-+          width: 44,
-+          height: 26,
-+          borderRadius: 999,
-+          border: checked ? '0' : '1px solid var(--m-line-strong)',
-+          background: checked ? 'var(--m-ok)' : 'var(--m-surface-3)',
-+          position: 'relative',
-+          transition: 'background .18s, border-color .18s',
-+          padding: 0,
-+          flex: 'none',
-+          marginTop: 2,
-+          opacity: disabled ? 0.5 : 1,
-+        }}
-+      >
-+        <span
-+          style={{
-+            position: 'absolute',
-+            top: 3,
-+            left: checked ? 21 : 3,
-+            width: 20,
-+            height: 20,
-+            borderRadius: '50%',
-+            background: '#fff',
-+            boxShadow: '0 1px 3px rgba(0,0,0,.25)',
-+            transition: 'left .18s cubic-bezier(.3,.9,.4,1)',
-+          }}
-+        />
-+      </button>
-+    </div>
-+  )
-+}
-+
-+/**
-+ * 网关功能开关面板。
-+ *
-+ * ── 同步策略 ──────────────────────────────────────────────────
-+ * 没有推送通道，用「短轮询 + 回前台立刻读」：
-+ *   · 页面可见时每 5 秒回读一次 `/api/*`，面板那边改了这里 5 秒内跟上；
-+ *   · 从后台切回来立刻读一次（手机最常见的就是「去桌面改了再回来」）；
-+ *   · 自己拨动是乐观更新 + PUT，失败回滚并 toast，不静默吞掉。
-+ * 5 秒是权衡：7 个端点并发一次约几十毫秒，耗电可以忽略；再快没有意义
-+ * （用户不会盯着两个屏同时拨开关）。
-+ */
-+function GatewaySwitches() {
-+  const [state, setState] = useState<SwitchState>({})
-+  const [ready, setReady] = useState(false)
-+  const [busyId, setBusyId] = useState<SwitchId | null>(null)
-+  const alive = useRef(true)
-+
-+  const load = useCallback(async (silent: boolean) => {
-+    const next = await fetchSwitches()
-+    if (!alive.current) return
-+    setState(next)
-+    setReady(true)
-+    if (!silent && Object.keys(next).length === 0) {
-+      store.toast(t('读取网关开关失败：网关版本可能不支持'), 'err')
-+    }
-+  }, [])
-+
-+  useEffect(() => {
-+    alive.current = true
-+    void load(false)
-+    const timer = window.setInterval(() => void load(true), 5000)
-+    const onVisible = () => {
-+      if (document.visibilityState === 'visible') void load(true)
-+    }
-+    document.addEventListener('visibilitychange', onVisible)
-+    return () => {
-+      alive.current = false
-+      window.clearInterval(timer)
-+      document.removeEventListener('visibilitychange', onVisible)
-+    }
-+  }, [load])
-+
-+  const toggle = async (id: SwitchId, next: boolean) => {
-+    const prev = state[id]
-+    setState(current => ({ ...current, [id]: next }))
-+    setBusyId(id)
-+    try {
-+      const saved = await saveSwitch(id, next)
-+      if (!alive.current) return
-+      setState(current => ({ ...current, ...saved }))
-+      store.toast(next ? t('已开启') : t('已关闭'))
-+    } catch (error) {
-+      if (!alive.current) return
-+      setState(current => ({ ...current, [id]: prev }))
-+      store.toast(t('保存失败：{message}', { message: error instanceof Error ? error.message : String(error) }), 'err')
-+    } finally {
-+      if (alive.current) setBusyId(null)
-+    }
-+  }
-+
-+  const renderGroup = (group: 'gateway' | 'protection', title: string) => {
-+    const defs = switchesOf(group)
-+    if (defs.length === 0) return null
-+    return (
-+      <div className='m-section' style={{ marginTop: 0 }}>
-+        <SectionHead title={title} />
-+        <div className='m-card'>
-+          {defs.map((def, index) => {
-+            const value = state[def.id]
-+            return (
-+              <div key={def.id} style={index === 0 ? undefined : { borderTop: '1px solid var(--m-line)' }}>
-+                <SwitchRow
-+                  label={t(def.label)}
-+                  hint={t(def.hint)}
-+                  checked={value === true}
-+                  // 还没读到值（端点失败 / 老网关）就锁住：宁可显示灰的，也不给一个
-+                  // 拨了没反应的开关 —— 那是最难查的静默失败
-+                  disabled={!ready || value === undefined || busyId === def.id}
-+                  onChange={next => void toggle(def.id, next)}
-+                />
-+              </div>
-+            )
-+          })}
-+        </div>
-+      </div>
-+    )
-+  }
-+
-+  return (
++  /** 头部两个按钮：自动发现 + 手动添加（压栈与整屏两种形态共用） */
++  const headActions = (
 +    <>
-+      <div className='m-section'>
-+        <SectionHead
-+          title={t('网关功能开关')}
-+          action={{ label: t('刷新'), onClick: () => void load(false) }}
-+        />
-+        <div className='m-card m-card-pad' style={{ fontSize: 11.5, color: 'var(--m-text-3)', lineHeight: 1.7 }}>
-+          {t('与桌面面板「设置 → 网关」是同一份配置：这边拨了，面板刷新即可看到；面板改了，这边 5 秒内跟上。')}
-+        </div>
-+      </div>
-+      {renderGroup('gateway', t('网关行为'))}
-+      {renderGroup('protection', t('路由自愈'))}
++      <Button
++        size='touch-sm'
++        variant='ghost'
++        type='button'
++        className='m-btn m-ghost m-sm'
++        onClick={() => void discover()}
++        disabled={finding}
++        title={t('在 127.0.0.1 上扫描本机网关')}
++      >
++        <Icon name='bolt' />
++        {finding ? t('查找中…') : t('自动发现')}
++      </Button>
++      <Button size='touch-sm' variant='default' type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
++        <Icon name='plus' />
++        {t('添加')}
++      </Button>
 +    </>
 +  )
-+}
++
+   const startEdit = (id: string) => {
+     const entry = servers.find(item => item.id === id)
+     if (!entry) return
+@@ -92,28 +143,42 @@ export function ServersPage() {
+       {stacked ? (
+         <PageIntro
+           subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
+-          actions={
+-            <Button size='touch-sm' variant='default' type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
+-              <Icon name='plus' />
+-              {t('添加')}
+-            </Button>
+-          }
++          actions={headActions}
+         />
+       ) : (
+         <PageHead
+           title={t('服务器')}
+           subtitle={servers.length ? t('已添加 {n} 台', { n: servers.length }) : t('先添加一台网关')}
+-          actions={
+-            <Button size='touch-sm' variant='default' type='button' className='m-btn m-sm' onClick={startAdd} disabled={editing === 'new'}>
+-              <Icon name='plus' />
+-              {t('添加')}
+-            </Button>
+-          }
++          actions={headActions}
+         />
+       )}
+ 
+       {error ? <ErrorNote text={error} /> : null}
+ 
++      {/* 一台都没配时把「自动发现」摆到面前：模块就装在这台手机上，用户不该被要求填 127.0.0.1 */}
++      {servers.length === 0 && !editing ? (
++        <div className='m-section' style={{ marginTop: 0 }}>
++          <Card className='m-card m-card-pad'>
++            <div style={{ fontSize: 13, fontWeight: 600 }}>{t('网关装在这台手机上？')}</div>
++            <div style={{ fontSize: 11.5, color: 'var(--m-text-3)', marginTop: 6, lineHeight: 1.7 }}>
++              {t('如果用的是 Magisk 模块，网关就在本机环回地址上。点下面的按钮自动找，不用手动填地址。')}
++            </div>
++            <Button
++              size='default'
++              variant='default'
++              type='button'
++              className='m-btn'
++              onClick={() => void discover()}
++              disabled={finding}
++              style={{ width: '100%', marginTop: 10 }}
++            >
++              <Icon name='bolt' />
++              {finding ? t('正在查找…') : t('自动发现本机网关')}
++            </Button>
++          </Card>
++        </div>
++      ) : null}
++
+       {/* 编辑表单：新增与修改共用 */}
+       {editing ? (
+         <div className='m-section' style={{ marginTop: 0 }}>
+diff --git a/desktop-tauri/mobile/src/pages/SettingsPage.tsx b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
+index f1a061d..285081c 100644
+--- a/desktop-tauri/mobile/src/pages/SettingsPage.tsx
++++ b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
+@@ -9,6 +9,7 @@ import { usePwa } from '../lib/usePwa'
+ import { applyUpdate, promptInstall } from '../lib/pwa'
+ import { APP_VERSION } from '../lib/appUpdate'
+ import { AppUpdatePanel } from '../components/AppUpdatePanel'
++import { GatewaySwitches } from '../components/GatewaySwitches'
+ import { CommunitySheet } from '../components/CommunitySheet'
+ import { SystemInfoSheet } from '../components/SystemInfoSheet'
+ import { apiBase, baseLabel, serverIdentity } from '../lib/servers'
+@@ -188,6 +189,9 @@ export function SettingsPage() {
+         </Card>
+       </div>
+ 
++      {/* 网关开关：APK 才有（读的是所连网关的 /api/*，与桌面面板同一批） */}
++      {packaged && server ? <GatewaySwitches /> : null}
++
+       <div className='m-section'>
+         <SectionHead title={t('账号')} />
+         <Card className='m-card'>

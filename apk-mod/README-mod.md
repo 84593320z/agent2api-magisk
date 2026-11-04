@@ -1,12 +1,13 @@
-# Agent2API 手机端 APK · 3.1.2-mod（配套 Magisk 模块）
+# Agent2API 手机端 APK · 3.4.0-mod（配套 Magisk 模块）
 
-把官方 `Agent2API-3.1.0.apk`（Capacitor 壳 + 打包进包里的手机面板）改造成
-**能自己找到本机模块网关、并且功能开关与桌面面板双向同步**的版本。
+把官方 **v3.4.0 源码**（`desktop-tauri/mobile`，Capacitor 8 + React 19）直接构建成
+**能自己找到本机模块网关、并且功能开关与桌面面板双向同步**的 APK。
 
-- 产物：`Agent2API-3.1.2-mod.apk`（4.63 MB / 已签名）
-- 基线：官方 v3.1.0 的 APK（`assets/public/mobile.js` 由本仓库源码重新构建）
-- 源码补丁：`a2a-mobile-mod.patch`（对 `desktop-tauri/mobile` 的完整 diff）
-- 构建产物：`android-www/`（可直接替换进任意 3.1.0 APK）
+- 产物：`Agent2API-3.4.0-mod.apk`（5.50 MB / 已签名 / `com.agent2api.mobile.mod`）
+- 基线：上游 tag `v3.4.0`（commit `31bc7bd`）的 `desktop-tauri/mobile` 源码
+- 源码补丁：`a2a-mobile-mod.patch`（6 文件，对 `desktop-tauri/mobile/src` 的完整 diff）
+- 与 3.1.2 版的最大区别：**这次从源码完整构建（含原生层），不再拿官方 APK 替换
+  `assets/public` 重打包** —— `@capacitor/app` 真正进了包，硬件返回键问题随之消失（见 3.3）。
 
 ---
 
@@ -22,11 +23,20 @@
 
 - **首次启动自动发现**：一台服务器都没配时，在环回地址上并发探 `3060~3080`（默认 3065 优先），
   1.2 秒内出结果。探到就自动建条目、切过去、直接拉会话。
-- **手动兜底**：「服务器」页右上角新增「自动发现」按钮，随时重扫。
-- **识别判据**不是「HTTP 200」，而是 `/health` 响应体里带本家特征字段
-  （`authRequired` / `chatApiUrl` / `upstreamConfigured` / `defaultModel` / `authApiBase`）——
-  3065 是常用端口，别的服务也可能在那儿返回 200。
+- **手动兜底**：「服务器」页右上角新增「自动发现」按钮，随时重扫；列表为空时还有一张引导卡。
 - **只扫环回**：不扫局域网网段（254 次探测又慢又像端口扫描）。连别的机器仍然手填。
+- **识别判据是两段，任一段命中即认**（不是「HTTP 200」就算）：
+
+  | 段 | 探测 | 判据 | 适用形态 |
+  |---|---|---|---|
+  | 1 | `GET /health` | 带 `transport` / `authRequired` / `upstreamConfigured` / `defaultModel` / `chatApiUrl` / `authApiBase` 任一 | 桌面端形态（完整摘要） |
+  | 2 | `GET /api/panel/status` | 回 `{success:true,data:{registered:boolean}}` 信封（或裸 `{registered:boolean}`） | 手机模块的 headless 形态 |
+
+  第 2 段是 3.1.2 版在真机上踩过的坑：模块跑的 headless 服务会把面板闸门打开
+  （`access::set_panel_gate(true)`，只有 `AGENT2API_ALLOW_NO_KEY=1` 才清零），这时
+  `/health` **只回 `{"status":"ok"}`**（15 字节，除非显式开了「允许无 Key」），完整摘要不外泄 —— 只认第 1 段的实现
+  在手机上永远探不到自家网关。`/api/panel/status` 挂在 public 路由上（登录页要先问
+  「注册过没有」），响应形状是本家独有，刚好当第二指纹；两段都不要求管理员已注册。
 
 ### 1.2 功能开关与面板双向同步
 
@@ -42,7 +52,7 @@
 | 网关行为 | 开发者角色兼容 | `GET/PUT /api/developer-role-compat` | `developerRoleCompat` |
 | 网关行为 | 网关跨域访问 | `GET/PUT /api/cors` | `corsEnabled` |
 | 网关行为 | 调试模式 | `GET/PUT /api/debug` | `debugMode` |
-| 网关行为 | 登录人机校验 | `GET/PUT /api/captcha` | `captchaEnabled` |
+| 网关行为 | 登录人机校验 | `GET/PUT /api/captcha` | 写入 `captchaEnabled`；读取按当前端取 `captchaDesktop` / `captchaWeb` |
 | 网关行为 | models.dev 元数据 | `GET/PUT /api/models/metadata` | `modelsDevEnabled` |
 | 路由自愈 | 失败退避 | `GET/PUT /api/routing` | `routingFailoverBackoff` |
 | 路由自愈 | 限流垫底 | `GET/PUT /api/routing` | `routingSink` |
@@ -55,87 +65,90 @@
 - 写操作幂等（PUT 同一份值），两边同时拨不会互相打架；
 - 拨动失败会回滚 + toast，不静默吞掉。
 
+3.4.0 又补了三条写读规则（`GatewaySwitches.tsx` 里有注释）：
+
+1. **读不到 = 未知 = 禁用**：请求失败时开关置灰不可点，不给「看起来是关的」假状态；
+2. **写串行**：同一时刻只发一个 PUT，后面的排队，避免两个开关互相覆盖；
+3. **在途值不被回读覆盖**：乐观更新后把值记进 `pending`，5 秒轮询拿到的旧值不会把
+   用户刚点的状态弹回去；写失败则删键回到「未知」并提示「开关保存失败，请检查网关是否可达」。
+
+轮询在 `document.visibilityState === 'hidden'` 时跳过。
+
 ---
 
 ## 2. 安装
 
 ```bash
-# 1) 官方版签名不同，必须先卸载（否则 INSTALL_FAILED_UPDATE_INCOMPATIBLE）
-adb uninstall com.agent2api.mobile
+# 1) 与官方包 applicationId 不同（.mod 后缀），但签名也不同，干净装最省事
+adb uninstall com.agent2api.mobile.mod
 # 2) 装改造版
-adb install -r Agent2API-3.1.2-mod.apk
+adb install -r Agent2API-3.4.0-mod.apk
 ```
 
 首次启动会自动连上 `127.0.0.1:3065`；连不上（模块没启动 / 端口改过）就落到
 「服务器」页，点「自动发现」或手填。
 
-> 装完在「设置 → 关于」看到 **`3.1.2-mod · 本机网关自动发现 + 功能开关双向同步`**
-> 就是这一版（APK 清单里的 versionName 仍是上游的 3.1.0，因为改二进制清单风险大于收益）。
+> 装完在「设置 → 关于」看到 **`3.4.0`** 就是这一版（这次连清单里的 versionName
+> 都是上游真值，不再是 3.1.0 冒充）。
 
 ---
 
 ## 3. 验证记录
 
-### 3.1 真机（KernelSU + ColorOS / Android 15，1440×3168）
+### 3.1 构建期（3.4.0）
+
+| 验证项 | 方法 | 结果 |
+|---|---|---|
+| 类型检查 + 打包 | `tsc --noEmit && vite build --mode apk` | 通过（752 modules，`mobile.js` 955.96 kB / gzip 306.58 kB） |
+| 原生同步 | `npx cap sync android` | 2 个插件：`@capacitor/app@8.1.2`、`@capacitor/keyboard@8.0.6` |
+| 原生构建 | `gradlew assembleRelease -PdevAppIdSuffix=.mod` | `BUILD SUCCESSFUL`（JDK 21 / AGP 8.13 / Gradle 8.14.3 / compileSdk 36） |
+| 签名 | `apksigner verify --print-certs` | 通过；证书 SHA-256 `d0ca6713…b16f`（新钥匙，非泄露的 `b18b0eb2…bf15`） |
+| 包信息 | `aapt2 dump badging` | `com.agent2api.mobile.mod` / `versionName 3.4.0` / `versionCode 30400` / minSdk 24 / targetSdk 36 |
+| 产物内容 | `unzip -p … assets/public/mobile.js` | `api/panel/status`、`captchaDesktop`、`routingBreakerEnabled` 等关键词均在；`assets/capacitor.plugins.json` 含 `@capacitor/app`、`@capacitor/keyboard` |
+
+### 3.2 真机（3.1.2 版记录，3.4.0 待复验）
+
+3.1.2 版真机验证过的项目（KernelSU + ColorOS / Android 15，1440×3168）：
 
 | 验证项 | 方法 | 结果 |
 |---|---|---|
 | 自动发现 | 全新安装后首次启动 | 自动建条目「本机网关 127.0.0.1:3065」并连上，首页拉出 15/17 账号 |
 | 开关渲染 | 设置页 | 9 个开关全部显示，状态与网关实际配置一致 |
-| **面板 → APK** | 用面板令牌 `PUT /api/debug {"debugMode":true}` | 7 秒后 App 里「调试模式」自动变绿（轮询生效） |
+| **面板 → APK** | 面板令牌 `PUT /api/debug {"debugMode":true}` | 7 秒后 App 里「调试模式」自动变绿（轮询生效） |
 | **APK → 面板** | 在 App 里拨动「调试模式」 | `GET /api/debug` 立即返回 `debugMode:false` |
 | 应用内返回 | 二级页左上角 `‹` | 正常回到上一级（设置 → 更多） |
 | 稳定性 | 反复进出各页面 | 无崩溃（logcat 无 FATAL EXCEPTION） |
 
-> 真机验证推翻了一个浏览器环境下的结论：手机端网关的 `/health` 只返回
-> `{"status":"ok"}`（15 字节），而桌面版返回一大串字段。最初的识别判据只认后者，
-> 导致「自家网关被判成不是」。现在改成 `/health` + `/api/panel/status`
-> （必须回 `{registered:boolean}`）两段式判据。
-
-### 3.2 浏览器冒烟（构建期）
-
-| 验证项 | 方法 | 结果 |
-|---|---|---|
-| 构建 | `vite build --mode apk`（555 modules） | 通过 |
-| 开关写入 | mock `/api/*` + 点击 | `PUT /api/sanitize {"sanitizeBlacklistFingerprints":false}` ✅ |
-| 端点真实性 | 对真网关逐个 GET | 7 个端点全部 `401`（存在且要鉴权），无 404 |
+**3.4.0 尚未上真机**：本仓库的验证只做到「构建 + 签名 + 包内容抽检」。
+自动发现的新判据（`/api/panel/status` 段）与硬件返回键需要在装了本模块的手机上
+实测一次确认。
 
 ---
 
-## 3.3 已知问题：硬件返回键会直接退出应用
+## 3.3 硬件返回键（3.1.2 的问题，3.4.0 已从源码层解决）
 
-**现象**：在任意二级页按系统返回键/返回手势，应用直接退回桌面，而不是回到上一级。
+**3.1.2 的现象**：任意二级页按系统返回键/返回手势，直接退回桌面。
 
-**根因（已定位到源码级）**：
+**3.1.2 的根因**：那个包是「官方 APK + 替换 `assets/public`」重打包的，
+`assets/capacitor.plugins.json` 是 `[]` —— `@capacitor/app` 没进包，原生层也没有
+`OnBackPressedCallback`，系统只能 `finish()`。当时试过的三种原生补丁都因为拿不到
+WebView 实例而回退。
 
-1. 这个 APK 用 Capacitor 8，而 `@capacitor/android` 里**一处 `onBackPressed` 都没有** ——
-   `BridgeActivity` 完全不处理返回键，`MainActivity` 又是空实现，系统只能 `finish()`。
-2. 配套的 `@capacitor/app` 插件（负责把 `backButton` 事件转发给 JS）**没有打进这个 APK**
-   （`assets/capacitor.plugins.json` 是 `[]`）。
-3. 我试过三种原生补丁（override `onBackPressed` → `bridge.getWebView()` / 按 view id 查找 /
-   递归遍历视图树），真机实测：这个 APK 里 **`Bridge.getWebView()` 返回 null**，
-   视图树里也拿不到那个 WebView 实例，最后一种实现还会在 `canGoBack()` 上抛 NPE。
-
-**当前状态**：原生补丁已全部回退（避免崩溃风险），只保留 JS 侧的修复 ——
-**应用内左上角的 `‹` 返回是好的**（之前它也会因为 `history.replaceState` 不产生历史而失效，
-现在改成 `pushState` + `popstate` 已经正常）。
-
-**要彻底修好**需要重编原生层（加 `OnBackPressedCallback` 并持有 WebView 引用），
-或者把官方仓库的 `desktop-tauri/mobile/android` 用 Android SDK 完整构建一次 ——
-两条路都需要能跑 gradle 的环境，本次没做。
+**3.4.0 为什么解决**：从源码完整构建，`@capacitor/app@8.1.2` 已注册
+（`assets/capacitor.plugins.json` 可见），`App.tsx` 里上游自带的 `backButton`
+监听会把事件转给 JS：能回退就 `history.back()`，到根页面才 `exitApp()`。
+仍需真机点一次确认（见 3.2）。
 
 ---
 
 ## 4. 已知限制
 
-- **硬件返回键会退出应用**（见 3.3，上游 Capacitor 的结构问题，需重编原生层才能修）。
-- **必须卸载官方版**再装：签名是你自己的 key（见第 5 节「签名」）。
-- **不做局域网扫描**：只探环回。连别的机器请手填地址（原逻辑不变）。
+- **必须卸载旧包**再装：签名是新的（见第 5 节「签名」），且 applicationId 带 `.mod`。
+- **不做局域网扫描**：只探环回。连别的机器请手填地址。
 - **不暴露「局域网访问 / 开放面板」两个开关**：它们在桌面端要写应用配置并**重启网关**，
   手机上做这件事需要改 `env.sh`（`AGENT2API_HOST`）并 `ctl restart`，属于模块侧的活，
   放进 App 里会做出「拨了没反应」的假开关。
 - **新增文案只有中文**：i18n 词典没有扩充，非中文语种下这一块回落中文原文。
-  （词典源在 `desktop-tauri/i18n/i18n-src/<locale>/settings.json`，加 key 后跑 `build.mjs` 即可补。）
 - **上游更新会覆盖**：`ctl update` 只换服务端二进制与 `ui/`，不动 APK；
   但下次装官方新 APK 会变回原样，需要重新打这个补丁。
 
@@ -143,28 +156,52 @@ adb install -r Agent2API-3.1.2-mod.apk
 
 ## 5. 自己重建
 
+前置：JDK 21、Android SDK（`platforms;android-36`、`build-tools;36.0.0`、`build-tools;35.0.0`）、
+Node 20+。
+
 ```bash
+# 1) 源码 + 补丁
+git clone https://github.com/aimod-cc/Agent2API.git && cd Agent2API
+git checkout v3.4.0
+git apply /path/to/a2a-mobile-mod.patch
+
+# 2) 依赖（ui-kit 的运行期依赖要一次装全，分次 --no-save 会被 npm 相互裁掉）
 cd desktop-tauri/mobile
 npm ci
-# 注意：本机 esbuild 被安全策略拦了文件读取，需要把 esbuild.exe 复制到可读目录再指过去
-cp node_modules/@esbuild/win32-x64/esbuild.exe "$TEMP/esb2.exe"
-ESBUILD_BINARY_PATH="C:\\Users\\<you>\\AppData\\Local\\Temp\\esb2.exe" npx vite build --mode apk
-# 产物在 desktop-tauri/mobile/android-www/
+npm install --no-save class-variance-authority clsx tailwind-merge tw-animate-css shadcn
+
+# 3) Web 产物 + 同步原生工程
+mkdir -p android-www
+npm run build:native
+npx cap sync android
+
+# 4) 原生构建
+export JAVA_HOME=/path/to/jdk21
+export ANDROID_HOME=/path/to/android-sdk
+export TEMP=/tmp TMP=/tmp          # esbuild 需要可写临时目录
+cd android
+#   android/local.properties      -> sdk.dir=<SDK 路径>
+#   android/keystore.properties   -> storeFile/storePassword/keyAlias/keyPassword
+./gradlew assembleRelease -PdevAppIdSuffix=.mod
+# 产物：android/app/build/outputs/apk/release/app-release.apk
 ```
 
-打包（把产物塞回官方 APK，**不签名**）：
+两处必须改的上游默认值：
+
+1. `android/gradle.properties` 里写死的 `org.gradle.java.home` 指着作者机器上的
+   `C:/Program Files/Eclipse Adoptium/jdk-21.0.11.10-hotspot`，本机没有就会直接报
+   `Java home supplied is invalid` —— 删掉这行（靠 `JAVA_HOME`）或改成你的路径；
+2. `android/local.properties` 的 `sdk.dir` 要指到你自己的 Android SDK。
+
+`repack.py` 仍保留为「没有 Android SDK 时的备用方案」（官方 APK + 替换
+`assets/public`，代价是 versionName 跟着官方包走、且原生层插件缺失）：
 
 ```bash
-python repack.py \
-  --apk   /path/to/Agent2API-<ver>.apk \
-  --web   desktop-tauri/mobile/android-www \
-  --out   /path/to/Agent2API-<ver>-mod-unsigned.apk \
-  --apk-sha256 <官方 APK 的 sha256>   # 可选，防拿错基线包
-zipalign -p -f 4 ...-unsigned.apk ...-aligned.apk
+python repack.py --apk Agent2API-<ver>.apk --web android-www --out ...-mod-unsigned.apk
+zipalign -p -f 4 ...-mod-unsigned.apk ...-mod-aligned.apk
 ```
 
-`repack.py` 里有一条不能动的规则：**`resources.arsc` 必须保持 STORED**，
-否则 Android 11+ 直接装不上 —— 这是自己改 APK 最常见的翻车点。
+它有一条不能动的规则：**`resources.arsc` 必须保持 STORED**，否则 Android 11+ 装不上。
 
 ### 签名
 
@@ -177,6 +214,9 @@ zipalign -p -f 4 ...-unsigned.apk ...-aligned.apk
   指纹常量在同一文件顶部）；
 - 已经用旧钥匙装上的手机**不会自动变安全**——签名校验只发生在安装时，
   攻击者签的包同样能通过；用户需要按 `apk-mod/signing.md` 主动换成新签名版本。
+
+本版（3.4.0-mod）已用新钥匙签名，证书 SHA-256
+`d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。
 
 新钥匙用脚本生成（默认拒绝写进仓库目录，口令随机并单独落 600 文件）：
 
@@ -191,13 +231,13 @@ sh apk-mod/sign-tool.sh fingerprint --keystore ~/.a2a-signing/a2a-release.jks
 export A2A_KEYSTORE=~/.a2a-signing/a2a-release.jks
 export A2A_KEY_ALIAS=a2a
 export A2A_KEYSTORE_PASS=$(cat ~/.a2a-signing/a2a-release.pass)
-apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \\
-  --ks-pass env:A2A_KEYSTORE_PASS \\
+apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \
+  --ks-pass env:A2A_KEYSTORE_PASS \
   --out ...-mod.apk ...-aligned.apk
 ```
 
-跨签名的包**不能覆盖安装**：换钥匙后老用户必须卸载重装（`adb uninstall
-com.agent2api.mobile` 之后再装），具体迁移步骤和发版顺序见 `apk-mod/signing.md`。
+跨签名的包**不能覆盖安装**：换钥匙后老用户必须卸载重装，具体迁移步骤和发版顺序
+见 `apk-mod/signing.md`。
 
 `*.jks` / `*.keystore` / `*.pass` 已被根 `.gitignore` 排除；任何情况下都不要
 为了「方便别人复现」把私钥或口令放进 git（包括示例、截图、CI 日志）。

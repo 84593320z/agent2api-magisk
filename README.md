@@ -14,7 +14,8 @@
 - [agent2api-magisk-v3.4.0-magisk.35-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.35/agent2api-magisk-v3.4.0-magisk.35-arm64.zip) —— Magisk / KernelSU 模块包（v3.4.0 载荷 + 复审 RR-01..RR-12 修复）
 - [agent2api-magisk-v3.4.0-magisk.34-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.4.0-magisk.34/agent2api-magisk-v3.4.0-magisk.34-arm64.zip) —— 上一构建（**存在已确认缺陷，勿用**，仅留作对照）
 - [agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip](https://github.com/84593320z/agent2api-magisk/releases/download/v3.3.0-beta.7-magisk.33/agent2api-magisk-v3.3.0-beta.7-magisk.33-arm64.zip) —— 上一版（magisk.33，融合 localfix-20261104），保留备用
-- [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 手机端 APK
+- [Agent2API-3.4.0-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/apk-v3.4.0-mod/Agent2API-3.4.0-mod.apk) —— 手机端 APK（v3.4.0 源码构建，自动发现 + 9 个功能开关；硬件返回键已修）
+- [Agent2API-3.1.2-mod.apk](https://github.com/84593320z/agent2api-magisk/releases/download/v3.1.4/Agent2API-3.1.2-mod.apk) —— 上一代 APK（**硬件返回键会退出、自动发现判据不全，勿用**，仅留作对照）
 
 ---
 
@@ -28,6 +29,25 @@
 - **签名**：新增 `apk-mod/sign-tool.sh` / `signing.md`，泄露的旧证书指纹进黑名单；**旧包请勿再用**。
 
 逐条根因、改法与负向验收见 [docs/fixes-v3.4.0-20261104/report-2.md](docs/fixes-v3.4.0-20261104/report-2.md)。
+
+---
+
+## 手机端 APK（v3.4.0-mod）
+
+以前那个 `Agent2API-3.1.2-mod.apk` 是「官方 3.1.0 APK + 替换 `assets/public`」重打包出来的，
+两个硬伤：`@capacitor/app` 没进包（硬件返回键直接退出应用）、web 资源与原生层版本对不上。
+
+这一版改成**从上游 v3.4.0 源码完整构建**（Capacitor 8 + AGP 8.13 + JDK 21 + compileSdk 36）：
+
+- 包名 `com.agent2api.mobile.mod`（与官方 `com.agent2api.mobile` 并存），`versionName 3.4.0`；
+- 自动发现本机网关的判据改成**两段式**：`/health` 完整摘要 **或** `/api/panel/status`
+  的 `{registered:boolean}` 信封 —— 手机模块的 headless 形态在未开「允许无 Key」时只回 `{"status":"ok"}`，
+  只认第一段在真机上永远探不到自家网关；
+- 设置页 9 个网关开关与桌面面板双向同步（5 秒回读 + 写串行 + 在途值不被覆盖）；
+- 新钥匙签名（证书 SHA-256 `d0ca6713…b16f`），与泄露的旧钥匙无关；
+- 源码补丁是 `apk-mod/a2a-mobile-mod.patch`（6 文件），可 `git apply` 到 `v3.4.0` 干净树后自行构建。
+
+构建步骤、真机验证记录与已知限制见 [apk-mod/README-mod.md](apk-mod/README-mod.md)。
 
 ### 上游 v3.4.0 同步内容（magisk.34 起）
 
@@ -78,7 +98,7 @@ boot-worker 统一开机入口、卸载零删除保护、DNS 三态还原、WebU
 | 产物 | 说明 | 怎么得到 |
 |---|---|---|
 | `agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip` | Magisk / KernelSU 模块包（模块壳 + 内置服务端） | `python pack.py` → `dist/` |
-| `Agent2API-3.1.2-mod.apk` | 改造过的手机端 APK | `apk-mod/` 里的流程（见下） |
+| `Agent2API-3.4.0-mod.apk` | 改造过的手机端 APK（v3.4.0 源码构建） | `apk-mod/README-mod.md` 的完整 gradle 流程 |
 | `docs/*.md` | 审计报告与修复自查报告 | — |
 
 ---
@@ -152,11 +172,11 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor'    # 一键自检
 ### 2. 装手机端 APK
 
 ```bash
-adb uninstall com.agent2api.mobile     # 官方版签名不同，必须先卸
-adb install -r Agent2API-3.1.2-mod.apk
+adb uninstall com.agent2api.mobile.mod   # 旧包/官方包签名不同，先卸干净
+adb install -r Agent2API-3.4.0-mod.apk
 ```
 
-首次启动会自动连上 `127.0.0.1:3065`。
+首次启动会自动连上 `127.0.0.1:3065`；探不到就点「服务器 → 自动发现」或手填地址。
 
 ---
 
@@ -181,9 +201,9 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 
 ## 已知问题
 
-- **APK 的硬件返回键会直接退出应用**。上游 Capacitor 8 的 `BridgeActivity` 不处理返回键，
-  `@capacitor/app` 插件也没打进包；试过三种原生补丁均因 `Bridge.getWebView()` 返回 null 而失败。
-  应用内左上角的 `‹` 返回是正常的。详见 `apk-mod/README-mod.md` 第 3.3 节。
+- **APK 只做到「构建 + 签名 + 包内容抽检」**：3.4.0-mod 是从上游源码完整构建的（`@capacitor/app`
+  已进包，硬件返回键在代码层已修），但自动发现的新判据与返回键仍需一台装了模块的真机复验一次。
+  详见 `apk-mod/README-mod.md` 第 3.2 / 3.3 节。
 - **cgroup 逃逸依赖设备**：只在 `/sys/fs/cgroup/cgroup.procs` 可写、且 `/proc/self/cgroup`
   里能匹配到 `apps`/`background` 等分组时生效；部分设备（cgroup v2 统一层级、厂商改写）不适用，属降级不影响运行。
 - **Wi-Fi 判定只认 `wlan0/wlan1/swlan0` 的 IPv4**：纯 IPv6 网络或厂商自定义接口名会判成"不在 Wi-Fi"，
@@ -215,9 +235,14 @@ Python 套件可用 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆�
 APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 
 ```bash
-cd desktop-tauri/mobile        # 上游仓库
-npm ci && npx vite build --mode apk
-python repack.py && zipalign -p -f 4 ... && apksigner sign ...
+git clone https://github.com/aimod-cc/Agent2API.git && cd Agent2API
+git checkout v3.4.0 && git apply /path/to/apk-mod/a2a-mobile-mod.patch
+cd desktop-tauri/mobile
+npm ci && npm install --no-save class-variance-authority clsx tailwind-merge tw-animate-css shadcn
+mkdir -p android-www && npm run build:native && npx cap sync android
+cd android && ./gradlew assembleRelease -PdevAppIdSuffix=.mod   # 需 JDK 21 + Android SDK 36
 ```
+
+没有 Android SDK 时才退回 `repack.py`（官方 APK + 替换 `assets/public`，原生层插件缺失）。
 
 ---
