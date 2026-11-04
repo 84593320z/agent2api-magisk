@@ -748,7 +748,17 @@ privacy_shield() {
 #    且「当前载荷确实缺失/损坏」时才动手；绝不因瞬时缺失就判定上一事务
 #    死亡。临界区用 update 锁短超时包裹：拿不到锁说明有活跃事务，本轮
 #    不动作。调用点（supervise.sh）已挪到取得实例锁之后。
-payload_recover_interrupted() {
+payload_recover_interrupted() { # $1=boot|runtime（默认 runtime）
+  # F-001/F-002/F-003：journal 是跨重启的第一手进度记录，有它就必须先按
+  # journal 收尾；journal 缺失才退回旧的标记/pending 启发式。boot 模式下
+  # 锁已清、更新进程必然不在，年龄门槛也不再有意义。
+  _pri_boot=0
+  [ "${1:-}" = "boot" ] && _pri_boot=1
+  if [ -s "$A2A_TXN_JOURNAL" ]; then
+    payload_txn_recover "${1:-runtime}" && return 0
+    # journal 收尾失败：现场保持原样等下次，绝不再叠加启发式动作
+    return 1
+  fi
   # 必须校验 ELF、完整 lib 和 UI；不能只凭主 ELF 存在就认定切换完成。
   # 完整性判定统一走 payload_validate：它会先区分静态/动态载荷，
   # 静态包本来就没有 lib/ld-linux-aarch64.so.1，硬要求会让中断恢复永远失败。
@@ -770,9 +780,9 @@ payload_recover_interrupted() {
     case "$_pri_sw_ts" in ''|*[!0-9]*) _pri_sw_ts=0 ;; esac
     _pri_age=$(( $(now_epoch) - _pri_sw_ts ))
     [ "$_pri_age" -lt 0 ] && _pri_age=0
-    if [ "$_pri_age" -gt 120 ]; then
+    if [ "$_pri_age" -gt 120 ] || [ "$_pri_boot" = "1" ]; then
       _pri_evidence=1
-      _pri_reason="切换标记已过期 ${_pri_age}s"
+      _pri_reason="切换标记已过期 ${_pri_age}s（boot=$_pri_boot）"
     else
       # 标记还新：可能真有事务在跑（或刚死），本轮不动
       log_to "$SUPLOG" "载荷不完整但切换标记仅 ${_pri_age}s（<=120s），跳过恢复等下轮"
@@ -874,6 +884,19 @@ sweep_stale_dirs() {
   # pending 里记着还没提交的事务旧载荷：它可能正是唯一能回滚的副本，
   # 清理时必须跳过，否则"开机先清垃圾再恢复"会把恢复材料先删掉。
   _ss_keep=$(awk '{print $3}' "$RUNDIR/update.pending" 2>/dev/null | head -n 1)
+  # F-002/F-004：journal 登记的 old_payload / data_tmp / data_aside 与
+  # switching 标记里的旧载荷去向同样是活跃恢复材料，清理时一个都不许碰。
+  _ss_jkeep=""
+  if [ -s "$A2A_TXN_JOURNAL" ]; then
+    for _ss_jf in 7 9 10; do
+      _ss_jv=$(payload_txn_field "$_ss_jf")
+      case "$_ss_jv" in ''|'-') ;; *) _ss_jkeep="$_ss_jkeep $_ss_jv" ;; esac
+    done
+  fi
+  if [ -f "$RUNDIR/payload.switching" ]; then
+    _ss_sv=$(awk 'NR==1{print $4; exit}' "$RUNDIR/payload.switching" 2>/dev/null)
+    case "$_ss_sv" in ''|'-') ;; *) _ss_jkeep="$_ss_jkeep $_ss_sv" ;; esac
+  fi
   for _d in "$APP_HOME"/payload.new.* "$APP_HOME"/payload.old \
             "$APP_HOME"/payload.rollback.new "$APP_HOME"/payload.rollback.old \
             "$APP_HOME"/payload.rollback.old.* \
@@ -883,6 +906,7 @@ sweep_stale_dirs() {
             "$TMPD"/upd.* "$BACKUPDIR/lib.new"; do
     [ -e "$_d" ] || continue
     [ -n "$_ss_keep" ] && [ "$_d" = "$_ss_keep" ] && continue
+    case " $_ss_jkeep " in *" $_d "*) continue ;; esac
     rm -rf "$_d" 2>/dev/null
   done
   # $TMPD 里除了 upd.* 还有解包残留
@@ -895,7 +919,13 @@ sweep_stale_dirs() {
   # 数据快照/回滚（问题 1）的可重建临时物：中断的快照副本与回滚中转目录。
   # data-prev（快照本体）与 DATADIR.upgraded.*（升级后数据的现场保全）绝不清。
   rm -rf "$BACKUPDIR/data-prev.new" 2>/dev/null
-  rm -rf "$DATADIR".restore.* 2>/dev/null
+  # F-003：restore.* 是数据回滚的中转副本，journal 还指着它就绝不能删
+  # （旧实现无条件清掉，中断的换入从此无法补完）。
+  for _d in "$DATADIR".restore.*; do
+    [ -e "$_d" ] || continue
+    case " $_ss_jkeep " in *" $_d "*) continue ;; esac
+    rm -rf "$_d" 2>/dev/null
+  done
   [ -d "$TMPD" ] && rm -rf "$TMPD"/* 2>/dev/null
   return 0
 }

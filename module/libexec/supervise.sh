@@ -417,7 +417,8 @@ log_to "$SUPLOG" "======== 守护进程启动 pid=$$ 端口=$PORT ========"
 # 问题 6：中断恢复挪到取得实例锁之后（旧位置在加锁前，两个 supervisor 同时
 # 启动会竞争同一次恢复，且与活跃更新事务无互斥）。恢复逻辑本身是证据驱动
 # 的，临界区在 update 锁内（见 common.sh 的 payload_recover_interrupted）。
-payload_recover_interrupted
+# F-002：runtime 模式 —— journal 的主人（更新器）还活着时绝不插手。
+payload_recover_interrupted runtime
 
 # cgroup 逃逸：从 app 的 cgroup 里挪出来，避免被 app 的内存限制/冻结连坐。
 # 必须发生在拉起 server 子进程之前（子进程继承本进程的 cgroup 归属）；
@@ -525,6 +526,17 @@ while [ "$STOP" = "0" ]; do
         fi
         continue
       fi
+    fi
+    # F-006：健康巡检轮补提交。start_child 里的提交只在启动成功那一刻执行
+    # 一次，拿不到 update 锁（或删除失败）就静默放弃，服务一直健康地跑着
+    # 也不会再有人重试 —— 事务旧载荷（唯一回滚副本）长期挂账。这里以 60s
+    # 节流重试：锁竞争由 payload_commit_old 内部短超时处理，拿不到就下轮再来。
+    _sc_now=$(now_epoch)
+    _sc_last=$(cat "$RUNDIR/commit.last" 2>/dev/null || echo 0)
+    case "$_sc_last" in ''|*[!0-9]*) _sc_last=0 ;; esac
+    if [ $((_sc_now - _sc_last)) -ge 60 ]; then
+      supervise_commit_pending
+      printf '%s\n' "$_sc_now" >"$RUNDIR/commit.last" 2>/dev/null
     fi
     # 每轮先用轻量探测看 VPN/默认网卡变没变（不跑 dumpsys，几乎零开销），
     # 变了就立刻重算 DNS；这样开/关 VPN、切节点最多 30 秒就有反应。

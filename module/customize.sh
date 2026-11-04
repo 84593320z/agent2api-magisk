@@ -130,8 +130,13 @@ chmod 755 "$APP_HOME" "$BINDIR" "$LOGDIR" "$RUNDIR" \
 
 # 沿用公共安装/更新锁；整个脚本只有这一处加锁。
 update_lock_acquire "$RUNDIR/update.lock.d" || abort "另一个安装/更新事务正在运行，请稍后重试"
-# 拿到锁之后再清残留：此时不可能有别人在写 payload.new.*。
-rm -rf "$APP_HOME"/payload.new.* "$APP_HOME"/payload.broken.* 2>/dev/null
+# F-004：拿到锁之后清残留，但绝不再用 `rm -rf payload.new.*` —— 该通配符
+# 会连带删掉上一笔中断事务登记在 pending/journal 里的旧载荷
+# （payload.new.old.<pid> 同样匹配），那是唯一能立刻回滚的副本。
+# 统一走 journal 恢复（boot 模式，无年龄门槛）+ sweep：sweep 只清无主目录，
+# 会保住 journal / pending / switching 标记引用的恢复材料。
+payload_recover_interrupted boot
+sweep_stale_dirs
 _INSTALL_TRANSACTION="$APP_HOME/.install.$$"
 _ZONE_OLD="$APP_HOME/zoneinfo.old.$$"
 _ZONE_COMMITTED=0

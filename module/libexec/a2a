@@ -179,8 +179,22 @@ cmd_version() {
 }
 
 cmd_ensure_payload() {
-  if [ ! -f "$SERVER_BIN" ] || [ ! -x "$LOADER" ]; then
+  # a2a 主入口平时不加载 payload.sh（只有 status/doctor 等子命令加载），
+  # 这里的校验函数都在里面，按需补载一次。
+  [ -f "$MODDIR/libexec/payload.sh" ] && . "$MODDIR/libexec/payload.sh"
+  if [ ! -f "$SERVER_BIN" ]; then
     say "载荷缺失（$PAYLOAD），请重新刷入模块 zip 恢复"
+    return 1
+  fi
+  # F-005：静态载荷（musl 构建）没有 LOADER，不能把"LOADER 不可执行"当成
+  # "载荷缺失"。完整性统一交给 payload_validate（内部区分静态/动态），
+  # 只有动态载荷才额外要求 LOADER 可执行。
+  _cep_err=$(payload_validate "$PAYLOAD") || {
+    say "载荷不完整：$_cep_err"
+    return 1
+  }
+  if ! payload_dir_is_static "$PAYLOAD" && [ ! -x "$LOADER" ]; then
+    say "动态链接器缺失（$LOADER），请重新刷入模块 zip 恢复"
     return 1
   fi
   return 0

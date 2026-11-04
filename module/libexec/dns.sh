@@ -40,6 +40,7 @@ valid_ipv4() {
 
 DNS_ACTIVE_CACHE="$RUNDIR/dns-active"
 DNS_VPN_CACHE="$RUNDIR/dns-vpn"
+DNS_NETID_CACHE="$RUNDIR/dns-netid"
 
 # 出口接口：root 进程实际走哪条路由就是哪条（VPN 下会是 tun0）。
 # 只看 ip route 的 default 行在 VPN/策略路由下会误判成 wlan0，所以先问 route get。
@@ -103,7 +104,9 @@ dns_ip_usable() {
     0.*|127.*|169.254.*|255.255.255.255) return 1 ;;
     224.*|225.*|226.*|227.*|228.*|229.*|230.*|231.*|232.*|233.*|234.*|235.*|236.*|237.*|238.*|239.*) return 1 ;;
   esac
-  for _lu in $_DNS_LOCAL; do
+  # _DNS_LOCAL 只在 system/auto 采样的调用方赋值；static 兜底等路径
+  # 不会设置它。显式 ${:-} 展开让 set -u 环境（回归测试）也不会中断。
+  for _lu in ${_DNS_LOCAL:-}; do
     [ "$_lu" = "$1" ] && return 1
   done
   return 0
@@ -215,8 +218,10 @@ dns_collect_system() {
 ' ' ')"
   fi
 
-  # 5) ROM 自带 resolv.conf 只作最后兜底
-  if [ -z "$_found" ] && [ -r /system/etc/resolv.conf ]; then
+  # 5) ROM 自带 resolv.conf 只作最后兜底（F-007：VPN 下禁止——它是底层
+  # 物理网络的解析器，查询走直连路由会泄漏出隧道；与第 0 步“VPN 只认
+  # 隧道自己的解析器”对齐）
+  if [ "$_vpn" = "0" ] && [ -z "$_found" ] && [ -r /system/etc/resolv.conf ]; then
     _v=$(sed -n 's/^[[:space:]]*nameserver[[:space:]]*\([0-9A-Fa-f:.]*\).*/\1/p' /system/etc/resolv.conf 2>/dev/null)
     [ -n "$_v" ] && _found="$_found $(printf '%s' "$_v" | tr '
 ' ' ')"
@@ -280,28 +285,43 @@ dns_write() {
       fi
       ;;
     auto)
-      dns_collect_system >>"$_tmp" 2>/dev/null || { rm -f "$_tmp"; return 1; }
+      # F-008：采样失败与「采到了但没有可用服务器」同样处理——统一落到
+      # 下面的缓存恢复/静态兜底。旧实现两处都不恢复 live resolv：
+      # 采样失败直接 return 1；采样成功但为空时 rm _tmp 后 return 0
+      # （伪成功：live 文件缺失却报一切正常）。
+      if ! dns_collect_system >>"$_tmp" 2>/dev/null; then
+        : >"$_tmp" 2>/dev/null
+      fi
       # 只有 auto 能保留最后可用配置，或使用静态地址作首次启动兜底。
       if ! awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$_tmp" 2>/dev/null; then
+        _dns_cache_hit=0
         if [ -s "$DNS_CACHE" ] && awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$DNS_CACHE" 2>/dev/null; then
-          rm -f "$_tmp" 2>/dev/null
-          log_to "$SUPLOG" "暂时未取得活动网络 DNS；保留最后可用配置，不跳公共 DNS"
-          return 0
+          # F-008：缓存有效时把缓存内容当采样结果，走正常发布路径（验证→
+          # 去重→原子落盘→回写缓存）。旧实现 rm _tmp 后直接 return 0，
+          # 只保住了“不写坏文件”，没恢复“live 文件缺失”：resolv 被删/断电
+          # 残留时这个分支永远不会再写回任何内容，函数却报成功。
+          if cp "$DNS_CACHE" "$_tmp" 2>/dev/null \
+             && awk '$1=="nameserver" && $2!="" {ok=1} END {exit ok?0:1}' "$_tmp" 2>/dev/null; then
+            _dns_cache_hit=1
+            log_to "$SUPLOG" "暂时未取得活动网络 DNS；发布最后可用配置，不跳公共 DNS"
+          fi
         fi
-        # 静态兜底也要分家族：IPv6-only / NAT64 网络上 v4 解析器根本到不了。
-        _fb=$(cfg_get dns_static "223.5.5.5 119.29.29.29")
-        if command -v ip >/dev/null 2>&1 \
-           && ! ip -4 addr 2>/dev/null | grep -q 'inet .*scope global'; then
-          _fb6=$(cfg_get dns_static_v6 "2400:3200::1 2402:4e00::")
-          [ -n "$_fb6" ] && _fb="$_fb6 $_fb"
-        fi
-        for _s in $_fb; do
-          dns_ip_usable "$_s" || continue
-          printf 'nameserver %s
+        if [ "$_dns_cache_hit" != "1" ]; then
+          # 静态兜底也要分家族：IPv6-only / NAT64 网络上 v4 解析器根本到不了。
+          _fb=$(cfg_get dns_static "223.5.5.5 119.29.29.29")
+          if command -v ip >/dev/null 2>&1 \
+             && ! ip -4 addr 2>/dev/null | grep -q 'inet .*scope global'; then
+            _fb6=$(cfg_get dns_static_v6 "2400:3200::1 2402:4e00::")
+            [ -n "$_fb6" ] && _fb="$_fb6 $_fb"
+          fi
+          for _s in $_fb; do
+            dns_ip_usable "$_s" || continue
+            printf 'nameserver %s
 ' "$_s" >>"$_tmp" 2>/dev/null || {
-            rm -f "$_tmp"; return 1;
-          }
-        done
+              rm -f "$_tmp"; return 1;
+            }
+          done
+        fi
       fi
       ;;
   esac
@@ -664,13 +684,19 @@ dns_ensure() { # 分级兜底入口：任何调用点都可以直接用它替代
 # 只在系统 DNS 变化时才重写，避免无意义的写盘
 dns_refresh_if_changed() {
   [ "$(cfg_get dns_mode auto)" = "auto" ] || return 0
-  # 只看「网卡/默认路由/VPN」三项变化（都靠 ip 命令，几十毫秒），
-  # 不再每轮跑 dumpsys 采样——那才是以前体感卡顿的来源。
+  # 只看「网卡/默认路由/VPN/netId」四项变化（ip + 一次 dumpsys 行），
+  # 不再每轮跑完整 dumpsys 采样——那才是以前体感卡顿的来源。
   _old_iface=$(cat "$DNS_ACTIVE_CACHE" 2>/dev/null)
   _new_iface=$(dns_default_iface 2>/dev/null)
   [ -f "$DNS_VPN_CACHE" ] && _old_vpn=$(cat "$DNS_VPN_CACHE" 2>/dev/null) || _old_vpn=0
   _new_vpn=0
   dns_vpn_active && _new_vpn=1
+  # F-007：同一张网卡上换网（Wi-Fi A→B、重关联）不会改 iface 名，只会换
+  # netId。只比 iface/vpn 完全感知不到这类切换。
+  _old_net=$(cat "$DNS_NETID_CACHE" 2>/dev/null)
+  case "$_old_net" in ''|*[!0-9]*) _old_net="unknown" ;; esac
+  _new_net=$(dns_active_netid 2>/dev/null)
+  case "$_new_net" in ''|*[!0-9]*) _new_net="unknown" ;; esac
 
   _iv=$(cfg_get dns_verify_interval 600)
   case "$_iv" in ''|*[!0-9]*) _iv=600 ;; esac
@@ -681,18 +707,16 @@ dns_refresh_if_changed() {
   [ -f "$_stamp" ] && _last=$(cat "$_stamp" 2>/dev/null)
   case "$_last" in ''|*[!0-9]*) _last=0 ;; esac
 
-  if [ "$_old_iface" != "${_new_iface:-unknown}" ] || [ "${_old_vpn:-0}" != "$_new_vpn" ]; then
-    log_to "$SUPLOG" "网络变化：iface=${_old_iface:-unknown}->${_new_iface:-unknown} vpn=${_old_vpn:-0}->$_new_vpn"
+  if [ "$_old_iface" != "${_new_iface:-unknown}" ] || [ "${_old_vpn:-0}" != "$_new_vpn" ] \
+     || [ "$_old_net" != "$_new_net" ]; then
+    log_to "$SUPLOG" "网络变化：iface=${_old_iface:-unknown}->${_new_iface:-unknown} vpn=${_old_vpn:-0}->$_new_vpn netid=$_old_net->$_new_net"
     rm -f "$A2A_LIVE/dns.aaaa" 2>/dev/null
-    if dns_liveness_ok; then
-      # 现有 DNS 还能用就什么都不动——开关 VPN 时服务端零感知
-      printf '%s' "$_now_s" >"$_stamp" 2>/dev/null
-      printf '%s' "${_new_iface:-unknown}" >"$DNS_ACTIVE_CACHE" 2>/dev/null
-      printf '%s' "$_new_vpn" >"$DNS_VPN_CACHE" 2>/dev/null
-      log_to "$SUPLOG" "现有 DNS 仍然可用，保持不动"
-      return 0
-    fi
-    log_to "$SUPLOG" "现有 DNS 已不可用，进入分级兜底"
+    # F-007：网络变化后不再走“现有 DNS 验活成功就保持不动”的捷径。
+    # wlan0→tun0 之后旧 LAN 解析器往往仍可直连（等于绕过隧道的路由
+    # 泄漏），旧逻辑却在此时把 recorded iface 换成 tun0、解析器一直用
+    # LAN 的，VPN 的解析策略被静默拆掉。变化一律重算：VPN 下
+    # dns_collect_system 只采经隧道可见的解析器，ROM 兜底也有 _vpn
+    # 门控（见 dns_collect_system 第 5 步），与这里的语义一致。
   elif [ "$_iv" -gt 0 ] && [ "$_now_s" -gt 0 ] && [ $((_now_s - _last)) -lt "$_iv" ]; then
     return 0
   elif dns_liveness_ok; then
@@ -702,6 +726,7 @@ dns_refresh_if_changed() {
     log_to "$SUPLOG" "DNS 定期验活失败，进入分级兜底"
   fi
   printf '%s' "$_now_s" >"$_stamp" 2>/dev/null
+  printf '%s' "$_new_net" >"$DNS_NETID_CACHE" 2>/dev/null
   dns_ensure
 }
 

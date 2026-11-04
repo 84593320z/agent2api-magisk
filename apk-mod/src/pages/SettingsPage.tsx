@@ -439,17 +439,43 @@ function SwitchRow({
  *   · 自己拨动是乐观更新 + PUT，失败回滚并 toast，不静默吞掉。
  * 5 秒是权衡：7 个端点并发一次约几十毫秒，耗电可以忽略；再快没有意义
  * （用户不会盯着两个屏同时拨开关）。
+ *
+ * ── 并发契约（F-009）──────────────────────────────────────────
+ * 每个端点的响应体是「整份状态」而非单个字段，乱序到达会互相覆盖：
+ *   · 读：全局序号 + 写纪元双校验，过期/乱序/写中响应一律丢弃；
+ *   · 写：所有 PUT 走同一条串行队列，按点击顺序执行与合并；
+ *   · 任何响应（读/写）落地时跳过仍在队列里的键——它们的真值由
+ *     自己那次写的响应带回，落旧快照会把刚拨的开关弹回去；
+ *   · 任一写在途时禁用全部开关，页面上不存在可交错的新写。
  */
 function GatewaySwitches() {
   const [state, setState] = useState<SwitchState>({})
   const [ready, setReady] = useState(false)
-  const [busyId, setBusyId] = useState<SwitchId | null>(null)
+  const [busyIds, setBusyIds] = useState<ReadonlySet<SwitchId>>(new Set())
   const alive = useRef(true)
+  /** 读序号：只有最新一次 load 的响应允许落地（丢弃乱序 GET）。 */
+  const loadSeq = useRef(0)
+  /** 写纪元：任何写开始/结束都 +1；GET 捕获纪元，落地前变了就丢弃。 */
+  const epoch = useRef(0)
+  /** 写队列尾：所有 PUT 串行执行，响应按队列顺序合并。 */
+  const queueTail = useRef<Promise<unknown>>(Promise.resolve())
+  /** 仍在队列/在途的乐观更新：id → 目标值。响应合并时跳过这些键。 */
+  const pending = useRef(new Map<SwitchId, boolean>())
 
   const load = useCallback(async (silent: boolean) => {
+    const seq = ++loadSeq.current
+    const ep = epoch.current
     const next = await fetchSwitches()
-    if (!alive.current) return
-    setState(next)
+    if (!alive.current || seq !== loadSeq.current || ep !== epoch.current) return
+    setState(current => {
+      // 写在途的键由它们自己的写响应带回；这里的快照可能早于写落库。
+      const merged: SwitchState = { ...current }
+      for (const key of Object.keys(next) as SwitchId[]) {
+        if (pending.current.has(key)) continue
+        merged[key] = next[key]
+      }
+      return merged
+    })
     setReady(true)
     if (!silent && Object.keys(next).length === 0) {
       store.toast(t('读取网关开关失败：网关版本可能不支持'), 'err')
@@ -459,7 +485,11 @@ function GatewaySwitches() {
   useEffect(() => {
     alive.current = true
     void load(false)
-    const timer = window.setInterval(() => void load(true), 5000)
+    const timer = window.setInterval(() => {
+      // 页面不可见时暂停轮询：后台继续打 7 个端点纯属耗电，
+      // 回前台本来就有一次立刻读。
+      if (document.visibilityState === 'visible') void load(true)
+    }, 5000)
     const onVisible = () => {
       if (document.visibilityState === 'visible') void load(true)
     }
@@ -471,22 +501,55 @@ function GatewaySwitches() {
     }
   }, [load])
 
-  const toggle = async (id: SwitchId, next: boolean) => {
+  const toggle = (id: SwitchId, next: boolean) => {
     const prev = state[id]
+    epoch.current += 1
+    pending.current.set(id, next)
     setState(current => ({ ...current, [id]: next }))
-    setBusyId(id)
-    try {
-      const saved = await saveSwitch(id, next)
-      if (!alive.current) return
-      setState(current => ({ ...current, ...saved }))
-      store.toast(next ? t('已开启') : t('已关闭'))
-    } catch (error) {
-      if (!alive.current) return
-      setState(current => ({ ...current, [id]: prev }))
-      store.toast(t('保存失败：{message}', { message: error instanceof Error ? error.message : String(error) }), 'err')
-    } finally {
-      if (alive.current) setBusyId(null)
-    }
+    setBusyIds(current => new Set(current).add(id))
+    queueTail.current = queueTail.current
+      .then(async () => {
+        try {
+          const saved = await saveSwitch(id, next)
+          if (!alive.current) return
+          epoch.current += 1
+          pending.current.delete(id)
+          setState(current => {
+            const merged: SwitchState = { ...current }
+            for (const key of Object.keys(saved) as SwitchId[]) {
+              // 跳过仍在队列里的键：这里落的是本次写之前的快照值，
+              // 写下去会把后面刚拨的开关弹回去。
+              if (pending.current.has(key)) continue
+              merged[key] = saved[key]
+            }
+            return merged
+          })
+          store.toast(next ? t('已开启') : t('已关闭'))
+        } catch (error) {
+          if (!alive.current) return
+          epoch.current += 1
+          pending.current.delete(id)
+          setState(current => {
+            // 同键还有后续写在排队时不回滚（以最后一次为准）。
+            if (pending.current.has(id)) return current
+            const rolled: SwitchState = { ...current }
+            if (prev === undefined) delete rolled[id]
+            else rolled[id] = prev
+            return rolled
+          })
+          store.toast(t('保存失败：{message}', { message: error instanceof Error ? error.message : String(error) }), 'err')
+        } finally {
+          if (alive.current) {
+            setBusyIds(current => {
+              const fresh = new Set(current)
+              fresh.delete(id)
+              return fresh
+            })
+          }
+        }
+      })
+      // 队列不能因业务失败断链：吞掉异常，让后续写继续排队。
+      .catch(() => undefined)
   }
 
   const renderGroup = (group: 'gateway' | 'protection', title: string) => {
@@ -505,9 +568,11 @@ function GatewaySwitches() {
                   hint={t(def.hint)}
                   checked={value === true}
                   // 还没读到值（端点失败 / 老网关）就锁住：宁可显示灰的，也不给一个
-                  // 拨了没反应的开关 —— 那是最难查的静默失败
-                  disabled={!ready || value === undefined || busyId === def.id}
-                  onChange={next => void toggle(def.id, next)}
+                  // 拨了没反应的开关 —— 那是最难查的静默失败。
+                  // 任一写在途（busyIds 非空）时全部锁住：响应是整份状态，
+                  // 允许交错就会互相覆盖（F-009）。
+                  disabled={!ready || value === undefined || busyIds.size > 0}
+                  onChange={nextValue => void toggle(def.id, nextValue)}
                 />
               </div>
             )

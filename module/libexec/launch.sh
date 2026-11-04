@@ -91,10 +91,29 @@ export AGENT2API_VERBOSE="$CFG_VERBOSE"
 # 应用内自更新会把我们的动态链接器覆盖掉，直接変砖。
 export AGENT2API_SELF_UPDATE=0
 
-[ -n "$CFG_PANEL" ] && export AGENT2API_PANEL_PORT="$CFG_PANEL"
-[ -n "$CFG_ADMIN_USER" ] && export AGENT2API_ADMIN_USER="$CFG_ADMIN_USER"
-[ -n "$CFG_ADMIN_PASS" ] && export AGENT2API_ADMIN_PASSWORD="$CFG_ADMIN_PASS"
-[ -n "$CFG_KEY" ] && export AGENT2API_PROXY_API_KEY="$CFG_KEY"
+# F-006（继承环境）：launch.sh 是被 exec 的新进程，会继承调用方（supervisor
+# / 手动 shell）的全部环境。CFG_* 为空时只"不设置"不够 —— 外层残留的
+# AGENT2API_* 会让服务端读到上一次的旧值。必须显式 unset。
+if [ -n "$CFG_PANEL" ]; then
+  export AGENT2API_PANEL_PORT="$CFG_PANEL"
+else
+  unset AGENT2API_PANEL_PORT
+fi
+if [ -n "$CFG_ADMIN_USER" ]; then
+  export AGENT2API_ADMIN_USER="$CFG_ADMIN_USER"
+else
+  unset AGENT2API_ADMIN_USER
+fi
+if [ -n "$CFG_ADMIN_PASS" ]; then
+  export AGENT2API_ADMIN_PASSWORD="$CFG_ADMIN_PASS"
+else
+  unset AGENT2API_ADMIN_PASSWORD
+fi
+if [ -n "$CFG_KEY" ]; then
+  export AGENT2API_PROXY_API_KEY="$CFG_KEY"
+else
+  unset AGENT2API_PROXY_API_KEY
+fi
 
 # 运行时环境
 export HOME="$HOMEDIR"

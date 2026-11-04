@@ -233,6 +233,12 @@ upd_transaction_finish() { # $1=返回码
   upd_cleanup
   rm -f "$UPD_ACTIVE" 2>/dev/null
   UPD_ACTIVE_WRITTEN=0
+  # F-002/F-003：journal 只在事务到达安全终点时清。switching/switched/
+  # started/rolling-back/rollback-blocked 必须保留给开机恢复 —— 这里删掉
+  # 等于把「未收尾」伪装成「已完成」，中断窗口从此不可恢复。
+  case "$(payload_txn_phase)" in
+    ''|prepared|quiesced|snapshotted|verified|committed|await-verify) payload_txn_clear ;;
+  esac
   if [ "$UPD_LOCK_HELD" = "1" ]; then
     update_lock_release "$UPD_LOCK"
     UPD_LOCK_HELD=0
@@ -283,6 +289,19 @@ upd_stop_service() { # 问题 2：停服并核实退出，必须发生在切换 
     return 1
   fi
   UPD_SERVICE_STOPPED=1
+  return 0
+}
+
+# F-001：回滚数据前必须先让所有写者退出。与 upd_stop_service 的区别：
+# 无条件停（回滚窗口里在跑的是「新版」，与更新前是否运行无关），且调用方
+# 对失败的处理不是中止更新、而是把 journal 标成 rollback-blocked，保留
+# 快照与旧载荷等下次开机收尾 —— 绝不带着活进程去换数据目录。
+upd_quiesce() {
+  svc_stop 2>/dev/null
+  if svc_is_running; then return 1; fi
+  svc_kill_stray 2>/dev/null
+  _uq_left=$(svc_stray_pids 2>/dev/null)
+  [ -n "$_uq_left" ] && return 1
   return 0
 }
 
@@ -350,25 +369,55 @@ upd_on_signal() {
   trap - TERM INT HUP
   UPD_ABORT=1
   log_to "$LOGDIR/update.log" "更新被信号中断，尝试恢复旧载荷"
+  # F-001：进入过切换/安装阶段的事务，恢复前先无条件 quiesce。停不下来
+  # 绝不带着活进程换数据目录 —— 标记 rollback-blocked，保留快照与旧载荷
+  # 等下次开机收尾（boot 时进程必然不在，恢复可安全完成）。
+  if [ -n "$UPD_ACTIVATE_BEFORE" ] || [ "$UPD_INSTALLED" = "1" ]; then
+    if ! upd_quiesce; then
+      log_to "$LOGDIR/update.log" "rollback blocked: 进程无法停止，回滚推迟到下次开机"
+      [ -s "$A2A_TXN_JOURNAL" ] && {
+        payload_txn_reload
+        payload_txn_write rollback-blocked || true
+      }
+      printf '进程无法停止：回滚推迟到下次开机（载荷/数据/快照均已保全）\n' >&2
+      upd_transaction_finish 1
+      exit 1
+    fi
+  fi
+  _uos_payload_ok=0
+  _uos_data_ok=1
   if [ -n "$UPD_ACTIVATE_BEFORE" ]; then
-    upd_recover_activation
+    upd_recover_activation && _uos_payload_ok=1
     # 新版可能已经跑起来写过数据（信号落在健康等待窗口）：恢复载荷后把
     # 数据快照也放回去；新版从未启动过时这是一次内容不变的复制，安全。
     if [ "$UPD_SERVICE_STARTED" = "1" ] && [ "$UPD_DATA_SNAP" = "1" ]; then
-      payload_data_rollback || log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+      payload_data_rollback || {
+        log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+        _uos_data_ok=0
+      }
     fi
     upd_restore_service
   elif [ "$UPD_INSTALLED" = "1" ]; then
     # 当前安装器只保留一份完整 prev 备份；已完成的切换也统一走同一代次恢复。
-    payload_rollback
+    payload_rollback && _uos_payload_ok=1
     if [ "$UPD_SERVICE_STARTED" = "1" ] && [ "$UPD_DATA_SNAP" = "1" ]; then
-      payload_data_rollback || log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+      payload_data_rollback || {
+        log_to "$LOGDIR/update.log" "数据快照恢复失败，快照保留在 data-prev"
+        _uos_data_ok=0
+      }
     fi
     upd_restore_service
   elif [ "$UPD_WAS_RUNNING" = "1" ]; then
     # 停服后、切换前被中断（或停服/快照失败中止）：载荷与数据都没动过，
     # 只需按原状态把服务拉回来；服务本来就没停时 svc_start 会发现已在运行。
+    _uos_payload_ok=1
     upd_finish_service
+  fi
+  # 恢复已同步完成（载荷就位 + 数据收尾成功/无需收尾）：事务就地终结，
+  # 清 journal。任何一步失败时保留 journal（rolling-back/started 等），
+  # 开机按记录继续收尾。
+  if [ "$_uos_payload_ok" = "1" ] && [ "$_uos_data_ok" = "1" ]; then
+    payload_txn_clear
   fi
   upd_transaction_finish 1
   # 信号/失败收尾必须终止顶层事务。旧实现只 return，回到 upd_do_update
@@ -400,6 +449,12 @@ upd_do_update() {
   # 原子写进代次文件与 pending，健康提交用它把「健康证据」绑定到具体
   # 一次切换，防止删错别的代次的旧载荷。
   PAYLOAD_TXID=$(payload_txid_new)
+  # F-001/F-002/F-003：事务 journal 从取锁起记录进度。后面每个关键节点
+  # （停服/快照/切换/启动/验证/提交）都推进 phase；中断后开机只认它。
+  TXN_TAG="update-$_chan"
+  payload_txn_write prepared || {
+    printf '无法写入事务 journal\n'; upd_transaction_finish 1; return 1;
+  }
 
   if [ -n "${3:-}" ]; then
     _tag="${LOCAL_TAG:-$(payload_version)}"
@@ -506,9 +561,11 @@ upd_do_update() {
   #   任一步失败 -> 回滚载荷与数据 -> 按原状态重启旧版 -> 报错退出。
   printf '停止服务并核实退出…\n'
   upd_stop_service || { upd_fail '服务无法停止，更新中止（载荷与数据均未改动）'; return 1; }
+  payload_txn_write quiesced || true
   printf '制作数据快照…\n'
   payload_data_snapshot "$PAYLOAD_TXID" || { upd_fail '数据快照失败，中止更新（载荷未动，按原状态恢复服务）'; return 1; }
-  [ "$PAYLOAD_DATA_SNAPSHOT_TAKEN" = "1" ] && UPD_DATA_SNAP=1
+  [ "$PAYLOAD_DATA_SNAPSHOT_TAKEN" = "1" ] && { UPD_DATA_SNAP=1; TXN_DATA_SNAP=1; }
+  payload_txn_write snapshotted || true
   printf '安装新载荷并校验…\n'
   payload_install_from "$_root" 1 || { upd_fail '新载荷安装失败，已恢复旧版'; return 1; }
   if [ "$UPD_INSTALLED" != "1" ]; then
@@ -516,6 +573,8 @@ upd_do_update() {
   fi
   if [ "$UPD_WAS_RUNNING" = "1" ]; then
     _upd_verify_ok=0
+    # journal：即将启动新版（此后新版可能写数据，任何回滚必须先 quiesce）
+    payload_txn_write started || true
     if upd_finish_service; then
       # 健康证据绑定（问题 3 的 updater 侧）：确认正在服务的进程确实是从新
       # 载荷路径 exec 出来的。切换用的是 rename：旧进程的 /proc/<pid>/exe
@@ -530,10 +589,24 @@ upd_do_update() {
         printf '健康检查命中的不是新载荷进程（exe=%s），按失败处理\n' "${_upd_exe:-未知}"
       else
         _upd_verify_ok=1
+        # journal：健康 + exe 身份双证据已拿到（等待提交）
+        payload_txn_write verified || true
       fi
     fi
     if [ "$_upd_verify_ok" != "1" ]; then
       printf '新版健康检查失败，正在回滚载荷与数据…\n'
+      # F-001：回滚前先把新版彻底停掉。旧实现直接 payload_rollback +
+      # payload_data_rollback、最后才 svc_restart —— 回滚窗口里新版仍在
+      # 运行并继续写数据目录，刚换入的升级前快照会被新版写入二次污染
+      # （SQLite 落盘顺序错乱 = 数据库损坏）。
+      if ! upd_quiesce; then
+        printf '新版进程无法停止：回滚推迟到下次开机（载荷/数据/快照均已保全）\n'
+        log_to "$LOGDIR/update.log" "rollback blocked: 新版进程无法停止，保留现场等开机恢复"
+        payload_txn_reload
+        payload_txn_write rollback-blocked || true
+        upd_transaction_finish 1
+        return 1
+      fi
       payload_rollback || printf '载荷回滚失败，请执行 a2a doctor\n'
       if [ "$UPD_DATA_SNAP" = "1" ]; then
         payload_data_rollback || printf '数据快照恢复失败，快照保留在 %s，请执行 a2a doctor\n' "$BACKUPDIR/data-prev"
@@ -553,6 +626,8 @@ upd_do_update() {
         if payload_commit_old "rollback $$" "$PAYLOAD_TXID"; then
           upd_payload_committed
           rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+          # 回滚已同步完成并提交：事务就地终结
+          payload_txn_clear
         else
           printf '失败版本暂未删除（见 a2a logs），下次启动健康后自动重试\n'
         fi
@@ -572,6 +647,8 @@ upd_do_update() {
       upd_payload_committed
       # 更新前遗留的「未验证安装」标记随本次已验证提交一并失效（问题 8）
       rm -f "$RUNDIR/update.pending-verify" 2>/dev/null
+      payload_txn_write committed || true
+      payload_txn_clear
     else
       printf '事务旧载荷暂未删除（见 a2a logs），下次启动健康后自动重试\n'
     fi
@@ -589,6 +666,10 @@ upd_do_update() {
       rm -f "$RUNDIR/update.pending-verify.tmp.$$" 2>/dev/null
       printf '警告：无法写入 pending-verify 标记（提交仍按 pending+代次进行）\n'
     fi
+    # journal：这是「有意为之」的未验证状态（问题 8），不是中断 —— 标记
+    # await-verify，开机恢复保留新载荷，交给 supervise 按 pending-verify
+    # 在健康启动后提交；绝不能落回 switching/switched 被当成中断回滚掉。
+    payload_txn_write await-verify || true
     printf '更新已安装但未验证（服务更新前处于停止状态）：版本 %s\n' "$(payload_version)"
     printf '下次服务健康启动后自动提交旧载荷\n'
   fi

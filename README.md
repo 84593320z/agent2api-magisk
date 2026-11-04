@@ -103,18 +103,18 @@ module/                模块源码（就是打进 zip 的东西）
 apk-mod/               手机端 APK 改造
   src/                 改动过的 6 个前端源文件
   a2a-mobile-mod.patch 对上游 desktop-tauri/mobile 的完整 diff
-  repack.py            把重新构建的 Web 产物塞回官方 APK
-  a2a-mod.jks          APK 签名密钥库（口令 a2a-mod-2026）
-  README-mod.md        APK 侧的详细说明与验证记录
+  repack.py            把重新构建的 Web 产物塞回官方 APK（参数化，不签名）
+  README-mod.md        APK 侧的详细说明与验证记录（含签名指南）
 docs/                  审计 / 修复报告
   2026-11-03-源码审计-Agent2API-Android17.md   第一轮完整源码审计（19 项发现）
   fix-verification-2026-11-03.md              第一轮 19 项修复的逐项复测记录
   fix-verify-2026-11-03.json                  第一轮复测原始输出
   2026-11-03_Agent2API-magisk31-独立复审.md    独立复审：13 项真解决 / 6 项部分修复 + 19 组新问题
   2026-11-03_Agent2API-magisk32-19组修复报告.md 本轮按复审报告逐条修复的正式报告与复验证据
-test/run.sh            离线桩测试（不需要真机）
+test/run.sh            离线回归入口：语法检查 + 事务故障注入 + 可选 Python 套件
+test/txn_test.sh       事务/DNS/CLI 故障注入测试（journal 状态机、中断恢复、56 项断言）
 test/fix_verify.py     第一轮 19 项修复的复测夹具（历史保留）
-test/verify_fixes.py   本轮 R01–R19 函数级隔离复验（32 项断言，需要 msys sh 或系统 sh）
+test/verify_fixes.py   本轮 R01–R19 函数级隔离复验（37 项断言，自动探测 sh，可用 A2A_SH 覆盖）
 test/verify_loop.py    本轮 R01/R15/R16/R17 主循环集成复验（8 个场景）
 pack.py                打包脚本（自动从 module.prop 取版本号，文件名带 magisk.NN）
 ```
@@ -184,13 +184,15 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 
 ```bash
 python pack.py          # → dist/agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip
-dash test/run.sh        # 离线桩测试，不需要真机
-python test/verify_fixes.py   # R01–R19 函数级复验（32 项；需要 msys sh 或设 A2A_SH）
-python test/verify_loop.py    # 主循环集成复验（8 个场景；夹具由上一个脚本生成，先跑它）
+sh test/run.sh          # 离线回归：语法检查 + 事务/DNS/CLI 故障注入（不需要真机）
+sh test/run.sh --full   # 上一行之外，追加 Python verify 套件（需要 python3）
 ```
 
-两个复验脚本都按自身位置定位 `../module`，默认把中间产物写到 `test/verify_fixes/out/`、
-`test/verify_loop/out/`；可用环境变量 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖。
+`run.sh` 分三层：① 全部模块脚本的 `sh -n` 语法检查；② `txn_test.sh` 纯 POSIX
+故障注入测试（更新事务 journal / 中断恢复 / sweep 保护 / 静态载荷 / DNS 重算与缓存恢复，
+共 56 项断言）；③ `--full` 时跑 `verify_fixes.py`（R01–R19 函数级复验）与
+`verify_loop.py`（主循环集成复验 8 场景）。Python 套件可用 `A2A_MODULE`、
+`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖路径，中间产物写到 `test/*/out/`。
 
 APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 

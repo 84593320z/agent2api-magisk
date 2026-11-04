@@ -8,14 +8,35 @@ import datetime
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 ROOT = Path(os.environ.get('A2A_VERIFY_OUT') or (Path(__file__).resolve().parent / 'out'))
 SRC = Path(os.environ.get('A2A_MODULE') or (Path(__file__).resolve().parent.parent / 'module'))
-BIN = Path(r'C:/Users/Y-H/.dsh/profiles/desktop/node_modules/@dsh-ops/bash-win32-x64/usr/bin')
-SH = os.environ.get('A2A_SH') or str(BIN / 'sh.exe')
+
+
+def _find_sh() -> str:
+    """F-010：与 verify_fixes.py 同款 sh 解析（A2A_SH > PATH > 常见位置）。"""
+    env = os.environ.get('A2A_SH')
+    if env:
+        return env
+    found = shutil.which('sh')
+    if found:
+        return found
+    for cand in (
+        r'C:\Program Files\Git\usr\bin\sh.exe',
+        r'C:\Program Files (x86)\Git\usr\bin\sh.exe',
+        r'C:\msys64\usr\bin\sh.exe',
+        str(Path.home() / r'.dsh\profiles\desktop\node_modules\@dsh-ops\bash-win32-x64\usr\bin\sh.exe'),
+    ):
+        if Path(cand).is_file():
+            return cand
+    raise SystemExit('找不到 sh：请设 A2A_SH 指向 POSIX sh（msys/Git Bash 的 sh.exe）')
+
+
+SH = _find_sh()
 ROOT.mkdir(parents=True, exist_ok=True)
 results, summary = {}, []
 

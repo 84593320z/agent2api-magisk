@@ -8,6 +8,7 @@ import datetime
 import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -19,11 +20,32 @@ from pathlib import Path
 # 也可用环境变量 A2A_MODULE / A2A_VERIFY_OUT 覆盖。
 ROOT = Path(os.environ.get('A2A_VERIFY_OUT') or (Path(__file__).resolve().parent / 'out'))
 SRC = Path(os.environ.get('A2A_MODULE') or (Path(__file__).resolve().parent.parent / 'module'))
-BIN = Path(r'C:/Users/Y-H/.dsh/profiles/desktop/node_modules/@dsh-ops/bash-win32-x64/usr/bin')
-# Windows 用 msys sh，其它平台可设 A2A_SH 指向系统 sh。
-SH = os.environ.get('A2A_SH') or str(BIN / 'sh.exe')
-SHX = '/' + str(BIN).replace('\\', '/')[0].lower() + str(BIN).replace('\\', '/')[2:]
-CURL = os.environ.get('A2A_CURL') or '/ucrt64/bin/curl'
+
+
+def _find_sh() -> str:
+    """F-010：sh 解释器解析。不再硬编码某个用户的安装路径。
+
+    优先级：A2A_SH 显式指定 > PATH 里的 sh > 常见 MSYS/Git-Bash 位置探测。
+    """
+    env = os.environ.get('A2A_SH')
+    if env:
+        return env
+    found = shutil.which('sh')
+    if found:
+        return found
+    for cand in (
+        r'C:\Program Files\Git\usr\bin\sh.exe',
+        r'C:\Program Files (x86)\Git\usr\bin\sh.exe',
+        r'C:\msys64\usr\bin\sh.exe',
+        str(Path.home() / r'.dsh\profiles\desktop\node_modules\@dsh-ops\bash-win32-x64\usr\bin\sh.exe'),
+    ):
+        if Path(cand).is_file():
+            return cand
+    raise SystemExit('找不到 sh：请设 A2A_SH 指向 POSIX sh（msys/Git Bash 的 sh.exe）')
+
+
+SH = _find_sh()
+CURL = os.environ.get('A2A_CURL') or shutil.which('curl') or 'curl'
 ROOT.mkdir(parents=True, exist_ok=True)
 obs, results, summary = [], {}, []
 

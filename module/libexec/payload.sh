@@ -34,6 +34,251 @@ payload_generation_write() { # $1=txid $2=事务标签
   && mv -f "$RUNDIR/payload.generation.tmp.$$" "$RUNDIR/payload.generation" 2>/dev/null
 }
 
+# ---------------------------------------------------------------------------
+# 事务 journal（F-001/F-002/F-003）
+# 单行、定长字段、tmp+rename 原子落盘。它是「跨重启唯一可信的进度记录」：
+# 磁盘上的 payload/data 目录只能证明"现在长什么样"，journal 才能证明
+# "上一笔事务走到了哪一步、还有什么没收尾"。
+#
+#   v1 <txid> <phase> <pid> <startticks> <tag> <old_payload> <data_snap>
+#      <data_tmp> <data_aside> <epoch> <new_built>
+#
+# phase 取值（严格递进的提交状态机）：
+#   prepared        已取锁、写 update.active，尚未动任何持久状态
+#   quiesced        服务已停并核实无残留写者
+#   snapshotted     数据快照已就位（data_snap=1）
+#   switching       切换标记已写，第一次 rename 可能已发生
+#   switched        新载荷已通过身份校验、代次已落盘
+#   started         已尝试启动新载荷（服务可能写过数据）
+#   verified        新载荷通过健康检查，等待提交
+#   committed       已提交（正常收尾，journal 随即删除）
+#   await-verify    有意保留的「已安装未验证」（更新前服务就是停的），
+#                   开机保留新载荷，交给 supervise 按 pending-verify 提交
+#   rolling-back    正在回滚（payload + data）
+#   rollback-blocked 停不下来，回滚推迟到下次开机
+# 未知 phase 一律只清 journal 不动现场；字段缺失写 "-"。
+# ---------------------------------------------------------------------------
+A2A_TXN_JOURNAL="$RUNDIR/update.journal"
+
+# 写 journal：$1=phase；其余字段取全局（调用方设置，未设置则记 "-"）。
+# 写失败必须让调用方失败：journal 是恢复的依据，静默丢失等于丢事务。
+payload_txn_write() { # $1=phase
+  _ptw_phase=${1:-unknown}
+  _ptw_tmp="$A2A_TXN_JOURNAL.tmp.$$"
+  mkdir -p "$RUNDIR" 2>/dev/null
+  printf 'v1 %s %s %s %s %s %s %s %s %s %s %s\n' \
+    "${PAYLOAD_TXID:--}" "$_ptw_phase" "$$" "$(proc_start_ticks $$ 2>/dev/null)" \
+    "${TXN_TAG:--}" "${TXN_OLD_PAYLOAD:--}" "${TXN_DATA_SNAP:-0}" \
+    "${TXN_DATA_TMP:--}" "${TXN_DATA_ASIDE:--}" "$(now_epoch)" \
+    "${TXN_NEW_BUILT:--}" >"$_ptw_tmp" 2>/dev/null \
+  && mv -f "$_ptw_tmp" "$A2A_TXN_JOURNAL" 2>/dev/null || {
+    rm -f "$_ptw_tmp" 2>/dev/null
+    return 1
+  }
+  return 0
+}
+
+payload_txn_field() { # $1=字段号（1..12）
+  [ -s "$A2A_TXN_JOURNAL" ] || return 0
+  awk -v n="$1" 'NR==1{print $n; exit}' "$A2A_TXN_JOURNAL" 2>/dev/null
+}
+
+payload_txn_phase() { payload_txn_field 3; }
+
+payload_txn_clear() {
+  rm -f "$A2A_TXN_JOURNAL" "$A2A_TXN_JOURNAL".tmp.* 2>/dev/null
+  return 0
+}
+
+# journal 登记的进程是否还活着（pid + 启动代次双核，防 PID 复用）
+payload_txn_owner_alive() {
+  _pto_pid=$(payload_txn_field 4)
+  _pto_ticks=$(payload_txn_field 5)
+  case "$_pto_pid$_pto_ticks" in ''|*[!0-9]*) return 1 ;; esac
+  pid_alive "$_pto_pid" 2>/dev/null || return 1
+  [ "$(proc_start_ticks "$_pto_pid" 2>/dev/null)" = "$_pto_ticks" ]
+}
+
+# 把 journal 当前字段读回 TXN_* 全局。给「需要重写 journal 但不应丢失既有
+# 字段」的路径用（如数据回滚只更新 tmp/aside 与 phase；a2a 手动回滚时
+# 事务上下文并不在环境里，不回填就会把 old_payload 顶成 "-"）。
+payload_txn_reload() {
+  [ -s "$A2A_TXN_JOURNAL" ] || return 1
+  TXN_TAG=$(payload_txn_field 6); [ "$TXN_TAG" = "-" ] && TXN_TAG=""
+  TXN_OLD_PAYLOAD=$(payload_txn_field 7); [ "$TXN_OLD_PAYLOAD" = "-" ] && TXN_OLD_PAYLOAD=""
+  TXN_DATA_SNAP=$(payload_txn_field 8)
+  TXN_DATA_TMP=$(payload_txn_field 9); [ "$TXN_DATA_TMP" = "-" ] && TXN_DATA_TMP=""
+  TXN_DATA_ASIDE=$(payload_txn_field 10); [ "$TXN_DATA_ASIDE" = "-" ] && TXN_DATA_ASIDE=""
+  TXN_NEW_BUILT=$(payload_txn_field 12); [ "$TXN_NEW_BUILT" = "-" ] && TXN_NEW_BUILT=""
+  return 0
+}
+
+# 数据目录换入的中断收尾：可重复执行（幂等），绝不把 data 留成空目录。
+# $1=data_tmp（快照副本，换入前临时名） $2=data_aside（升级后数据移开的位置）
+payload_txn_recover_data() {
+  _ptd_tmp=${1:-}
+  _ptd_aside=${2:-}
+  if [ -n "$_ptd_tmp" ] && [ -d "$_ptd_tmp" ]; then
+    if [ -d "$DATADIR" ] && [ -n "$(ls -A "$DATADIR" 2>/dev/null)" ]; then
+      # 换入已完成：$DATADIR 就是快照本体；中转与移开副本都不再需要。
+      rm -rf "$_ptd_tmp" 2>/dev/null
+      [ -n "$_ptd_aside" ] && rm -rf "$_ptd_aside" 2>/dev/null
+      log_to "$UPDLOG" "中断事务的数据换入已就位，清理中转目录"
+      return 0
+    fi
+    # DATADIR 缺失或为空目录（ensure_layout 会建空目录）→ 完成换入。
+    [ -d "$DATADIR" ] && rmdir "$DATADIR" 2>/dev/null
+    if mv "$_ptd_tmp" "$DATADIR" 2>/dev/null; then
+      chmod 700 "$DATADIR" 2>/dev/null
+      [ -n "$_ptd_aside" ] && rm -rf "$_ptd_aside" 2>/dev/null
+      log_to "$UPDLOG" "已补完中断的数据目录换入（snapshot -> data）"
+      return 0
+    fi
+    # 换入失败：把升级后的现场原样放回，宁可不回滚也不留空 data。
+    if [ -n "$_ptd_aside" ] && [ -d "$_ptd_aside" ]; then
+      if mv "$_ptd_aside" "$DATADIR" 2>/dev/null; then
+        log_to "$UPDLOG" "数据换入失败，已放回升级后的数据目录"
+        rm -rf "$_ptd_tmp" 2>/dev/null
+        return 0
+      fi
+      log_to "$UPDLOG" "严重：数据现场在 $_ptd_aside，请手工恢复"
+    fi
+    return 1
+  fi
+  # 只有 aside：数据被移开后、journal 都没来得及记 tmp 的极端窗口。
+  if [ -n "$_ptd_aside" ] && [ -d "$_ptd_aside" ] && [ ! -e "$DATADIR" ]; then
+    if mv "$_ptd_aside" "$DATADIR" 2>/dev/null; then
+      log_to "$UPDLOG" "已放回中断时被移开的数据目录"
+      return 0
+    fi
+  fi
+  return 0
+}
+
+# 按 journal 收尾一笔中断的事务。$1=boot|runtime：
+#   boot    开机（post-fs-data）：此刻锁已清、不可能有活的事务进程；
+#   runtime supervise / 安装脚本运行期：journal 主人活着就什么都不做。
+# 返回 0=已处理（或无需处理），1=没有 journal（调用方走旧逻辑）或处理失败。
+payload_txn_recover() {
+  _ptr_mode=${1:-runtime}
+  [ -s "$A2A_TXN_JOURNAL" ] || return 1
+  if [ "$_ptr_mode" != "boot" ] && payload_txn_owner_alive; then
+    log_to "$SUPLOG" "更新事务仍在运行（pid=$(payload_txn_field 4)），跳过恢复"
+    return 0
+  fi
+  _ptr_phase=$(payload_txn_phase)
+  _ptr_txid=$(payload_txn_field 2)
+  _ptr_old=$(payload_txn_field 7)
+  _ptr_dsnap=$(payload_txn_field 8)
+  _ptr_dtmp=$(payload_txn_field 9)
+  _ptr_daside=$(payload_txn_field 10)
+  _ptr_newbuilt=$(payload_txn_field 12)
+  [ "$_ptr_old" = "-" ] && _ptr_old=""
+  [ "$_ptr_dtmp" = "-" ] && _ptr_dtmp=""
+  [ "$_ptr_daside" = "-" ] && _ptr_daside=""
+  [ "$_ptr_newbuilt" = "-" ] && _ptr_newbuilt=""
+  # 回填 TXN_* 全局：后续 payload_data_rollback 等函数重写 journal 时，
+  # 本笔事务的字段不能被 "-" 顶掉（字段丢 = 恢复材料丢）。
+  payload_txn_reload
+  log_to "$UPDLOG" "发现中断的事务 journal（phase=$_ptr_phase txid=$_ptr_txid），开始收尾"
+
+  # 数据目录的换入/移开独立于载荷：先收干净，别让后面的流程见到"空 data"。
+  payload_txn_recover_data "$_ptr_dtmp" "$_ptr_daside"
+
+  case "$_ptr_phase" in
+    prepared|quiesced|snapshotted)
+      # 没进入切换：当前载荷就是旧的，数据也没被覆盖过。清记录即可。
+      log_to "$UPDLOG" "事务未进入切换阶段（$_ptr_phase），仅清理记录"
+      payload_txn_clear
+      return 0
+      ;;
+    verified|committed)
+      # 健康证据已拿到：保留新载荷。旧载荷交给 supervise 首轮健康后提交。
+      log_to "$UPDLOG" "事务已通过健康检查（$_ptr_phase），保留新载荷"
+      payload_txn_clear
+      return 0
+      ;;
+    await-verify)
+      # 有意为之的「已安装未验证」（更新前服务就是停止的，问题 8）：保留
+      # 新载荷，交给 supervise 按 pending-verify 标记在健康启动后提交。
+      log_to "$UPDLOG" "事务处于已安装待验证状态，保留新载荷等 supervise 提交"
+      payload_txn_clear
+      return 0
+      ;;
+    rolling-back|rollback-blocked)
+      # 回滚进行中：走下面的完整回滚路径（幂等）。
+      ;;
+    switching|switched|started)
+      # 切换后、健康验证前中断：按"未验证"处理，回滚到旧载荷。
+      ;;
+    *)
+      log_to "$UPDLOG" "未知事务阶段 $_ptr_phase，仅清理记录不动现场"
+      payload_txn_clear
+      return 0
+      ;;
+  esac
+
+  # ---- 载荷收尾 ----
+  _ptr_cur_ok=0
+  payload_validate "$PAYLOAD" >/dev/null 2>&1 && _ptr_cur_ok=1
+  # 当前载荷是否就是本笔事务的新载荷：代次一致或 built 一致都算。
+  _ptr_cur_new=0
+  if [ -n "$_ptr_txid" ] && [ "$_ptr_txid" != "-" ] \
+     && [ "$(payload_generation_read)" = "$_ptr_txid" ]; then
+    _ptr_cur_new=1
+  elif [ -n "$_ptr_newbuilt" ] && [ "$(payload_built)" = "$_ptr_newbuilt" ]; then
+    _ptr_cur_new=1
+  fi
+
+  if [ "$_ptr_cur_new" = "0" ] && [ "$_ptr_cur_ok" = "1" ]; then
+    # 已经是旧载荷（第一次 rename 前中断），无需再动。
+    log_to "$UPDLOG" "当前载荷未参与切换，保持不动"
+  elif [ -n "$_ptr_old" ] && [ -d "$_ptr_old" ] \
+       && payload_validate "$_ptr_old" >/dev/null 2>&1; then
+    if [ -e "$PAYLOAD" ]; then
+      _ptr_bad="$APP_HOME/payload.interrupted.$$"
+      rm -rf "$_ptr_bad" 2>/dev/null
+      if ! mv "$PAYLOAD" "$_ptr_bad" 2>/dev/null; then
+        log_to "$UPDLOG" "无法移开中断载荷，旧版保留在 $_ptr_old，下次再试"
+        return 1
+      fi
+    fi
+    if mv "$_ptr_old" "$PAYLOAD" 2>/dev/null \
+       && payload_validate "$PAYLOAD" >/dev/null 2>&1; then
+      payload_fix_perms "$PAYLOAD" 2>/dev/null
+      log_to "$UPDLOG" "已回滚中断的载荷切换：$_ptr_old"
+      rm -rf "$APP_HOME/payload.interrupted.$$" 2>/dev/null
+    else
+      log_to "$UPDLOG" "回滚中断载荷失败，旧版仍在 $_ptr_old"
+      return 1
+    fi
+  elif [ "$_ptr_cur_ok" = "1" ]; then
+    # 当前载荷完整但无法确认是新是旧、也没有事务旧目录：保守保留当前。
+    log_to "$UPDLOG" "事务旧载荷不存在，当前载荷完整，保留当前载荷"
+  else
+    if payload_rollback >/dev/null 2>&1; then
+      log_to "$UPDLOG" "已用完整备份恢复中断的载荷"
+    else
+      log_to "$UPDLOG" "中断的载荷无法自动恢复，请手工处理 $PAYLOAD"
+      return 1
+    fi
+  fi
+
+  # ---- 数据收尾：journal 明确记了快照才恢复（快照 txid 校验在函数内部）----
+  if [ "$_ptr_dsnap" = "1" ]; then
+    PAYLOAD_TXID="$_ptr_txid"
+    if ! payload_data_rollback; then
+      log_to "$UPDLOG" "数据快照恢复失败，快照保留在 $BACKUPDIR/data-prev"
+      return 1
+    fi
+  fi
+
+  live_link_refresh 2>/dev/null
+  payload_txn_clear
+  log_to "$UPDLOG" "中断事务已收尾（phase=$_ptr_phase）"
+  return 0
+}
+
 # 目录里的主程序是不是 musl 静态链接（没有 glibc 解释器字符串）。
 # 用途：静态载荷不需要 lib/ld-linux-aarch64.so.1 与 libc.so.6，
 # 判定载荷完整性时必须先区分，否则正常的静态包会被判成坏包。
@@ -282,6 +527,24 @@ payload_activate_staged() { # $1=staging $2=事务标签
     rm -f "$RUNDIR/payload.switching" 2>/dev/null
     return 1
   }
+  # F-002/F-003：journal 先于第一次 rename 落盘。rename 窗口里磁盘形态
+  # 不可判定，开机恢复只认 journal 的 phase + old_payload/new_built。
+  # 仅在「前进方向的前置相位」（无 journal 或 prepared/quiesced/snapshotted）
+  # 才写：恢复/回滚期间的二次 activate 不覆盖 journal——已有记录描述的
+  # 才是真正的事务现场（例如回滚事务的 old_payload 指向健康旧版，不能
+  # 被本次搬开的坏载荷顶掉）。
+  case "$(payload_txn_phase)" in
+    ''|prepared|quiesced|snapshotted)
+      TXN_TAG=${_pa_tag}
+      TXN_OLD_PAYLOAD=${_pa_old}
+      TXN_NEW_BUILT=${_pa_built}
+      payload_txn_write switching || {
+        rm -f "$RUNDIR/update.active" "$RUNDIR/payload.switching" 2>/dev/null
+        echo "无法写入事务 journal"
+        return 1
+      }
+      ;;
+  esac
   if command -v upd_payload_before_move >/dev/null 2>&1; then
     # B2：钩子拒绝本笔切换时，两个事务标记必须一并清掉，否则会留下孤儿
     # payload.switching（误导中断恢复的过期判定）与悬空的 update.active。
@@ -354,6 +617,15 @@ payload_activate_staged() { # $1=staging $2=事务标签
     rm -f "$RUNDIR/update.active" "$RUNDIR/payload.switching" 2>/dev/null
     return 1
   fi
+  # 代次已落盘：journal 推进到 switched（新载荷在位、尚未健康验证）。
+  # 只推进自己刚写的 switching；写失败不回滚已就位的好载荷——journal
+  # 停在 switching，开机恢复按「未验证」处理（回滚），语义仍保守正确。
+  case "$(payload_txn_phase)" in
+    switching)
+      payload_txn_write switched \
+        || log_to "$UPDLOG" "journal 推进到 switched 失败（保持 switching）"
+      ;;
+  esac
   if command -v upd_payload_commit >/dev/null 2>&1; then
     upd_payload_commit "$_pa_old" "$_pa_tmp"
   fi
@@ -519,7 +791,14 @@ payload_install_from() { # $1=源目录 $2=force；调用者须全程持 update.
       fi
     fi
   fi
-  payload_activate_staged "$_tmp" new || { rm -rf "$_tmp" 2>/dev/null; return 1; }
+  # activate 会写事务 journal；无外层事务（customize 安装等）时没人负责
+  # 推进/清除它，留着会让下次开机把全新安装当成"未验证切换"回滚掉。
+  _pi_jrn=0; [ -s "$A2A_TXN_JOURNAL" ] && _pi_jrn=1
+  payload_activate_staged "$_tmp" new || {
+    [ "$_pi_jrn" != "1" ] && payload_txn_clear
+    rm -rf "$_tmp" 2>/dev/null; return 1
+  }
+  [ "$_pi_jrn" != "1" ] && payload_txn_clear
   echo "载荷已切换：${_curver:-none} -> ${_newver:-unknown}"
   return 0
 }
@@ -536,7 +815,14 @@ payload_rollback() { # 调用者须全程持 update.lock.d
   payload_validate "$_tmp" >/dev/null 2>&1 || { rm -rf "$_tmp"; echo "回滚校验失败"; return 1; }
   payload_fix_perms "$_tmp" || { rm -rf "$_tmp"; echo "回滚权限修复失败"; return 1; }
   loader_smoke "$_tmp" || { rm -rf "$_tmp"; echo "回滚运行时不可用"; return 1; }
-  payload_activate_staged "$_tmp" rollback || { rm -rf "$_tmp" 2>/dev/null; return 1; }
+  _rb_jrn=0; [ -s "$A2A_TXN_JOURNAL" ] && _rb_jrn=1
+  payload_activate_staged "$_tmp" rollback || {
+    # 无事务上下文的手动回滚：清掉 activate 写下的 journal，否则下次开机
+    # 会把这次已完成的回滚当成"未完成切换"再回滚回去。
+    [ "$_rb_jrn" != "1" ] && payload_txn_clear
+    rm -rf "$_tmp" 2>/dev/null; return 1
+  }
+  [ "$_rb_jrn" != "1" ] && payload_txn_clear
   echo "已回滚到 $(payload_version)"
   return 0
 }
@@ -650,6 +936,18 @@ payload_data_rollback() { # 把快照恢复回 $DATADIR；调用者持 update �
   # 现场保全：升级后的数据先移开再换入快照（两次 rename 的窗口极小）；
   # 换入失败时原样放回，绝不把数据目录留在"不存在"的状态。
   _pdr_aside="$DATADIR.upgraded.$$"
+  # F-003：两次 rename 前把中转/移开路径记入 journal——这一步一旦中断，
+  # data 目录可能"不存在"，没有记录就无法安全补完或放回。只在 journal
+  # 已存在（有事务上下文）时记录；写不进去就中止，不留无法恢复的窗口。
+  if [ -s "$A2A_TXN_JOURNAL" ]; then
+    payload_txn_reload
+    TXN_DATA_TMP="$_pdr_tmp"
+    TXN_DATA_ASIDE="$_pdr_aside"
+    payload_txn_write rolling-back || {
+      echo "无法记录数据回滚的 journal，中止（防中断后无法恢复）"
+      return 1
+    }
+  fi
   if [ -d "$DATADIR" ] && ! mv "$DATADIR" "$_pdr_aside" 2>/dev/null; then
     rm -rf "$_pdr_tmp" 2>/dev/null
     echo "无法移开当前数据目录，数据回滚中止"
@@ -658,13 +956,29 @@ payload_data_rollback() { # 把快照恢复回 $DATADIR；调用者持 update �
   if mv "$_pdr_tmp" "$DATADIR" 2>/dev/null; then
     rm -rf "$_pdr_aside" 2>/dev/null
     chmod 700 "$DATADIR" 2>/dev/null
+    # 换入完成：清掉中转记账（phase 保持不变），后续中断不会重放这一步
+    if [ -s "$A2A_TXN_JOURNAL" ]; then
+      TXN_DATA_TMP=""
+      TXN_DATA_ASIDE=""
+      payload_txn_write "$(payload_txn_phase)" || true
+    fi
     log_to "$UPDLOG" "数据已回滚到升级前快照（${_pdr_kb}KB）"
     return 0
   fi
+  _pdr_back=1
   if [ -d "$_pdr_aside" ]; then
-    mv "$_pdr_aside" "$DATADIR" 2>/dev/null || echo "严重：升级后数据在 $_pdr_aside，请手工恢复"
+    mv "$_pdr_aside" "$DATADIR" 2>/dev/null || {
+      _pdr_back=0
+      echo "严重：升级后数据在 $_pdr_aside，请手工恢复"
+    }
   fi
   rm -rf "$_pdr_tmp" 2>/dev/null
+  # 现场放回成功才清记账；放不回去时保留 aside 指针给开机恢复补放。
+  if [ "$_pdr_back" = "1" ] && [ -s "$A2A_TXN_JOURNAL" ]; then
+    TXN_DATA_TMP=""
+    TXN_DATA_ASIDE=""
+    payload_txn_write "$(payload_txn_phase)" || true
+  fi
   return 1
 }
 

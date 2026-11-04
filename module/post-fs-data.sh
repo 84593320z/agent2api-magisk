@@ -24,6 +24,19 @@ esac
 . "$MODDIR/libexec/dns.sh"
 . "$MODDIR/libexec/payload.sh"
 
+# 运行期残留：pid / 锁 / stop 标记，一律清（这个时刻不可能有活进程）。
+# boot.lock.d 与 hot-restart.req.lock.d 同属运行期锁：boot-worker / 热重启
+# worker 都在本阶段之后才会被投递，此刻这两把锁必然 stale，与其余锁同口径
+# 清掉，不留给 update_lock_acquire 的僵死回收慢慢兜底。
+rm -f "$RUNDIR/stop" "$RUNDIR/server.pid" "$RUNDIR/server.start" "$RUNDIR/supervisor.pid" "$RUNDIR/supervisor.start" "$RUNDIR/hot-restart.state" "$RUNDIR/state" 2>/dev/null
+rm -rf "$RUNDIR/lock" "$RUNDIR/service.lock.d" "$RUNDIR/hot-restart.lock.d" "$RUNDIR/update.lock.d" "$RUNDIR/boot.lock.d" "$RUNDIR/hot-restart.req.lock.d" 2>/dev/null
+
+# F-002/F-003：中断事务的收尾必须在 ensure_layout 之前 —— ensure_layout
+# 会把缺失的 DATADIR 建成空目录，数据换入的中断现场（data 被 mv 走、
+# 快照还没换进来）就会"看起来像已完成"。boot 模式没有年龄门槛（此刻
+# 不可能有活事务），锁也已在上面清掉。
+payload_recover_interrupted boot
+
 ensure_layout
 
 # 权限：热安装/升级后模块目录是 0644，payload 里的可执行位要补回来，
@@ -40,15 +53,6 @@ if [ -d "$MODDIR/libexec" ]; then
 fi
 chmod 700 "$CFGDIR" "$DATADIR" 2>/dev/null
 
-# 运行期残留：pid / 锁 / stop 标记，一律清（这个时刻不可能有活进程）。
-# boot.lock.d 与 hot-restart.req.lock.d 同属运行期锁：boot-worker / 热重启
-# worker 都在本阶段之后才会被投递，此刻这两把锁必然 stale，与其余锁同口径
-# 清掉，不留给 update_lock_acquire 的僵死回收慢慢兜底。
-rm -f "$RUNDIR/stop" "$RUNDIR/server.pid" "$RUNDIR/server.start" "$RUNDIR/supervisor.pid" "$RUNDIR/supervisor.start" "$RUNDIR/hot-restart.state" "$RUNDIR/state" 2>/dev/null
-rm -rf "$RUNDIR/lock" "$RUNDIR/service.lock.d" "$RUNDIR/hot-restart.lock.d" "$RUNDIR/update.lock.d" "$RUNDIR/boot.lock.d" "$RUNDIR/hot-restart.req.lock.d" 2>/dev/null
-
-# 先恢复两次 rename 之间断电的现场，再清临时目录。
-payload_recover_interrupted
 # 时区库安装窗口被打断（旧库已移开、新库还没就位）时放回去。
 if [ ! -e "$APP_HOME/zoneinfo" ]; then
   for _zo in "$APP_HOME"/zoneinfo.old.*; do

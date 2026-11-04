@@ -129,7 +129,7 @@ adb install -r Agent2API-3.1.2-mod.apk
 ## 4. 已知限制
 
 - **硬件返回键会退出应用**（见 3.3，上游 Capacitor 的结构问题，需重编原生层才能修）。
-- **必须卸载官方版**再装：签名是我们自己的 key（`a2a-mod.jks`，口令 `a2a-mod-2026`）。
+- **必须卸载官方版**再装：签名是你自己的 key（见第 5 节「签名」）。
 - **不做局域网扫描**：只探环回。连别的机器请手填地址（原逻辑不变）。
 - **不暴露「局域网访问 / 开放面板」两个开关**：它们在桌面端要写应用配置并**重启网关**，
   手机上做这件事需要改 `env.sh`（`AGENT2API_HOST`）并 `ctl restart`，属于模块侧的活，
@@ -152,13 +152,44 @@ ESBUILD_BINARY_PATH="C:\\Users\\<you>\\AppData\\Local\\Temp\\esb2.exe" npx vite 
 # 产物在 desktop-tauri/mobile/android-www/
 ```
 
-打包（把产物塞回官方 APK 并重签）：
+打包（把产物塞回官方 APK，**不签名**）：
 
 ```bash
-python repack.py                     # 保留原条目压缩方式，替换 assets/public
+python repack.py \
+  --apk   /path/to/Agent2API-<ver>.apk \
+  --web   desktop-tauri/mobile/android-www \
+  --out   /path/to/Agent2API-<ver>-mod-unsigned.apk \
+  --apk-sha256 <官方 APK 的 sha256>   # 可选，防拿错基线包
 zipalign -p -f 4 ...-unsigned.apk ...-aligned.apk
-apksigner sign --ks a2a-mod.jks --ks-key-alias a2a --out ...-mod.apk ...-aligned.apk
 ```
 
 `repack.py` 里有一条不能动的规则：**`resources.arsc` 必须保持 STORED**，
 否则 Android 11+ 直接装不上 —— 这是自己改 APK 最常见的翻车点。
+
+### 签名
+
+**不要把签名私钥提交进仓库。** 本仓库早期版本曾把 `a2a-mod.jks` 连同
+口令一起提交——那个 key 已经泄露（任何拿到仓库的人都能签出同签名的
+升级包），**必须视为作废**：升级它签的安装会因签名不一致被拒，正好说明
+它不能再用。
+
+自己生成一个（一次即可，离线保管）：
+
+```bash
+keytool -genkeypair -v -keystore my-release.jks -alias mykey \
+  -keyalg RSA -keysize 2048 -validity 10000
+```
+
+签名时用环境变量传路径与口令，别写进脚本或命令历史：
+
+```bash
+export A2A_KEYSTORE=/secure/path/my-release.jks
+export A2A_KEYSTORE_PASS='…'
+export A2A_KEY_ALIAS=mykey
+apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \
+  --ks-pass env:A2A_KEYSTORE_PASS \
+  --out ...-mod.apk ...-aligned.apk
+```
+
+`my-release.jks` 已被根 `.gitignore` 的 `*.jks` 规则排除；任何情况下都
+不要为了「方便别人复现」而把私钥或口令放进 git。
