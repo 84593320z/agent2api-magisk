@@ -799,21 +799,22 @@ check('lf_boot_entry_and_wget_guard',
 
 # ============================================================== R18
 run('r18_version_metadata', PRE + r'''
-_bin=$(strings "$MODDIR/seed/agent2api-server" 2>/dev/null | grep -Eo '3\.3\.0-beta\.[0-9]+' | sort -u | head -n 1)
+_bin=$(strings "$MODDIR/seed/agent2api-server" 2>/dev/null | grep -Eo 'agent2api/[0-9][0-9A-Za-z.+-]*' | head -n 1 | sed 's|^agent2api/||')
 _ver=$(sed -n 's/^ver=//p' "$MODDIR/seed/VERSION" | head -n 1)
 metric binary "$_bin"
 metric version_file "$_ver"
 metric consistent "$([ "$_bin" = "$_ver" ] && printf 1 || printf 0)"
 metric module_prop "$(sed -n 's/^version=//p' "$MODDIR/module.prop" | head -n 1)"
-metric prop_mentions_payload "$(grep -c 'beta.6' "$MODDIR/module.prop")"
+metric prop_mentions_payload "$(grep -c "载荷 v$_ver" "$MODDIR/module.prop")"
 ''')
 # 模块号会随发布递增，这里只钉「载荷版本必须与二进制一致」和「描述里点明载荷版本」，
 # 不把 magisk.NN 写死在断言里，否则每次发版都要改测试。
 check_fn('r18_version_metadata', lambda out: (
-    'binary=3.3.0-beta.6' in out
-    and 'version_file=3.3.0-beta.6' in out
+    'binary=3.4.0' in out
+    and 'version_file=3.4.0' in out
     and 'consistent=1' in out
-    and 'module_prop=v3.3.0-beta.7 (magisk.' in out
+    and 'module_prop=v3.4.0 (magisk.' in out
+    and 'prop_mentions_payload=1' in out
 ))
 
 # ============================================================== R19

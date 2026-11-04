@@ -14,3 +14,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 *.log
+
+# 测试中间产物（复验脚本生成，可重现）
+test/out/
+test/verify_fixes/out/
+test/verify_loop/out/

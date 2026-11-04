@@ -1,18 +1,21 @@
 # Agent2API · Magisk 模块（arm64）
 
-把 Agent2API 服务端（`v3.3.0-beta.6` 官方 linux-arm64 构建）原封不动地跑在**已 root 的 Android 手机**上：
+把 Agent2API 服务端（`v3.4.0`，musl 静态 arm64 构建）跑在**已 root 的 Android 手机**上：
 开机自启、崩溃自愈、DNS 自适应、在线升级、一键回滚，卸载干净。
 
-> 上游只提供 `agent2api-server-linux-arm64.tar.gz`（Rust + **glibc** 动态链接，不是 Android 的 bionic）。
-> 所以这个模块的第一要务不是"包装一下"，而是**在 Android 上给它造一个 glibc 运行环境**。
-> 下面每一条"坑"都是因为这个前提而来的。
+> 上游 Release 只提供 `agent2api-server-linux-arm64.tar.gz`（Rust + **glibc** 动态链接，不是 Android 的 bionic）。
+> 所以这个模块的第一要务是**在 Android 上给它造一个 glibc 运行环境**——这一套至今保留，
+> 服务"在线更新到上游 glibc 包"的路径。
+> 随包 seed 载荷则改用 [84593320z/agent2api-musl](https://github.com/84593320z/agent2api-musl) CI 按上游 tag
+> 构建的 **musl 静态**包（无 `PT_INTERP`，不依赖 glibc），模块按 `payload_dir_is_static` 自动分流两种载荷。
+> 下面每一条"坑"都因 glibc 前提而来，静态载荷同样受益（DNS 改写、时区、守护全都一样走）。
 
 ---
 
 ## 1. 一分钟安装
 
 1. 确认手机是 **arm64**（2016 年后的机器基本都是）且已 root（Magisk / KernelSU / APatch 都行）。
-2. 把 `agent2api-magisk-v3.3.0-beta.6-magisk.10.zip` 传到手机。
+2. 把 `agent2api-magisk-v3.4.0-magisk.34.zip` 传到手机。
 3. **Magisk**：Magisk App → 模块 → 从本地安装 → 选 zip → 重启。
    **KernelSU / APatch**：管理器 → 模块 → 安装 → 选 zip → 重启。
 4. 重启后打开浏览器：`http://127.0.0.1:3065/m.html`
@@ -217,23 +220,24 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor; echo ---; sh /data/adb/agent2api/b
 
 ## 10. 打包信息
 
-- 载荷来源：`aimod-cc/Agent2API` 官方 `v3.3.0-beta.6` 的 `agent2api-server-linux-arm64.tar.gz`
-- glibc 运行时：Debian bookworm `libc6 2.36-9+deb12u14` + `libgcc-s1 12.2.0-14+deb12u1`（arm64）
-  （二进制最高要求 `GLIBC_2.34`，2.36 完整覆盖）
+- 载荷来源：[84593320z/agent2api-musl](https://github.com/84593320z/agent2api-musl) CI 按上游 `v3.4.0` tag
+  构建的 musl 静态 arm64 包（无 `PT_INTERP`，`/etc/resolv.conf` 已等长改写为 `/data/a2a/resolv`）
+- glibc 运行时（`seed/lib/`）：Debian bookworm `libc6 2.36-9+deb12u14` + `libgcc-s1 12.2.0-14+deb12u1`（arm64），
+  为在线升级到上游 glibc 包的动态载荷路径保留（二进制最高要求 `GLIBC_2.34`，2.36 完整覆盖）
 - 下载器：静态链接的 `curl 8.23.0`（aarch64, musl），不依赖系统 CA 与 bionic
 - CA：curl.se 官方 `cacert.pem`
 
 产物（每次构建都会重新算，实际值看同目录的 `.zip.sha256`）：
 
 ```
-dist/agent2api-magisk-v3.3.0-beta.6-magisk.10.zip    约 16.5 MB（含完整 IANA zoneinfo）
+dist/agent2api-magisk-v3.4.0-magisk.34.zip    约 30 MB（musl 静态载荷 + 完整 IANA zoneinfo）
 ```
 
 刷之前想先核对一下的话（手机端或电脑端都行）：
 
 ```sh
-sha256sum agent2api-magisk-v3.3.0-beta.6-magisk.10.zip
-cat    agent2api-magisk-v3.3.0-beta.6-magisk.10.zip.sha256
+sha256sum agent2api-magisk-v3.4.0-magisk.34.zip
+cat    agent2api-magisk-v3.4.0-magisk.34.zip.sha256
 ```
 
 ---
