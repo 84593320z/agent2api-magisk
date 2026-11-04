@@ -133,7 +133,7 @@ module/                模块源码（就是打进 zip 的东西）
   zoneinfo/            时区库（约 400 个区）
   settings.conf.example 配置模板
 apk-mod/               手机端 APK 改造
-  src/                 改动过的 6 个前端源文件
+  src/                 改动过的 7 个前端源文件（含新增组件/工具）
   a2a-mobile-mod.patch 对上游 desktop-tauri/mobile 的完整 diff
   repack.py            把重新构建的 Web 产物塞回官方 APK（参数化，不签名）
   sign-tool.sh         发布签名：生成新 keystore / 读指纹 / 拒绝已泄露的旧证书
