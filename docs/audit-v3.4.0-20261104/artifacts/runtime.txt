@@ -1,0 +1,9 @@
+payload_is_static=0
+载荷缺失（/e/AI/tmp/agent2api-audit-20261104/agent-runtime/fixture/payload），请重新刷入模块 zip 恢复
+cmd_start_rc=1 loader_exists=no
+before=nameserver 192.168.1.1
+refresh_rc=0
+after=nameserver 192.168.1.1
+recorded_iface=tun0
+write_rc=0 live_exists=no cache=nameserver 9.9.9.9
+healthy_turns=5 commit_calls=1 pending_exists=yes

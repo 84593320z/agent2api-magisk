@@ -1,0 +1,33 @@
+=== CASE1 health-failure rollback while new service remains alive ===
+本地包更新：/e/AI/tmp/agent2api-audit-20261104/agent-update/cases/live-rollback/local.tar.gz（版本标签 v2.0.0）
+上游版本：v2.0.0
+当前版本：1.0.0
+下载校验文件…
+  SHA-256 校验通过
+停止服务并核实退出…
+SVC_STOP
+制作数据快照…
+安装新载荷并校验…
+安装载荷：2.0.0（built=2026-11-04T04:04:50Z）
+载荷已切换：1.0.0 -> 2.0.0
+SVC_START_NEW
+新版健康检查失败，正在回滚载荷与数据…
+已回滚到 1.0.0
+DATA_ROLLBACK service_alive=1
+LIVE_WRITER changed_restored_db=new-service-write-after-restore
+SVC_RESTART after_restore db=new-service-write-after-restore
+旧版已恢复并通过健康检查
+update_rc=1 payload=1.0.0 db=new-service-write-after-restore
+=== CASE2 quick reboot after first payload rename ===
+crash_exit=77 old_before=1
+payload_exists=no old_after=0 switching=yes
+[2026-11-04 12:04:56] 载荷不完整但切换标记仅 0s（<=120s），跳过恢复等下轮
+=== CASE3 power loss during data rollback rename window ===
+crash_exit=78 data_exists=no
+data_files=0 restore_dirs=0 upgraded_dirs=1 snapshot_db=original
+=== CASE4 subsequent customize cleanup destroys pending rollback payload ===
+pending_before=present
+pending_after=absent marker_preserved=yes
+=== NEGATIVE CONTROL (not a finding): direct API with stale snapshot and missing txid ===
+snapshot_rc=0 snapshot_taken=0
+rollback_rc=0 restored=stale-secret

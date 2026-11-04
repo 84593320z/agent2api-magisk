@@ -1,0 +1,37 @@
+Keystore type: PKCS12
+Keystore provider: SUN
+
+Your keystore contains 1 entry
+
+Alias name: a2a
+Creation date: Oct 19, 2026
+Entry type: PrivateKeyEntry
+Certificate chain length: 1
+Certificate[1]:
+Owner: CN=Agent2API Mod, OU=local, O=local, L=local, ST=local, C=CN
+Issuer: CN=Agent2API Mod, OU=local, O=local, L=local, ST=local, C=CN
+Serial number: 2741c9f21815b08c
+Valid from: Mon Oct 19 16:47:41 CST 2026 until: Fri Mar 06 16:47:41 CST 2054
+Certificate fingerprints:
+	 SHA1: 0A:62:64:5C:0A:BD:3B:2B:7A:B4:E0:4E:13:F8:74:C3:8A:F4:DC:D5
+	 SHA256: B1:8B:0E:B2:07:83:29:A9:96:33:22:E8:7F:47:66:99:43:65:5D:B8:57:AA:06:C0:76:DD:86:83:65:C0:BF:15
+Signature algorithm name: SHA384withRSA
+Subject Public Key Algorithm: 2048-bit RSA key
+Version: 3
+
+Extensions: 
+
+#1: ObjectId: 2.5.29.14 Criticality=false
+SubjectKeyIdentifier [
+KeyIdentifier [
+0000: 02 6D FC 57 81 83 22 79   1D 80 55 81 7F C7 57 7E  .m.W.."y..U...W.
+0010: 52 F5 60 49                                        R.`I
+]
+]
+
+
+
+*******************************************
+*******************************************
+
+

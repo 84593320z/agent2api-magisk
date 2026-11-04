@@ -1,0 +1,4 @@
+CASE1 delayed GET after confirmed PUT: display=false server=true
+CASE2 concurrent busyId=b; first toggle a is enabled while write a is pending
+CASE2 reordered full responses: display.b=false server.b=true
+2 UI race scenarios reproduced from original load/toggle function bodies
