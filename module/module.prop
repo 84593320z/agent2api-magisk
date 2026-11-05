@@ -1,7 +1,7 @@
 id=agent2api
 name=Agent2API 服务端 (arm64)
-version=v3.4.1 (magisk.37)
-versionCode=2026110437
+version=v3.4.2 (magisk.38)
+versionCode=2026110538
 author=aimod-cc / Magisk 移植
-description=模块 v3.4.1 magisk.37｜内置 glibc 动态载荷 v3.4.1 / 官方 UI；修复官方新插件同步启动、运行 TMPDIR 与安装清理隔离；保留事务恢复、DNS 身份与前端一致性修复。
+description=模块 v3.4.2 magisk.38｜内置 glibc 动态载荷 v3.4.2 / 官方 UI；修复官方新插件同步启动、运行 TMPDIR 与安装清理隔离；保留事务恢复、DNS 身份与前端一致性修复。
 updateJson=

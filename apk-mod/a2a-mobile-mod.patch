@@ -1,5 +1,5 @@
 diff --git a/desktop-tauri/mobile/src/App.tsx b/desktop-tauri/mobile/src/App.tsx
-index ed1fbc4..2c901c1 100644
+index ed1fbc4ddd26ef255e6535369441fe775606f0cf..2c901c1dccab25de75b8022b2052fa0ee30c49fd 100644
 --- a/desktop-tauri/mobile/src/App.tsx
 +++ b/desktop-tauri/mobile/src/App.tsx
 @@ -1,4 +1,4 @@
@@ -62,7 +62,7 @@ index ed1fbc4..2c901c1 100644
     *
 diff --git a/desktop-tauri/mobile/src/api/switches.ts b/desktop-tauri/mobile/src/api/switches.ts
 new file mode 100644
-index 0000000..1410d05
+index 0000000000000000000000000000000000000000..1410d056e1af0fb6f06333c3e335fd07f15c4c9b
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/api/switches.ts
 @@ -0,0 +1,210 @@
@@ -278,7 +278,7 @@ index 0000000..1410d05
 +}
 diff --git a/desktop-tauri/mobile/src/components/GatewaySwitches.tsx b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
 new file mode 100644
-index 0000000..aed51a5
+index 0000000000000000000000000000000000000000..aed51a556bc713f9ef8ad55f79c3549a2f9994b9
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/components/GatewaySwitches.tsx
 @@ -0,0 +1,182 @@
@@ -466,7 +466,7 @@ index 0000000..aed51a5
 +}
 diff --git a/desktop-tauri/mobile/src/lib/discover.ts b/desktop-tauri/mobile/src/lib/discover.ts
 new file mode 100644
-index 0000000..d0af614
+index 0000000000000000000000000000000000000000..d0af61486f990e963f9c7e48052a853217bb45b5
 --- /dev/null
 +++ b/desktop-tauri/mobile/src/lib/discover.ts
 @@ -0,0 +1,139 @@
@@ -610,7 +610,7 @@ index 0000000..d0af614
 +  return found
 +}
 diff --git a/desktop-tauri/mobile/src/pages/ServersPage.tsx b/desktop-tauri/mobile/src/pages/ServersPage.tsx
-index 9e53104..d9c546c 100644
+index 9e53104c061845e9335c4508ef16881d4ed1d3d2..d9c546c981ef93a564d7088849da3e1b2dc93c13 100644
 --- a/desktop-tauri/mobile/src/pages/ServersPage.tsx
 +++ b/desktop-tauri/mobile/src/pages/ServersPage.tsx
 @@ -4,6 +4,7 @@ import { PageHead, PageIntro, SectionHead, ErrorNote } from '../components/ui'
@@ -741,7 +741,7 @@ index 9e53104..d9c546c 100644
        {editing ? (
          <div className='m-section' style={{ marginTop: 0 }}>
 diff --git a/desktop-tauri/mobile/src/pages/SettingsPage.tsx b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
-index f1a061d..285081c 100644
+index 36371080a451bc338b2112539836bca5b56cecb4..ba41f017e788c90420154f4ea4758a9d6e79d999 100644
 --- a/desktop-tauri/mobile/src/pages/SettingsPage.tsx
 +++ b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
 @@ -9,6 +9,7 @@ import { usePwa } from '../lib/usePwa'
@@ -752,7 +752,7 @@ index f1a061d..285081c 100644
  import { CommunitySheet } from '../components/CommunitySheet'
  import { SystemInfoSheet } from '../components/SystemInfoSheet'
  import { apiBase, baseLabel, serverIdentity } from '../lib/servers'
-@@ -188,6 +189,9 @@ export function SettingsPage() {
+@@ -196,6 +197,9 @@ export function SettingsPage() {
          </Card>
        </div>
  

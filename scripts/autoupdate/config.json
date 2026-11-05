@@ -2,12 +2,27 @@
   "upstream": "aimod-cc/Agent2API",
   "repository": "84593320z/agent2api-magisk",
   "branch": "main",
-  "last_version": "3.4.1",
-  "last_commit": "3ff4b8215d0d65c3451ca74923e90964ed7dbf59",
-  "module_revision": 37,
-  "mobile_version_code": 30401,
+  "last_version": "3.4.2",
+  "last_commit": "e8bed7397aaf9d8962489074557c2f1f1a8d4f97",
+  "module_revision": 38,
+  "mobile_version_code": 30402,
   "certificate_sha256": "d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f",
   "asset": "agent2api-server-linux-arm64.tar.gz",
   "max_asset_bytes": 104857600,
-  "max_source_bytes": 209715200
+  "max_source_bytes": 209715200,
+  "last_plan": {
+    "changed": true,
+    "version": "3.4.2",
+    "tag": "v3.4.2",
+    "commit": "e8bed7397aaf9d8962489074557c2f1f1a8d4f97",
+    "release_id": 434912365,
+    "published_at": "2026-11-05T07:53:41Z",
+    "asset_id": 712555235,
+    "asset_size": 13845969,
+    "asset_sha256": "d7881978fdeb6c78e8e6cb49665387e019e05f326fea3100bfe6b0c43073bef3",
+    "upstream": "aimod-cc/Agent2API",
+    "module_revision": 38,
+    "mobile_version_code": 30402,
+    "run_id": "42016197285"
+  }
 }
