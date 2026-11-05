@@ -54,4 +54,21 @@ sh test/run.sh --full
 
 ## 当前部署记录
 
-本次实现从 magisk.37 的已发布提交 `185b17bfde6d884cd2c2bf90ecc4a4dbb8a084a7` 起步；历史模块及 APK Release 保留。真实 Actions 试运行结果在部署验收记录中追加。
+本次实现从 magisk.37 的已发布提交 `185b17bfde6d884cd2c2bf90ecc4a4dbb8a084a7` 起步；历史模块及 APK Release 保留。
+
+已部署提交与真实 Actions 结果：
+
+| 提交 | 内容 |
+|---|---|
+| `a27dcab` | 自动化脚本与工作流上线，Actions 启用、默认只读、四项 Android Secret 已加密配置 |
+| `0b5fa40` | 覆盖上游 `mobile/android/gradle.properties` 写死的 Windows JDK 路径（命令行 `-Dorg.gradle.java.home` 优先） |
+| `1a6a9dd` | 候选 module 元数据保真：保留 description 手写说明（仅滚动 `载荷 vX.Y.Z`，r18 依赖）、保留 `seed/VERSION` 注释/键序/`commit=` |
+
+| 运行 | 结论 |
+|---|---|
+| [41846700236](https://github.com/84593320z/agent2api-magisk/actions/runs/41846700236) | 首次真实运行：detect/selftest/fetch 通过，build 因上述 JDK 路径失败；failure job 自动创建 [PR #1](https://github.com/84593320z/agent2api-magisk/pull/1)（仅脱敏故障记录），sign/publish 跳过，历史 Release 未动 |
+| [41848561601](https://github.com/84593320z/agent2api-magisk/actions/runs/41848561601) | 修复后 smoke（`build_current=true`）：build/sign 通过，publish 按 smoke 语义跳过；制品离线复验 APK 证书 `d0ca6713…b15f`、180 个 Web 资源、provenance/ELF 均 PASS，全回归 `=== 全部通过 ===` |
+| [41915346028](https://github.com/84593320z/agent2api-magisk/actions/runs/41915346028) | 每小时调度：同版本游标下仅 detect/selftest 运行，构建与发布全部跳过，无副作用（幂等已实测） |
+| [41955097236](https://github.com/84593320z/agent2api-magisk/actions/runs/41955097236) | 元数据保真修复后 smoke：模块 ZIP 953 成员、CRC 通过、`metadata_fidelity=true`（description 说明保留、`载荷 v3.4.1` 计数 1、`seed/VERSION` 注释与 `commit=3ff4b82…` 保留），APK SHA 与证书同前 |
+
+尚未实测的部分：上游发布新版本时的真实 publish（当前游标 3.4.1 已作为 magisk.37 发布，无新版本可发布）、中断后跨运行恢复走的是单元测试与本地演练。CI 不连接手机。
