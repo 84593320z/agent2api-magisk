@@ -26,6 +26,17 @@ SPEC = importlib.util.spec_from_file_location('autoupdate_server', ROOT / 'scrip
 server = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(server)
 
+# Auto-sync advances module.prop and seed/VERSION without rewriting tests.
+# Derive the next legal metadata transition instead of pinning magisk.37/3.4.1.
+SEED_VERSION = re.search(r'^ver=([0-9.]+)$', (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8'), re.M).group(1)
+SEED_BUILT = re.search(r'^built=([^\n]+)$', (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8'), re.M).group(1)
+PROP_MATCH = re.search(r'^version=v([^ ]+) \(magisk\.([0-9]+)\)$',
+                       (ROOT / 'module/module.prop').read_text(encoding='utf-8'), re.M)
+NEXT_REVISION = int(PROP_MATCH.group(2)) + 1
+import datetime as dt
+NEXT_BUILT = (dt.datetime.fromisoformat(SEED_BUILT.replace('Z', '+00:00')) + dt.timedelta(days=1)).isoformat().replace('+00:00', 'Z')
+NEXT_VERSION_CODE = int(NEXT_BUILT[:10].replace('-', '')) * 100 + NEXT_REVISION
+
 
 def file_entry(name, body=b'x', kind=tarfile.REGTYPE, size=None):
     info = tarfile.TarInfo(name)
@@ -194,7 +205,7 @@ class ArchiveTests(unittest.TestCase):
         with patch.object(server, 'elf_report', return_value={'status': 'PASS'}), \
                 patch.object(server, 'pack_twice', side_effect=server.ValidationError('synthetic pack failure')):
             with self.assertRaisesRegex(server.ValidationError, 'pack failure'):
-                server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo,
+                server.sync(self.archive, sha, SEED_VERSION, NEXT_BUILT, NEXT_REVISION, self.dir / 'out', repo,
                             commit='b' * 40)
         self.assertEqual(before, server.regular_tree(repo / 'module'))
         self.assertFalse((self.dir / 'out').exists())
@@ -206,7 +217,7 @@ class ArchiveTests(unittest.TestCase):
         before = server.regular_tree(repo / 'module')
         sha = self.archive_of(BASE)
         with self.assertRaises(Exception):
-            server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo,
+            server.sync(self.archive, sha, SEED_VERSION, NEXT_BUILT, NEXT_REVISION, self.dir / 'out', repo,
                         commit='b' * 40)
         self.assertEqual(before, server.regular_tree(repo / 'module'))
         self.assertFalse((self.dir / 'out').exists())
@@ -228,12 +239,13 @@ class MetadataAndElfTests(unittest.TestCase):
         self.assertFalse(check('METRIC binary=\n'))
 
     def test_metadata_valid_and_monotonic(self):
-        prop, version, name = server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'a' * 64,
+        prop, version, name = server.metadata(ROOT / 'module', SEED_VERSION, NEXT_BUILT, NEXT_REVISION, 'a' * 64,
                                                'b' * 40)
-        self.assertIn(b'versionCode=2026110438', prop)
+        self.assertIn(f'versionCode={NEXT_VERSION_CODE}'.encode(), prop)
         self.assertIn(b'archive_sha256=' + b'a' * 64, version)
         self.assertIn(b'commit=' + b'b' * 40, version)
-        self.assertEqual(name, 'v3.4.1 (magisk.38)')
+        self.assertIn(b'updateJson=https://raw.githubusercontent.com/84593320z/agent2api-magisk/main/update.json', prop)
+        self.assertEqual(name, f'v{SEED_VERSION} (magisk.{NEXT_REVISION})')
 
     def test_metadata_preserves_repo_tracked_text(self):
         """Only generated fields change: description body, VERSION comments and key order survive."""
@@ -241,11 +253,11 @@ class MetadataAndElfTests(unittest.TestCase):
         body = source.split('description=', 1)[1].split('\n', 1)[0].split('｜', 1)[1]
         seed_lines = (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8').splitlines()
         comments = [n for n in seed_lines if n.startswith('#')]
-        prop, version, _ = server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'c' * 64,
+        prop, version, _ = server.metadata(ROOT / 'module', SEED_VERSION, NEXT_BUILT, NEXT_REVISION, 'c' * 64,
                                            'd' * 40)
         text, seed = prop.decode('utf-8'), version.decode('utf-8')
         self.assertIn(body, text)
-        self.assertIn('模块 v3.4.1 magisk.38｜', text)
+        self.assertIn(f'模块 v{SEED_VERSION} magisk.{NEXT_REVISION}｜', text)
         self.assertEqual([n for n in seed.splitlines() if n.startswith('#')], comments)
         self.assertEqual([n.split('=', 1)[0] for n in seed.splitlines() if '=' in n and not n.startswith('#')],
                          [n.split('=', 1)[0] for n in seed_lines if '=' in n and not n.startswith('#')])
@@ -257,14 +269,15 @@ class MetadataAndElfTests(unittest.TestCase):
         """A future version must update '载荷 vX.Y.Z' (r18 greps it) without losing hand-written notes."""
         old = (ROOT / 'module/module.prop').read_text(encoding='utf-8')
         body = old.split('description=', 1)[1].split('\n', 1)[0].split('｜', 1)[1]
-        notes = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v3.4.2', body)
-        prop, _, name = server.metadata(ROOT / 'module', '3.4.2', '2026-11-05T09:17:30Z', 38, 'a' * 64, 'b' * 40)
+        future = SEED_VERSION.rsplit('.', 1)[0] + '.' + str(int(SEED_VERSION.rsplit('.', 1)[1]) + 1)
+        notes = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v' + future, body)
+        prop, _, name = server.metadata(ROOT / 'module', future, NEXT_BUILT, NEXT_REVISION, 'a' * 64, 'b' * 40)
         text = prop.decode('utf-8')
         line = text.split('description=', 1)[1].split('\n', 1)[0]
-        self.assertEqual(line, '模块 v3.4.2 magisk.38｜' + notes)
-        self.assertEqual(text.count('载荷 v3.4.2'), 1)
-        self.assertNotIn('载荷 v3.4.1', text)
-        self.assertEqual(name, 'v3.4.2 (magisk.38)')
+        self.assertEqual(line, f'模块 v{future} magisk.{NEXT_REVISION}｜' + notes)
+        self.assertEqual(text.count('载荷 v' + future), 1)
+        self.assertNotIn('载荷 v' + SEED_VERSION, text)
+        self.assertEqual(name, f'v{future} (magisk.{NEXT_REVISION})')
 
     def test_metadata_rejects_injection_rollback_and_nonmonotonic(self):
         cases = [('v3.4.1', '2026-11-04T09:17:30Z', 38),
@@ -287,14 +300,14 @@ class MetadataAndElfTests(unittest.TestCase):
                     server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'a' * 64, bad)
 
     def test_real_seed_elf_closure(self):
-        report = server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.1')
+        report = server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', SEED_VERSION)
         self.assertEqual(report['status'], 'PASS')
         self.assertTrue(report['all_strong_imports_resolved'])
         self.assertEqual(len(report['files']), 11)
 
     def test_binary_string_must_match_exactly(self):
         with self.assertRaisesRegex(server.ValidationError, 'version strings'):
-            server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.2')
+            server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '0.0.0')
 
     def test_unversioned_strong_symbol_is_checked(self):
         original = server.inspect_elf
@@ -305,7 +318,7 @@ class MetadataAndElfTests(unittest.TestCase):
             return info
         with patch.object(server, 'inspect_elf', side_effect=missing_symbol):
             with self.assertRaisesRegex(server.ValidationError, 'missing strong symbol'):
-                server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.1')
+                server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', SEED_VERSION)
 
     def test_missing_dependency_and_gnu_version_rejected(self):
         original = server.inspect_elf
@@ -320,7 +333,7 @@ class MetadataAndElfTests(unittest.TestCase):
                 return info
             with self.subTest(fault=fault), patch.object(server, 'inspect_elf', side_effect=broken):
                 with self.assertRaisesRegex(server.ValidationError, 'ELF closure failure'):
-                    server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.1')
+                    server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', SEED_VERSION)
 
     def test_bad_interpreter_rejected(self):
         original = server.inspect_elf
@@ -331,7 +344,7 @@ class MetadataAndElfTests(unittest.TestCase):
             return info
         with patch.object(server, 'inspect_elf', side_effect=bad_interpreter):
             with self.assertRaisesRegex(server.ValidationError, 'interpreter'):
-                server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.1')
+                server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', SEED_VERSION)
 
 
 @unittest.skipUnless(os.environ.get('A2A_TEST_OFFICIAL_ARCHIVE'), 'set A2A_TEST_OFFICIAL_ARCHIVE to cached official tar')

@@ -259,6 +259,18 @@ def _rewrite_version(text, updates, order):
     return '\n'.join(out) + '\n'
 
 
+def update_json_url():
+    """Stable raw URL consumed by Magisk; effective once the repository is public."""
+    config = json.loads((ROOT / 'scripts/autoupdate/config.json').read_text(encoding='utf-8'))
+    repo = config.get('repository', '')
+    branch = config.get('branch', 'main')
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo):
+        return ''
+    if not re.fullmatch(r'[A-Za-z0-9._/-]+', branch):
+        return ''
+    return f'https://raw.githubusercontent.com/{repo}/{branch}/update.json'
+
+
 def metadata(module, version, built, revision, archive_hash, commit):
     require(VERSION_RE.fullmatch(version) is not None, 'version must be canonical X.Y.Z')
     require(re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)', built) is not None,
@@ -288,6 +300,11 @@ def metadata(module, version, built, revision, archive_hash, commit):
     prop = re.sub(r'^description=.*$',
                   lambda _m: 'description=' + _description(described.group(1), version, revision),
                   prop, flags=re.M)
+    update_line = 'updateJson=' + update_json_url()
+    if re.search(r'^updateJson=', prop, re.M):
+        prop = re.sub(r'^updateJson=.*$', update_line, prop, flags=re.M)
+    else:
+        prop = prop.rstrip('\n') + '\n' + update_line + '\n'
     seed_path = module / 'seed/VERSION'
     seed_text = seed_path.read_text(encoding='utf-8') if seed_path.exists() else ''
     updates = {'ver': version, 'built': built, 'arch': 'aarch64',

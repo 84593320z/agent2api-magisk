@@ -7,19 +7,20 @@
 
 ---
 
-## 最新版本：v3.4.1 / magisk.37
+<!-- AUTO-LATEST-BEGIN -->
+## 最新版本：v3.4.2 / magisk.38
 
-magisk.37 在已发布的 magisk.36 上修复 Android 官方新插件启动及运行临时目录问题；服务端仍为 3.4.1，APK 沿用现有 3.4.1-mod。
+自动同步上游 `v3.4.2`，精确源码 `e8bed7397aaf9d8962489074557c2f1f1a8d4f97`。
 
-- **[下载 Magisk / KernelSU 模块 v3.4.1 · magisk.37](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.4.1-magisk.37)**：`agent2api-magisk-v3.4.1-magisk.37-arm64.zip`（也可运行 `python pack.py` 生成）。
-- **[下载手机端 APK 3.4.1-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.4.1-mod)**：`Agent2API-3.4.1-mod.apk`，包名 `com.agent2api.mobile.mod`，版本 `3.4.1 / 30401`。
-- 校验清单、完整升级补丁与变更文件 ZIP 随模块 Release 附带；发布说明见 [magisk.37](docs/release-magisk37.md)，此前升级说明见 [magisk.36](docs/release-3.4.1.md)。
-- 升级验收：[docs/upgrade-3.4.1/report.md](docs/upgrade-3.4.1/report.md)。
-- 上轮修复：[docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md](docs/repair-20261104/2026-11-04_修复验收-agent2api-v3.4.0-report.md)。
+- **[下载 Magisk / KernelSU 模块 v3.4.2 · magisk.38](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.4.2-magisk.38)**：`agent2api-magisk-v3.4.2-magisk.38-arm64.zip`。
+- **[下载手机端 APK 3.4.2-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.4.2-mod)**：`Agent2API-3.4.2-mod.apk`，包名 `com.agent2api.mobile.mod`，版本 `3.4.2 / 30402`。
+- 校验清单、构建来源与验收证据随模块 Release 附带；历史版本的手工验收报告仍保留在 [docs/](docs/)。
+- 模块内更新只替换服务端与面板；仓库公开后，手机端 APK 可在设备上运行 `a2a apk-update` 下载、校验并覆盖安装。
+<!-- AUTO-LATEST-END -->
 
 ### 上游自动同步
 
-仓库现包含每小时检测、精确来源校验、模块与手机端构建、分离原证书签名、幂等 Release 和失败 PR 的 Actions。手动试运行选择 `build_current=true`，仅生成验收 artifacts；使用和恢复机制见 [自动同步说明](docs/auto-sync.md)。
+仓库现包含每小时检测、精确来源校验、模块与手机端构建、分离原证书签名、幂等 Release 和失败 PR 的 Actions。每次发布会一并重写上方版本区与根目录 `update.json`；`module.prop` 的 `updateJson` 指向该文件，仓库公开后 Magisk 管理器即可检查模块更新（私有仓库的 raw URL 无法匿名读取）。手动试运行选择 `build_current=true`，仅生成验收 artifacts；使用和恢复机制见 [自动同步说明](docs/auto-sync.md)。
 
 ### magisk.37 真机修复
 
@@ -88,7 +89,7 @@ boot-worker 统一开机入口、卸载零删除保护、DNS 三态还原、WebU
 | 产物 | 说明 | 怎么得到 |
 |---|---|---|
 | `agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip` | Magisk / KernelSU 模块包（模块壳 + 内置服务端） | `python pack.py` → `dist/` |
-| `Agent2API-3.4.1-mod.apk` | 改造过的手机端 APK（v3.4.1 源码构建） | `apk-mod/README-mod.md` 的完整 gradle 流程 |
+| `Agent2API-X.Y.Z-mod.apk` | 改造过的手机端 APK（与模块同步构建、独立 `apk-v*-mod` Release） | 上方最新版本 / `a2a apk-update` |
 | `docs/*.md` | 审计报告与修复自查报告 | — |
 
 ---
@@ -162,8 +163,10 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor'    # 一键自检
 ### 2. 装手机端 APK
 
 ```bash
-# 已安装相同 mod 发布证书的 3.4.0-mod：保留配置覆盖安装
-adb install -r Agent2API-3.4.1-mod.apk
+# 已安装相同 mod 发布证书的 .mod：保留配置覆盖安装
+adb install -r Agent2API-<上游版本>-mod.apk
+# 仓库公开后，可在已装模块的手机上自动取对应 APK、核验 Release SHA256SUMS 后覆盖安装：
+su -c 'sh /data/adb/agent2api/bin/a2a apk-update'
 # 旧世代 com.agent2api.mobile 的迁移步骤见 apk-mod/release-migration.md
 ```
 

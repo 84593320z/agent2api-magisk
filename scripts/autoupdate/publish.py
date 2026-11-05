@@ -10,6 +10,7 @@ import urllib.parse
 import urllib.request
 from control import dump, request, version, release_refs
 from bundle import ROOT, apply, checkpoint_plan
+from docs_sync import sync as sync_docs
 
 REPO = '84593320z/agent2api-magisk'
 BASE = 'https://api.github.com/repos/' + REPO
@@ -21,7 +22,7 @@ def api(path, method='GET', data=None):
 def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
-def commit_candidate(plan, archive, expected, branch='main'):
+def commit_candidate(plan, archive, expected, zip_sha256, branch='main'):
     if git('rev-parse', 'HEAD') != expected or git('status', '--porcelain'):
         raise ValueError('Trusted checkout differs from expected clean baseline')
     if api('/git/ref/heads/main')['object']['sha'] != expected:
@@ -30,20 +31,26 @@ def commit_candidate(plan, archive, expected, branch='main'):
     config = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
     if config['last_version'] != plan['version'] or config['last_commit'] != plan['commit']:
         raise ValueError('Candidate provenance/config mismatch')
+    def stage(name):
+        data = (ROOT/name).read_bytes()
+        if re.search(rb'(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)', data):
+            raise ValueError('Secret-shaped candidate content')
+        mode = '100644'
+        old = git('ls-files', '-s', '--', name).split()
+        if old:
+            mode = old[0]
+        blob = git('hash-object', '-w', '--no-filters', '--', name)
+        git('update-index', '--add', '--cacheinfo', mode, blob, name)
     for row in rows:
         name = row['path']
         if row['deleted']:
             git('update-index', '--remove', '--', name)
         else:
-            data = (ROOT/name).read_bytes()
-            if re.search(rb'(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)', data):
-                raise ValueError('Secret-shaped candidate content')
-            mode = '100644'
-            old = git('ls-files', '-s', '--', name).split()
-            if old:
-                mode = old[0]
-            blob = git('hash-object', '-w', '--no-filters', '--', name)
-            git('update-index', '--add', '--cacheinfo', mode, blob, name)
+            stage(name)
+    # README and Magisk update.json are derived from the signed plan and the
+    # candidate module.prop, so they belong to the same checkpoint commit.
+    for name in sync_docs(ROOT, plan, config['repository'], zip_sha256):
+        stage(name)
     git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', f"chore: sync upstream {plan['tag']} (magisk.{plan['module_revision']})")
     commit = git('rev-parse', 'HEAD')
     subprocess.run(['git', '-C', str(ROOT), 'push', 'origin', 'HEAD:refs/heads/'+branch], check=True)
@@ -143,7 +150,8 @@ def publish(a):
         assert cfg['last_commit']==plan['commit']
         commit = recovery_commit(plan)
     else:
-        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected)
+        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected,
+                                  hashlib.sha256(module.read_bytes()).hexdigest())
     sums = a.artifacts/'SHA256SUMS.txt'
     sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files), encoding='utf-8')
     body = f"自动同步上游 {plan['tag']}，精确源码 `{plan['commit']}`。\n\n模块保留 Android 启动桥接、事务恢复与 DNS 修复；手机端保留开关写屏障/严格回显。APK 使用既有 .mod 证书。完整离线回归、ELF闭包、资源与签名核验通过；CI 不替代真机验收。\n\n源码提交 `{commit}`。安装旧包 com.agent2api.mobile 的用户须按迁移文档重建配置；既有同签名 .mod 可覆盖升级。\n"

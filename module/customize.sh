@@ -402,6 +402,7 @@ ui_print " 手机: 打开浏览器访问上面的地址，或在模块 App 里�
 ui_print " "
 ui_print " 出问题先跑：su -c 'sh /data/adb/agent2api/bin/a2a doctor'"
 ui_print " 看日志   ：su -c 'sh /data/adb/agent2api/bin/a2a logs 50'"
+ui_print " 更新 APK ：su -c 'sh /data/adb/agent2api/bin/a2a apk-update'"
 ui_print " "
 ui_print " 服务会等系统启动完成 + 网络就绪后自动拉起（约 10~60 秒）"
 ui_print " 不想自动启动：a2a config autostart 0"

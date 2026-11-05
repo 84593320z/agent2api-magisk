@@ -7,6 +7,7 @@
 #   a2a restart           重启
 #   a2a logs [行数] [流]  看日志（流：server / sup / app / all，默认 all 30 行）
 #   a2a update [--beta] [--force]   在线升级载荷（带校验与自动回滚）
+#   a2a apk-update [版本]           下载并覆盖安装 .mod APK（root，校验 Release SHA-256）
 #   a2a rollback [--with-data]       回滚到上一个版本（--with-data 连数据快照一起恢复）
 #   a2a dns [refresh|probe]         看 / 刷新 / 测试 DNS
 #   a2a doctor            全身体检（出问题先跑这个）
@@ -610,6 +611,72 @@ cmd_doctor() {
   say "如果上面有 FAIL：先看 $SRVLOG 最后 50 行，再来找我。"
 }
 
+# APK 与服务端是两条发布线：a2a update 只替换 payload/server 与 ui。
+# 这里从本模块版本推出对应 apk-vX.Y.Z-mod Release，先校验发布方
+# SHA256SUMS，再交给 pm 做同签名覆盖安装；签名不同必须由 pm 明确失败。
+cmd_apk_update() (
+  if [ $# -gt 1 ]; then
+    say "用法：a2a apk-update [上游版本，如 3.4.2]"
+    return 2
+  fi
+  if [ "$(id -u 2>/dev/null)" != "0" ]; then
+    say "APK 覆盖安装需要 root：su -c 'a2a apk-update'"
+    return 1
+  fi
+  _av="${1:-}"
+  if [ -z "$_av" ]; then
+    _av=$(module_version | sed -n 's/^v\([^ ]*\).*/\1/p')
+  fi
+  if ! printf '%s' "$_av" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    say "无法确定 APK 版本，请显式指定：a2a apk-update 3.4.2"
+    return 2
+  fi
+
+  # 复用 updater 的镜像与 curl/TLS 降级链，不另写一套下载器。
+  . "$MODDIR/libexec/updater.sh"
+  _apk_repo=$(cfg_get apk_repo "84593320z/agent2api-magisk")
+  case "$_apk_repo" in
+    */*) ;;
+    *) _apk_repo="84593320z/agent2api-magisk" ;;
+  esac
+  _apk_name="Agent2API-${_av}-mod.apk"
+  _apk_base="https://github.com/${_apk_repo}/releases/download/apk-v${_av}-mod"
+  _apk_tmp="$RUNDIR/apk-update.$$"
+  mkdir -p "$_apk_tmp" || { say "无法创建临时目录：$_apk_tmp"; return 1; }
+  trap 'rm -f "$_apk_tmp/SHA256SUMS.txt" "$_apk_tmp/$_apk_name" 2>/dev/null; rmdir "$_apk_tmp" 2>/dev/null' EXIT HUP INT TERM
+
+  say "目标 APK：$_apk_name"
+  if ! upd_curl -fL --max-time 60 -o "$_apk_tmp/SHA256SUMS.txt" \
+      "$(mirror_url "$_apk_base/SHA256SUMS.txt")"; then
+    say "下载 SHA256SUMS.txt 失败：该版本可能尚未发布，或网络/镜像不可用"
+    return 1
+  fi
+  _apk_sha=$(awk -v f="$_apk_name" '$2 == f { print $1; exit }' "$_apk_tmp/SHA256SUMS.txt")
+  if ! printf '%s' "$_apk_sha" | grep -Eq '^[0-9a-f]{64}$'; then
+    say "校验清单里没有 $_apk_name 的有效 SHA-256，停止安装"
+    return 1
+  fi
+  if ! upd_curl -fL --max-time 300 -o "$_apk_tmp/$_apk_name" \
+      "$(mirror_url "$_apk_base/$_apk_name")"; then
+    say "APK 下载失败"
+    return 1
+  fi
+  _apk_actual=$(sha256_of "$_apk_tmp/$_apk_name")
+  if [ -z "$_apk_actual" ] || [ "$_apk_actual" != "$_apk_sha" ]; then
+    say "APK 校验失败：期望 $_apk_sha，实际 ${_apk_actual:-<无法计算>}"
+    return 1
+  fi
+  say "SHA-256 校验通过，开始覆盖安装（不同签名会被 pm 拒绝）"
+  _apk_out=$(pm install -r "$_apk_tmp/$_apk_name" 2>&1)
+  _apk_rc=$?
+  [ -n "$_apk_out" ] && printf '%s\n' "$_apk_out"
+  if [ "$_apk_rc" != "0" ] || ! printf '%s' "$_apk_out" | grep -q 'Success'; then
+    say "APK 安装失败；若是签名冲突，请按 apk-mod/release-migration.md 迁移"
+    return 1
+  fi
+  say "APK 已更新到 ${_av}-mod"
+)
+
 cmd_help() {
   # 打印文件头的注释块：从第 3 行开始，跳过首尾的 ==== 分隔线，
   # 遇到第一行不是注释就停。以前写死 sed -n '3,18p'，文件头一长一短
@@ -627,6 +694,7 @@ case "${1:-status}" in
   restart)  cmd_restart ;;
   logs)     shift; cmd_logs "$@" ;;
   update)   shift; cmd_update "$@" ;;
+  apk-update) shift; cmd_apk_update "$@" ;;
   rollback) shift; cmd_rollback "$@" ;;
   desc)     shift; cmd_desc "$@" ;;
   dns)      shift; cmd_dns "$@" ;;
