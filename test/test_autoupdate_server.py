@@ -12,6 +12,7 @@ import importlib.util
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -193,7 +194,8 @@ class ArchiveTests(unittest.TestCase):
         with patch.object(server, 'elf_report', return_value={'status': 'PASS'}), \
                 patch.object(server, 'pack_twice', side_effect=server.ValidationError('synthetic pack failure')):
             with self.assertRaisesRegex(server.ValidationError, 'pack failure'):
-                server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo)
+                server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo,
+                            commit='b' * 40)
         self.assertEqual(before, server.regular_tree(repo / 'module'))
         self.assertFalse((self.dir / 'out').exists())
 
@@ -204,7 +206,8 @@ class ArchiveTests(unittest.TestCase):
         before = server.regular_tree(repo / 'module')
         sha = self.archive_of(BASE)
         with self.assertRaises(Exception):
-            server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo)
+            server.sync(self.archive, sha, '3.4.1', '2026-11-04T09:17:30Z', 38, self.dir / 'out', repo,
+                        commit='b' * 40)
         self.assertEqual(before, server.regular_tree(repo / 'module'))
         self.assertFalse((self.dir / 'out').exists())
 
@@ -225,10 +228,43 @@ class MetadataAndElfTests(unittest.TestCase):
         self.assertFalse(check('METRIC binary=\n'))
 
     def test_metadata_valid_and_monotonic(self):
-        prop, version, name = server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'a' * 64)
+        prop, version, name = server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'a' * 64,
+                                               'b' * 40)
         self.assertIn(b'versionCode=2026110438', prop)
         self.assertIn(b'archive_sha256=' + b'a' * 64, version)
+        self.assertIn(b'commit=' + b'b' * 40, version)
         self.assertEqual(name, 'v3.4.1 (magisk.38)')
+
+    def test_metadata_preserves_repo_tracked_text(self):
+        """Only generated fields change: description body, VERSION comments and key order survive."""
+        source = (ROOT / 'module/module.prop').read_text(encoding='utf-8')
+        body = source.split('description=', 1)[1].split('\n', 1)[0].split('｜', 1)[1]
+        seed_lines = (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8').splitlines()
+        comments = [n for n in seed_lines if n.startswith('#')]
+        prop, version, _ = server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'c' * 64,
+                                           'd' * 40)
+        text, seed = prop.decode('utf-8'), version.decode('utf-8')
+        self.assertIn(body, text)
+        self.assertIn('模块 v3.4.1 magisk.38｜', text)
+        self.assertEqual([n for n in seed.splitlines() if n.startswith('#')], comments)
+        self.assertEqual([n.split('=', 1)[0] for n in seed.splitlines() if '=' in n and not n.startswith('#')],
+                         [n.split('=', 1)[0] for n in seed_lines if '=' in n and not n.startswith('#')])
+        self.assertIn('commit=%s' % ('d' * 40), seed)
+        self.assertEqual([n for n in seed.splitlines() if n.startswith('commit=')],
+                         ['commit=' + 'd' * 40])
+
+    def test_metadata_rolls_payload_version_but_keeps_release_notes(self):
+        """A future version must update '载荷 vX.Y.Z' (r18 greps it) without losing hand-written notes."""
+        old = (ROOT / 'module/module.prop').read_text(encoding='utf-8')
+        body = old.split('description=', 1)[1].split('\n', 1)[0].split('｜', 1)[1]
+        notes = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v3.4.2', body)
+        prop, _, name = server.metadata(ROOT / 'module', '3.4.2', '2026-11-05T09:17:30Z', 38, 'a' * 64, 'b' * 40)
+        text = prop.decode('utf-8')
+        line = text.split('description=', 1)[1].split('\n', 1)[0]
+        self.assertEqual(line, '模块 v3.4.2 magisk.38｜' + notes)
+        self.assertEqual(text.count('载荷 v3.4.2'), 1)
+        self.assertNotIn('载荷 v3.4.1', text)
+        self.assertEqual(name, 'v3.4.2 (magisk.38)')
 
     def test_metadata_rejects_injection_rollback_and_nonmonotonic(self):
         cases = [('v3.4.1', '2026-11-04T09:17:30Z', 38),
@@ -242,7 +278,13 @@ class MetadataAndElfTests(unittest.TestCase):
         for version, built, revision in cases:
             with self.subTest(version=version, built=built, revision=revision):
                 with self.assertRaises(server.ValidationError):
-                    server.metadata(ROOT / 'module', version, built, revision, 'a' * 64)
+                    server.metadata(ROOT / 'module', version, built, revision, 'a' * 64, 'b' * 40)
+
+    def test_metadata_rejects_bad_commit(self):
+        for bad in ('', '3FF4B82', 'z' * 40, 'a' * 39, 'a' * 41):
+            with self.subTest(commit=bad):
+                with self.assertRaisesRegex(server.ValidationError, 'commit'):
+                    server.metadata(ROOT / 'module', '3.4.1', '2026-11-04T09:17:30Z', 38, 'a' * 64, bad)
 
     def test_real_seed_elf_closure(self):
         report = server.elf_report(ROOT / 'module/seed/agent2api-server', ROOT / 'module/seed/lib', '3.4.1')
@@ -309,7 +351,9 @@ class OfficialIntegration(unittest.TestCase):
             process = subprocess.run([sys.executable, str(cli), '--archive', str(archive),
                                       '--sha256', 'd494e333a697ca9b48f17fc84cd10abdbe5f113a2900aba372fdac3503971e1c',
                                       '--version', '3.4.1', '--built', '2026-11-04T09:17:30Z',
-                                      '--module-revision', '38', '--output', str(root / 'evidence')],
+                                      '--module-revision', '38',
+                                      '--commit', '3ff4b8215d0d65c3451ca74923e90964ed7dbf59',
+                                      '--output', str(root / 'evidence')],
                                      capture_output=True, text=True, encoding='utf-8', timeout=120)
             self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
             result = json.loads(process.stdout)

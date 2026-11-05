@@ -27,7 +27,7 @@ with tempfile.TemporaryDirectory(prefix='a2a-mobile-ci-') as temp:
         shutil.copyfile(mobile/name, out/name)
 # Server integration validates before replacing the repo seed or metadata.
 server = out/'server-build'
-run('server.py', '--archive', a.archive.resolve(), '--sha256', plan['asset_sha256'], '--version', plan['version'], '--built', plan['published_at'], '--module-revision', plan['module_revision'], '--output', server)
+run('server.py', '--archive', a.archive.resolve(), '--sha256', plan['asset_sha256'], '--version', plan['version'], '--built', plan['published_at'], '--module-revision', plan['module_revision'], '--commit', plan['commit'], '--output', server)
 for file in (server/'out').glob('*.zip'):
     shutil.copyfile(file, out/file.name)
 for name in ('provenance.json', 'elf-compatibility.json'):

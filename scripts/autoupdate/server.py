@@ -2,9 +2,12 @@
 """Offline official server/UI sync. Never execute archive members or use a network.
 
 python scripts/autoupdate/server.py --archive release.tar.gz --sha256 HEX \
-    --version X.Y.Z --built 2026-11-04T09:17:30Z --module-revision 38 --output evidence
+    --version X.Y.Z --built 2026-11-04T09:17:30Z --module-revision 38 \\
+    --commit <40-hex upstream commit> --output evidence
 
-Only seed/{agent2api-server,ui,VERSION} and module.prop are changed. All archive,
+Only seed/{agent2api-server,ui,VERSION} and module.prop are changed. The
+description body and seed/VERSION comments plus provenance keys (commit=) are
+preserved; only generated fields are rewritten. All archive,
 ELF and two reproducible pack.py runs are validated in temporary storage first.
 Requires pyelftools (the same dependency as test/inspect_server_elf.py).
 """
@@ -225,7 +228,38 @@ def elf_report(server, libdir, version):
             'verification': 'Offline pyelftools; no archive code or device execution'}
 
 
-def metadata(module, version, built, revision, archive_hash):
+def _description(text, version, revision):
+    """Keep the repo's own description text; regenerate only the version-bearing tokens."""
+    body = text.strip()
+    m = re.match(r'^模块 v\S+ magisk\.[0-9]+｜(.*)$', body)
+    if m:
+        body = m.group(1).strip()
+    require('\n' not in body, 'module description must stay on one line')
+    if not body:
+        body = '内置 glibc 动态载荷 v%s / 官方 UI；保留现有运行库、shim 与生产脚本。' % version
+    # test/verify_fixes.py r18 greps exactly one "载荷 v<binary version>"; keep it in sync.
+    body = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v%s' % version, body)
+    return '模块 v%s magisk.%d｜%s' % (version, revision, body)
+
+
+def _rewrite_version(text, updates, order):
+    """Rewrite known keys in place, preserving comments and unknown keys such as commit."""
+    out, seen = [], set()
+    for line in text.splitlines():
+        key = line.split('=', 1)[0].strip() if '=' in line and not line.lstrip().startswith('#') else None
+        if key in updates:
+            if key not in seen:
+                out.append('%s=%s' % (key, updates[key]))
+                seen.add(key)
+            continue
+        out.append(line)
+    for key in order:
+        if key in updates and key not in seen:
+            out.append('%s=%s' % (key, updates[key]))
+    return '\n'.join(out) + '\n'
+
+
+def metadata(module, version, built, revision, archive_hash, commit):
     require(VERSION_RE.fullmatch(version) is not None, 'version must be canonical X.Y.Z')
     require(re.fullmatch(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:\d\d)', built) is not None,
             'built must be timezone-qualified release ISO timestamp')
@@ -234,6 +268,8 @@ def metadata(module, version, built, revision, archive_hash):
     except ValueError as exc:
         raise ValidationError('invalid release timestamp') from exc
     require(isinstance(revision, int) and 0 < revision <= 99, 'module revision must be 1..99')
+    require(isinstance(commit, str) and re.fullmatch(r'[0-9a-f]{40}', commit) is not None,
+            'upstream commit must be a lowercase 40-hex SHA')
     prop = (module / 'module.prop').read_text(encoding='utf-8')
     old_ver = re.search(r'^version=v([^ ]+) \(magisk\.([0-9]+)\)$', prop, re.M)
     old_code = re.search(r'^versionCode=([0-9]+)$', prop, re.M)
@@ -247,8 +283,18 @@ def metadata(module, version, built, revision, archive_hash):
     value = 'v%s (magisk.%d)' % (version, revision)
     prop = re.sub(r'^version=.*$', 'version=' + value, prop, flags=re.M)
     prop = re.sub(r'^versionCode=.*$', 'versionCode=' + str(datecode), prop, flags=re.M)
-    prop = re.sub(r'^description=.*$', 'description=模块 v%s magisk.%d｜内置 glibc 动态载荷 v%s / 官方 UI；保留现有运行库、shim 与生产脚本。' % (version, revision, version), prop, flags=re.M)
-    seed_version = ('ver=%s\nbuilt=%s\narch=aarch64\nsource=aimod-cc/Agent2API v%s official release (glibc dynamic; published timestamp)\narchive_sha256=%s\n' % (version, built, version, archive_hash))
+    described = re.search(r'^description=(.*)$', prop, re.M)
+    require(described is not None, 'module description missing')
+    prop = re.sub(r'^description=.*$',
+                  lambda _m: 'description=' + _description(described.group(1), version, revision),
+                  prop, flags=re.M)
+    seed_path = module / 'seed/VERSION'
+    seed_text = seed_path.read_text(encoding='utf-8') if seed_path.exists() else ''
+    updates = {'ver': version, 'built': built, 'arch': 'aarch64',
+               'source': 'aimod-cc/Agent2API v%s official release (glibc dynamic; published timestamp)' % version,
+               'commit': commit, 'archive_sha256': archive_hash}
+    seed_version = _rewrite_version(seed_text, updates,
+                                    ('ver', 'built', 'arch', 'source', 'commit', 'archive_sha256'))
     return prop.encode('utf-8'), seed_version.encode('utf-8'), value
 
 
@@ -310,7 +356,7 @@ def pack_twice(repo, module, stage, filename):
     return outputs[0], reports[0]
 
 
-def sync(archive, sha256, version, built, module_revision, output, repo=ROOT):
+def sync(archive, sha256, version, built, module_revision, output, repo=ROOT, commit=None):
     repo, archive, output = Path(repo).resolve(), Path(archive).absolute(), Path(output).absolute()
     module = repo / 'module'
     # Do not permit evidence output to overwrite source or input archive.
@@ -322,7 +368,7 @@ def sync(archive, sha256, version, built, module_revision, output, repo=ROOT):
     require(output.resolve() not in archive.resolve().parents, 'archive lies inside output')
     payload, members = read_archive(archive, sha256)
     before = regular_tree(module)
-    prop, seed_version, module_version = metadata(module, version, built, module_revision, sha256.lower())
+    prop, seed_version, module_version = metadata(module, version, built, module_revision, sha256.lower(), commit)
     with tempfile.TemporaryDirectory(prefix='a2a-server-sync-') as tmp:
         stage = Path(tmp)
         staged_module = stage / 'module'
@@ -342,7 +388,8 @@ def sync(archive, sha256, version, built, module_revision, output, repo=ROOT):
         require(stable_before == stable_after, 'stable module files changed during staging')
         require(regular_tree(module) == before, 'source changed concurrently; retry from a clean snapshot')
         manifest = {'status': 'PASS', 'upstream': 'https://github.com/aimod-cc/Agent2API',
-                    'version': version, 'built': built, 'module_version': module_version,
+                    'version': version, 'built': built, 'commit': commit,
+                    'module_version': module_version,
                     'archive_sha256': sha256.lower(), 'archive_members': members,
                     'installed_members': {n: digest(b) for n, b in sorted(payload.items())},
                     'stable_module_files': stable_before,
@@ -384,10 +431,12 @@ def main(argv=None):
     parser.add_argument('--version', required=True)
     parser.add_argument('--built', required=True)
     parser.add_argument('--module-revision', required=True, type=int)
+    parser.add_argument('--commit', required=True)
     parser.add_argument('--output', required=True, type=Path)
     args = parser.parse_args(argv)
     try:
-        result = sync(args.archive, args.sha256, args.version, args.built, args.module_revision, args.output)
+        result = sync(args.archive, args.sha256, args.version, args.built, args.module_revision, args.output,
+                      commit=args.commit)
     except (ValidationError, ImportError, OSError, ValueError) as exc:
         parser.exit(1, 'server sync validation failed: %s\n' % exc)
     print(json.dumps(result, ensure_ascii=False, indent=2))
