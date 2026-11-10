@@ -38,11 +38,25 @@ MAX_TAR_STREAM = 272 * 1024 * 1024
 MAX_MEMBERS = 10000
 EXTRAS = {'install.sh', 'agent2api.service', 'agent2api.env.example'}
 FIXED_TIME = (2026, 10, 19, 0, 0, 0)
-VERSION_RE = re.compile(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\Z')
+VERSION_RE = re.compile(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+                        r'(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?\Z')
 
 
 class ValidationError(ValueError):
     """An input failed the closed, offline release validation contract."""
+
+
+def _precedence(value):
+    """Semver ordering key; a prerelease sorts below its own stable release."""
+    match = re.fullmatch(r'((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))'
+                         r'(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?\Z', value)
+    if match is None:
+        raise ValidationError('version must be canonical X.Y.Z or X.Y.Z-pre')
+    numbers = tuple(int(part) for part in match.group(1).split('.'))
+    pre = match.group(2)
+    if pre is None:
+        return numbers + (1, ())
+    return numbers + (0, tuple((0, int(p)) if p.isdigit() else (1, p) for p in pre.split('.')))
 
 
 def require(condition, message):
@@ -238,7 +252,7 @@ def _description(text, version, revision):
     if not body:
         body = '内置 glibc 动态载荷 v%s / 官方 UI；保留现有运行库、shim 与生产脚本。' % version
     # test/verify_fixes.py r18 greps exactly one "载荷 v<binary version>"; keep it in sync.
-    body = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v%s' % version, body)
+    body = re.sub(r'载荷 v[0-9][0-9A-Za-z.+-]*', '载荷 v%s' % version, body)
     return '模块 v%s magisk.%d｜%s' % (version, revision, body)
 
 
@@ -288,7 +302,7 @@ def metadata(module, version, built, revision, archive_hash, commit):
     require(old_ver is not None and old_code is not None, 'unrecognized current module version metadata')
     require(revision > int(old_ver.group(2)), 'module revision must increase')
     require(VERSION_RE.fullmatch(old_ver.group(1)) is not None and
-            tuple(map(int, version.split('.'))) >= tuple(map(int, old_ver.group(1).split('.'))),
+            _precedence(version) >= _precedence(old_ver.group(1)),
             'upstream version rollback')
     datecode = int(published.astimezone(dt.timezone.utc).strftime('%Y%m%d')) * 100 + revision
     require(datecode > int(old_code.group(1)), 'release datecode must increase')

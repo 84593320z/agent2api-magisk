@@ -8,6 +8,10 @@ on:
         description: Build/test/sign current version without publishing
         type: boolean
         default: false
+      allow_prerelease:
+        description: Allow syncing an upstream prerelease (beta) tag
+        type: boolean
+        default: false
   repository_dispatch:
     types: [upstream-release]
 permissions:
@@ -39,6 +43,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TOKEN: ${{ secrets.UPSTREAM_READ_TOKEN }}
           SMOKE: ${{ inputs.build_current || false }}
+          ALLOW_PRERELEASE: ${{ inputs.allow_prerelease || false }}
         run: |
           python scripts/autoupdate/control.py detect
           if [ "$SMOKE" = true ]; then

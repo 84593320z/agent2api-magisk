@@ -627,7 +627,7 @@ cmd_apk_update() (
   if [ -z "$_av" ]; then
     _av=$(module_version | sed -n 's/^v\([^ ]*\).*/\1/p')
   fi
-  if ! printf '%s' "$_av" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+  if ! printf '%s' "$_av" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
     say "无法确定 APK 版本，请显式指定：a2a apk-update 3.4.2"
     return 2
   fi

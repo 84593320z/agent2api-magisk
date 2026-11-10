@@ -26,7 +26,7 @@ def latest_block(plan, repo):
     module = f'agent2api-magisk-v{ver}-magisk.{rev}-arm64.zip'
     apk = f'Agent2API-{ver}-mod.apk'
     base = _base(repo)
-    return '\n'.join([
+    lines = [
         BEGIN,
         f'## 最新版本：v{ver} / magisk.{rev}',
         '',
@@ -36,9 +36,11 @@ def latest_block(plan, repo):
         f'- **[下载手机端 APK {ver}-mod]({base}/tag/apk-v{ver}-mod)**：`{apk}`，包名 `com.agent2api.mobile.mod`，版本 `{ver} / {plan["mobile_version_code"]}`。',
         '- 校验清单、构建来源与验收证据随模块 Release 附带；历史版本的手工验收报告仍保留在 [docs/](docs/)。',
         '- 模块内更新只替换服务端与面板；仓库公开后，手机端 APK 可在设备上运行 `a2a apk-update` 下载、校验并覆盖安装。',
-        END,
-        '',
-    ])
+    ]
+    if plan.get('prerelease'):
+        lines.append(f'- 上游本次为**预发布（beta）**：`{plan["tag"]}` 尚未转正，正式版发布后会自动再同步一版。')
+    lines += [END, '']
+    return '\n'.join(lines)
 
 
 def rewrite_readme(root, plan, repo):

@@ -28,7 +28,7 @@ SPEC.loader.exec_module(server)
 
 # Auto-sync advances module.prop and seed/VERSION without rewriting tests.
 # Derive the next legal metadata transition instead of pinning magisk.37/3.4.1.
-SEED_VERSION = re.search(r'^ver=([0-9.]+)$', (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8'), re.M).group(1)
+SEED_VERSION = re.search(r'^ver=([0-9][0-9A-Za-z.+-]*)$', (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8'), re.M).group(1)
 SEED_BUILT = re.search(r'^built=([^\n]+)$', (ROOT / 'module/seed/VERSION').read_text(encoding='utf-8'), re.M).group(1)
 PROP_MATCH = re.search(r'^version=v([^ ]+) \(magisk\.([0-9]+)\)$',
                        (ROOT / 'module/module.prop').read_text(encoding='utf-8'), re.M)
@@ -270,7 +270,7 @@ class MetadataAndElfTests(unittest.TestCase):
         old = (ROOT / 'module/module.prop').read_text(encoding='utf-8')
         body = old.split('description=', 1)[1].split('\n', 1)[0].split('｜', 1)[1]
         future = SEED_VERSION.rsplit('.', 1)[0] + '.' + str(int(SEED_VERSION.rsplit('.', 1)[1]) + 1)
-        notes = re.sub(r'载荷 v[0-9]+(?:\.[0-9]+)*', '载荷 v' + future, body)
+        notes = re.sub(r'载荷 v[0-9][0-9A-Za-z.+-]*', '载荷 v' + future, body)
         prop, _, name = server.metadata(ROOT / 'module', future, NEXT_BUILT, NEXT_REVISION, 'a' * 64, 'b' * 40)
         text = prop.decode('utf-8')
         line = text.split('description=', 1)[1].split('\n', 1)[0]
@@ -278,6 +278,24 @@ class MetadataAndElfTests(unittest.TestCase):
         self.assertEqual(text.count('载荷 v' + future), 1)
         self.assertNotIn('载荷 v' + SEED_VERSION, text)
         self.assertEqual(name, f'v{future} (magisk.{NEXT_REVISION})')
+
+    def test_metadata_accepts_prerelease_suffix(self):
+        """An opt-in beta sync must yield a valid module version and roll only the payload token."""
+        major, minor, patch = SEED_VERSION.split('-', 1)[0].split('.')
+        beta = f'{major}.{minor}.{int(patch) + 1}-beta.9'
+        prop, _, name = server.metadata(ROOT / 'module', beta, NEXT_BUILT, NEXT_REVISION, 'a' * 64, 'b' * 40)
+        text = prop.decode('utf-8')
+        self.assertEqual(name, f'v{beta} (magisk.{NEXT_REVISION})')
+        self.assertIn(f'模块 v{beta} magisk.{NEXT_REVISION}｜', text)
+        self.assertEqual(text.count('载荷 v' + beta), 1)
+        # Older numbers are rejected; a prerelease of the same patch sorts below its stable release.
+        older_versions = [f'{major}.0.0']
+        if '-' not in SEED_VERSION:
+            older_versions.append(SEED_VERSION + '-beta.9')
+        for older in older_versions:
+            with self.subTest(older=older):
+                with self.assertRaises(server.ValidationError):
+                    server.metadata(ROOT / 'module', older, NEXT_BUILT, NEXT_REVISION, 'a' * 64, 'b' * 40)
 
     def test_metadata_rejects_injection_rollback_and_nonmonotonic(self):
         cases = [('v3.4.1', '2026-11-04T09:17:30Z', 38),

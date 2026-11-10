@@ -44,8 +44,8 @@ mirror_url() { printf '%s' "$1"; }
     def tearDown(self):
         self.tmp.cleanup()
 
-    def run_update(self, argument='', actual_sha=SHA, uid='0'):
-        version = argument or '3.4.2'
+    def run_update(self, argument='', actual_sha=SHA, uid='0', module='v3.4.2 (magisk.38)'):
+        version = argument or module.split()[0].lstrip('v')
         script = f'''
 MODDIR='{self.root.as_posix()}'
 RUNDIR='{(self.root / 'run').as_posix()}'
@@ -53,7 +53,7 @@ APK_SHA={SHA}
 APK_VERSION={version}
 say() {{ printf '%s\\n' "$*"; }}
 id() {{ [ "${{1:-}}" = -u ] && printf '%s\\n' '{uid}'; }}
-module_version() {{ printf '%s\\n' 'v3.4.2 (magisk.38)'; }}
+module_version() {{ printf '%s\\n' '{module}'; }}
 cfg_get() {{ case "$1" in apk_repo) printf '%s\\n' '84593320z/agent2api-magisk' ;; github_mirror) printf '%s\\n' '' ;; esac; }}
 sha256_of() {{ printf '%s' '{actual_sha}'; }}
 pm() {{ printf '%s\\n' "$*" >>"$RUNDIR/pm.args"; printf 'Success\\n'; }}
@@ -94,6 +94,24 @@ cmd_apk_update {argument}
         self.assertNotEqual(result.returncode, 0)
         self.assertIn('需要 root', result.stdout)
         self.assertFalse((self.root / 'run/curl.args').exists())
+
+
+    def test_prerelease_module_version_derives_beta_apk(self):
+        result = self.run_update(module='v3.5.0-beta.1 (magisk.39)')
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        calls = (self.root / 'run/curl.args').read_text(encoding='utf-8').splitlines()
+        self.assertEqual(len(calls), 2)
+        self.assertIn('/apk-v3.5.0-beta.1-mod/SHA256SUMS.txt', calls[0])
+        self.assertIn('/apk-v3.5.0-beta.1-mod/Agent2API-3.5.0-beta.1-mod.apk', calls[1])
+        self.assertIn('APK 已更新到 3.5.0-beta.1-mod', result.stdout)
+
+    def test_noncanonical_version_argument_rejected(self):
+        for bad in ('3.5', 'v3.5.0-beta.1', '3.5.0-beta..1', '3.5.0-'):
+            with self.subTest(argument=bad):
+                result = self.run_update(bad)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('无法确定 APK 版本', result.stdout)
+                self.assertFalse((self.root / 'run/curl.args').exists())
 
 
 if __name__ == '__main__':

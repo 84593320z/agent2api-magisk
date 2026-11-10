@@ -95,7 +95,7 @@ def recovery_commit(plan):
 def download_asset(asset):
     return request(asset['url'], TOKEN, binary=True)
 
-def release(tag, commit, files, body):
+def release(tag, commit, files, body, prerelease=False):
     refs = api('/git/matching-refs/tags/'+tag)
     found = next((r for r in refs if r['ref']=='refs/tags/'+tag), None)
     if found is None:
@@ -106,7 +106,7 @@ def release(tag, commit, files, body):
     releases = api('/releases?per_page=100')
     r = next((x for x in releases if x['tag_name']==tag), None)
     if r is None:
-        r = api('/releases', 'POST', {'tag_name':tag,'target_commitish':commit,'name':'Agent2API '+tag,'body':body,'draft':True,'prerelease':False})
+        r = api('/releases', 'POST', {'tag_name':tag,'target_commitish':commit,'name':'Agent2API '+tag,'body':body,'draft':True,'prerelease':prerelease})
     old = {x['name']:x for x in r['assets']}
     if set(old)-{x.name for x in files}:
         raise ValueError('Unexpected existing assets; preserving release')
@@ -122,7 +122,7 @@ def release(tag, commit, files, body):
         if asset['size'] != len(data) or hashlib.sha256(download_asset(asset)).hexdigest() != digest:
             raise ValueError('Release download hash differs: '+p.name)
     if r['draft']:
-        r = api('/releases/'+str(r['id']), 'PATCH', {'draft':False,'body':body,'make_latest':'true'})
+        r = api('/releases/'+str(r['id']), 'PATCH', {'draft':False,'body':body,'prerelease':bool(prerelease),'make_latest':'false' if prerelease else 'true'})
     print('Verified release:', r['html_url'])
     return r['html_url']
 
@@ -155,11 +155,14 @@ def publish(a):
     sums = a.artifacts/'SHA256SUMS.txt'
     sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files), encoding='utf-8')
     body = f"自动同步上游 {plan['tag']}，精确源码 `{plan['commit']}`。\n\n模块保留 Android 启动桥接、事务恢复与 DNS 修复；手机端保留开关写屏障/严格回显。APK 使用既有 .mod 证书。完整离线回归、ELF闭包、资源与签名核验通过；CI 不替代真机验收。\n\n源码提交 `{commit}`。安装旧包 com.agent2api.mobile 的用户须按迁移文档重建配置；既有同签名 .mod 可覆盖升级。\n"
-    release(f"v{plan['version']}-magisk.{plan['module_revision']}", commit, files+[sums], body)
+    prerelease = bool(plan.get('prerelease'))
+    if prerelease:
+        body += "\n※ 上游本次为预发布（beta）：模块与 APK 均按同一精确提交构建，签名与既有 .mod 证书一致；上游正式版发布后会自动再同步一版，届时可正常覆盖升级。\n"
+    release(f"v{plan['version']}-magisk.{plan['module_revision']}", commit, files+[sums], body, prerelease)
     apk_sums = a.artifacts/'apk-checksums'/'SHA256SUMS.txt'
     apk_sums.parent.mkdir(parents=True, exist_ok=True)
     apk_sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in [apk, a.artifacts/'signature.json']), encoding='utf-8')
-    release(f"apk-v{plan['version']}-mod", commit, [apk, a.artifacts/'signature.json', apk_sums], body)
+    release(f"apk-v{plan['version']}-mod", commit, [apk, a.artifacts/'signature.json', apk_sums], body, prerelease)
 
 def failure(a):
     plan = json.loads(a.plan.read_text()) if a.plan.exists() else {'tag':'detection-failed'}

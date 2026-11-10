@@ -14,6 +14,7 @@ import zipfile
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/autoupdate'))
 import control
 import bundle
+import mobile
 import publish
 
 
@@ -74,6 +75,10 @@ class CompletionTests(unittest.TestCase):
     def setUp(self):
         self.baseline, self.plan, self.config = fixture()
         self.commit = 'c' * 40
+        self.rebuild()
+
+    def rebuild(self):
+        """(Re)build the published releases and asset bodies from the current plan."""
         self.releases = []
         self.refs = {}
         self.bodies = {}
@@ -102,6 +107,15 @@ class CompletionTests(unittest.TestCase):
             return control.releases_complete(self.config, self.plan)
 
     def test_complete_downloaded_release(self):
+        self.assertTrue(self.complete())
+
+    def test_prerelease_flag_must_match_plan(self):
+        """A beta release is complete only when the published flag matches the plan."""
+        self.plan['prerelease'] = True
+        self.rebuild()
+        self.assertFalse(self.complete())
+        for release in self.releases:
+            release['prerelease'] = True
         self.assertTrue(self.complete())
 
     def test_missing_extra_draft_corrupt_size_digest_and_checksums(self):
@@ -184,6 +198,64 @@ class RecoveryTests(unittest.TestCase):
         self.config['last_plan'] = dict(self.plan, run_id='different')
         with self.assertRaises(ValueError):
             self.recover({'tag': self.checkpoint})
+
+
+class PrereleaseTests(unittest.TestCase):
+    """Prereleases stay opt-in, sort below their stable release, and never roll back."""
+
+    digest = 'sha256:' + 'a' * 64
+
+    def release(self, tag, prerelease):
+        return {'tag_name': tag, 'draft': False, 'prerelease': prerelease, 'id': len(tag),
+                'published_at': '2026-11-09T17:54:23Z',
+                'assets': [{'id': 7, 'name': 'server.tar.gz', 'size': 1024, 'digest': self.digest}]}
+
+    @staticmethod
+    def ref(url):
+        return {'object': {'type': 'commit', 'sha': 'd' * 40}}
+
+    def detect(self, releases, allow_prerelease=False, last_version='1.2.2'):
+        baseline, _, _ = fixture()
+        baseline['last_version'] = last_version
+        return control.detect(baseline, releases=releases, ref_lookup=self.ref, allow_prerelease=allow_prerelease)
+
+    def test_semver_precedence(self):
+        ordered = ['1.2.2', '1.2.3-beta.1', '1.2.3-beta.9', '1.2.3-beta.10', '1.2.3-rc.1', '1.2.3']
+        keys = [control.version(value) for value in ordered]
+        self.assertEqual(keys, sorted(keys))
+        self.assertEqual(len(set(keys)), len(keys))
+
+    def test_detection_ignores_prerelease_by_default(self):
+        plan = self.detect([self.release('v1.2.3', False), self.release('v1.3.0-beta.1', True)],
+                           last_version='1.2.3')
+        self.assertFalse(plan['changed'])
+        self.assertEqual(plan['version'], '1.2.3')
+
+    def test_manual_switch_accepts_prerelease(self):
+        plan = self.detect([self.release('v1.2.3', False), self.release('v1.3.0-beta.1', True)],
+                           allow_prerelease=True, last_version='1.2.3')
+        self.assertTrue(plan['changed'])
+        self.assertEqual(plan['version'], '1.3.0-beta.1')
+        self.assertEqual(plan['tag'], 'v1.3.0-beta.1')
+        self.assertIs(plan['prerelease'], True)
+        self.assertEqual(plan['module_revision'], 7)
+        self.assertEqual(plan['mobile_version_code'], 10300)
+
+    def test_pinned_prerelease_is_not_downgraded(self):
+        plan = self.detect([self.release('v1.2.3', False)], last_version='1.3.0-beta.1')
+        self.assertFalse(plan['changed'])
+        plan = self.detect([self.release('v1.2.3', False), self.release('v1.3.0', False)],
+                           last_version='1.3.0-beta.1')
+        self.assertTrue(plan['changed'])
+        self.assertEqual(plan['version'], '1.3.0')
+        self.assertIs(plan['prerelease'], False)
+
+    def test_apk_identity_accepts_prerelease_suffix(self):
+        self.assertEqual(mobile.version('v1.3.0-beta.1', 10300), '1.3.0-beta.1')
+        for bad in ('1.3.0-beta.1', 'v1.3.0-beta..1', 'v1.3.0-'):
+            with self.subTest(tag=bad):
+                with self.assertRaises(mobile.MobileError):
+                    mobile.version(bad, 10300)
 
 
 if __name__ == '__main__':

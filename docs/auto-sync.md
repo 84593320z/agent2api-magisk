@@ -8,11 +8,12 @@
 
 - `build_current=false`：检查更新；仅版本严格增加时构建并发布。中断发布优先使用原运行制品恢复。
 - `build_current=true`：重新构建当前版本、执行测试、使用既有证书签名并保存 artifacts，**不提交、不创建或覆盖 Release**。
+- `allow_prerelease=true`：连上游标记为 prerelease 的 beta 一起检查（默认只看正式版）。以 beta 发布时 GitHub Release 同样标为 prerelease，等正式版 `X.Y.Z` 出来后按 semver 顺序仍会再同步一版。
 - 外部通知可调用 `repository_dispatch`，事件类型 `upstream-release`；仍重新读取官方 Release 与 tag，不相信事件中的下载地址。
 
 ## 执行链与权限
 
-1. **detect**：仅正式数字三段版本；记录 tag、解析后的完整 commit、arm64 资产 SHA-256/大小及 Release 时间。同步游标位于 [配置](../scripts/autoupdate/config.json)。
+1. **detect**：默认只取正式数字三段版本，`allow_prerelease` 打开时才接受 `X.Y.Z-pre` 形态的预发布；按 semver 优先级比较（预发布低于同号正式版），已同步的 beta 不会被旧正式版回退；记录 tag、解析后的完整 commit、arm64 资产 SHA-256/大小及 Release 时间。同步游标位于 [配置](../scripts/autoupdate/config.json)。
 2. **selftest**：自动化单元测试及模块完整行为回归。
 3. **fetch**：使用只读令牌取得钉死源码与归档；临时认证通过环境注入，不保存至 Git 配置；完整源码传输有磁盘与时间限额。
 4. **build**：独立无凭据 runner，融合七文件 mobile overlay，保留上游其余页面；构建 Web/Capacitor/unsigned APK。服务端验证安全归档、ARM64 ELF 依赖与强符号闭包、版本及确定性 ZIP，保留运行库、事务/DNS修复和插件桥接。更新候选树后再次跑完整回归。

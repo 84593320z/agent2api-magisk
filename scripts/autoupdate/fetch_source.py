@@ -17,7 +17,8 @@ plan = json.loads(a.plan.read_text())
 config = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
 if plan.get('upstream') != config['upstream'] or not re.fullmatch('[0-9a-f]{40}', plan['commit']):
     raise ValueError('Unexpected upstream identity')
-if not re.fullmatch(r'v[0-9]+\.[0-9]+\.[0-9]+', plan['tag']):
+if not re.fullmatch(r'v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+                    r'(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', plan['tag']):
     raise ValueError('Unexpected upstream tag')
 if a.output.exists():
     raise ValueError('Source output already exists')

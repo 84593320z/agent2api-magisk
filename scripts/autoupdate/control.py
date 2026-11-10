@@ -7,14 +7,16 @@ from pathlib import Path
 import re
 import urllib.request
 import urllib.error
+import versioning
 
 ROOT = Path(__file__).resolve().parents[2]
 
-def version(tag):
-    m = re.fullmatch(r'v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag)
-    if not m:
-        raise ValueError('Only stable numeric semantic versions are accepted')
-    return tuple(map(int, m.groups()))
+def version(text):
+    """Semver precedence key; a prerelease sorts below its own stable release."""
+    try:
+        return versioning.key(text)
+    except ValueError:
+        raise ValueError('Only canonical semantic versions are accepted') from None
 
 def dump(path, obj):
     path = Path(path)
@@ -37,14 +39,17 @@ def request(url, token=None, data=None, method='GET', binary=False):
     except urllib.error.HTTPError as e:
         raise RuntimeError('GitHub HTTP ' + str(e.code)) from None
 
-def detect(config, token=None, releases=None, ref_lookup=None):
+def detect(config, token=None, releases=None, ref_lookup=None, allow_prerelease=False):
+    """Resolve the newest upstream release; prereleases are opt-in per run."""
     repo = config['upstream']
     base = 'https://api.github.com/repos/' + repo
     releases = releases if releases is not None else request(base + '/releases?per_page=100', token)
-    stable = [r for r in releases if not r['draft'] and not r['prerelease'] and re.fullmatch(r'v?\d+\.\d+\.\d+', r['tag_name'])]
-    if not stable:
-        raise ValueError('No stable upstream release')
-    release = max(stable, key=lambda r: version(r['tag_name']))
+    pattern = versioning.VERSION_RE if allow_prerelease else versioning.STABLE_RE
+    pool = [r for r in releases if not r['draft'] and (allow_prerelease or not r['prerelease'])
+            and pattern.fullmatch(r['tag_name'])]
+    if not pool:
+        raise ValueError('No stable upstream release' if not allow_prerelease else 'No usable upstream release')
+    release = max(pool, key=lambda r: version(r['tag_name']))
     v = version(release['tag_name'])
     if v <= version(config['last_version']):
         return {'changed': False, 'version': config['last_version'], 'tag': release['tag_name']}
@@ -67,8 +72,9 @@ def detect(config, token=None, releases=None, ref_lookup=None):
         ref = lookup(base + '/git/tags/' + ref['sha'])['object']
     if ref['type'] != 'commit' or not re.fullmatch('[0-9a-f]{40}', ref['sha']):
         raise ValueError('Invalid pinned upstream commit')
-    ver = '.'.join(map(str, v))
-    return {'changed': True, 'version': ver, 'tag': release['tag_name'], 'commit': ref['sha'], 'release_id': release['id'], 'published_at': release['published_at'], 'asset_id': asset['id'], 'asset_size': asset['size'], 'asset_sha256': digest[7:], 'upstream': repo, 'module_revision': config['module_revision'] + 1, 'mobile_version_code': max(v[0]*10000+v[1]*100+v[2], config['mobile_version_code']+1)}
+    ver = versioning.normalize(release['tag_name'])
+    nums = versioning.numbers(release['tag_name'])
+    return {'changed': True, 'version': ver, 'tag': release['tag_name'], 'commit': ref['sha'], 'release_id': release['id'], 'published_at': release['published_at'], 'asset_id': asset['id'], 'asset_size': asset['size'], 'asset_sha256': digest[7:], 'upstream': repo, 'prerelease': versioning.prerelease(release['tag_name']), 'module_revision': config['module_revision'] + 1, 'mobile_version_code': max(nums[0]*10000+nums[1]*100+nums[2], config['mobile_version_code']+1)}
 
 def download(plan, out, token=None):
     if not plan.get('changed'):
@@ -108,13 +114,14 @@ def releases_complete(config, plan, token=None):
     """Verify exact inventories and downloaded bytes, not merely a checksum filename."""
     base = 'https://api.github.com/repos/' + config['repository']
     specs = release_specs(plan)
+    expected_prerelease = bool(plan.get('prerelease'))
     refs = release_refs(config['repository'], plan, token)
     if set(refs) != set(specs):
         return False
     releases = request(base + '/releases?per_page=100', token)
     for tag, names in specs.items():
         matches = [r for r in releases if r['tag_name'] == tag]
-        if len(matches) != 1 or matches[0]['draft'] or matches[0]['prerelease']:
+        if len(matches) != 1 or matches[0]['draft'] or bool(matches[0]['prerelease']) != expected_prerelease:
             return False
         assets = matches[0]['assets']
         by_name = {a['name']: a for a in assets}
@@ -149,11 +156,11 @@ def releases_complete(config, plan, token=None):
     return True
 
 
-def select_plan(config, token=None, upstream_token=None):
+def select_plan(config, token=None, upstream_token=None, allow_prerelease=False):
     previous = config.get('last_plan')
     if previous and not releases_complete(config, previous, token):
         return dict(previous, retry=True)
-    plan = detect(config, upstream_token or token)
+    plan = detect(config, upstream_token or token, allow_prerelease=allow_prerelease)
     if plan.get('changed'):
         plan['run_id'] = os.getenv('GITHUB_RUN_ID', '')
     return plan
@@ -168,12 +175,14 @@ def main():
     a = p.parse_args()
     config = json.loads(a.config.read_text())
     if a.command == 'detect':
-        plan = select_plan(config, os.getenv('GH_TOKEN'), os.getenv('UPSTREAM_TOKEN'))
+        allow = os.getenv('ALLOW_PRERELEASE', '').strip().lower() == 'true'
+        plan = select_plan(config, os.getenv('GH_TOKEN'), os.getenv('UPSTREAM_TOKEN'), allow_prerelease=allow)
         dump(a.plan, plan)
         if os.getenv('GITHUB_OUTPUT'):
             with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
                 f.write('changed=' + str(plan['changed']).lower() + '\n')
                 f.write('retry=' + str(bool(plan.get('retry'))).lower() + '\n')
+                f.write('prerelease=' + str(bool(plan.get('prerelease'))).lower() + '\n')
                 f.write('run_id=' + str(plan.get('run_id', '')) + '\n')
         print(json.dumps(plan))
     else:

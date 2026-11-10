@@ -80,8 +80,9 @@ def sha(data):
 
 
 def version(tag, code):
-    if not re.fullmatch(r'v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', tag):
-        raise MobileError('tag must be vX.Y.Z (canonical numeric release)')
+    if not re.fullmatch(r'v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+                        r'(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?', tag):
+        raise MobileError('tag must be vX.Y.Z or vX.Y.Z-pre (canonical numeric release)')
     if isinstance(code, bool) or not isinstance(code, int) or not 1 <= code <= 2100000000:
         raise MobileError('version-code must be an integer in 1..2100000000')
     return tag[1:]
