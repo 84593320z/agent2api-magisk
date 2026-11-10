@@ -4,7 +4,7 @@
   "branch": "main",
   "last_version": "3.5.0-beta.1",
   "last_commit": "aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf",
-  "module_revision": 39,
+  "module_revision": 40,
   "mobile_version_code": 30500,
   "certificate_sha256": "d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f",
   "asset": "agent2api-server-linux-arm64.tar.gz",
@@ -22,8 +22,10 @@
     "asset_sha256": "f48aff11243d934fd5f1d1a700a86d7cd4fc036a64a031fbd92164dd8d1f218b",
     "upstream": "aimod-cc/Agent2API",
     "prerelease": true,
-    "module_revision": 39,
+    "module_revision": 40,
     "mobile_version_code": 30500,
-    "run_id": "42753934443"
+    "run_id": "42790043366",
+    "republish": true,
+    "smoke": false
   }
 }
