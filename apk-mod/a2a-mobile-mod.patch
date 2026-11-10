@@ -1,5 +1,5 @@
 diff --git a/desktop-tauri/mobile/src/App.tsx b/desktop-tauri/mobile/src/App.tsx
-index ed1fbc4ddd26ef255e6535369441fe775606f0cf..2c901c1dccab25de75b8022b2052fa0ee30c49fd 100644
+index a35c6190e9c4874c7e8380de7460325693b8ec55..159a48329a80e847d46d396220ba42cc15cbd124 100644
 --- a/desktop-tauri/mobile/src/App.tsx
 +++ b/desktop-tauri/mobile/src/App.tsx
 @@ -1,4 +1,4 @@
@@ -8,16 +8,16 @@ index ed1fbc4ddd26ef255e6535369441fe775606f0cf..2c901c1dccab25de75b8022b2052fa0e
  import { AppFrame } from '@ui'
  import { store, useStore, bootstrapTheme } from './state/store'
  import { TabBar, Toast, AuthGate, ThemeSync } from './components/Shell'
-@@ -26,6 +26,8 @@ import type { ScreenId } from './lib/routes'
+@@ -27,6 +27,8 @@ import type { ScreenId } from './lib/routes'
  import { NavBar } from './components/NavBar'
  import { t } from './i18n'
  import { RequiredUpdateGate } from './components/RequiredUpdateGate'
 +import { discoverLocalGateways } from './lib/discover'
 +import { baseLabel } from './lib/servers'
- 
- /**
-  * 路由表。
-@@ -94,6 +96,42 @@ export function App() {
+ import { mobileBranding } from './lib/branding'
+ import { serverIdentity } from './lib/servers'
+ import { applyDocumentBranding, useBrandingRefresh } from '../../ui-shared/branding'
+@@ -103,6 +105,42 @@ export function App() {
      // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [])
  
@@ -610,7 +610,7 @@ index 0000000000000000000000000000000000000000..d0af61486f990e963f9c7e48052a8532
 +  return found
 +}
 diff --git a/desktop-tauri/mobile/src/pages/ServersPage.tsx b/desktop-tauri/mobile/src/pages/ServersPage.tsx
-index 9e53104c061845e9335c4508ef16881d4ed1d3d2..d9c546c981ef93a564d7088849da3e1b2dc93c13 100644
+index d7a1a922d23b148a56401d177fe69c31c733495e..7c0d5a083e798cc7192753da92ec4cf13931b8ce 100644
 --- a/desktop-tauri/mobile/src/pages/ServersPage.tsx
 +++ b/desktop-tauri/mobile/src/pages/ServersPage.tsx
 @@ -4,6 +4,7 @@ import { PageHead, PageIntro, SectionHead, ErrorNote } from '../components/ui'
@@ -741,7 +741,7 @@ index 9e53104c061845e9335c4508ef16881d4ed1d3d2..d9c546c981ef93a564d7088849da3e1b
        {editing ? (
          <div className='m-section' style={{ marginTop: 0 }}>
 diff --git a/desktop-tauri/mobile/src/pages/SettingsPage.tsx b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
-index 36371080a451bc338b2112539836bca5b56cecb4..ba41f017e788c90420154f4ea4758a9d6e79d999 100644
+index 63cdcdec0d56d2f92f03e7a4a6c14af45ecca297..8deecaa759c4915569db00bcd5ac70d6b2273ae3 100644
 --- a/desktop-tauri/mobile/src/pages/SettingsPage.tsx
 +++ b/desktop-tauri/mobile/src/pages/SettingsPage.tsx
 @@ -9,6 +9,7 @@ import { usePwa } from '../lib/usePwa'
@@ -752,7 +752,7 @@ index 36371080a451bc338b2112539836bca5b56cecb4..ba41f017e788c90420154f4ea4758a9d
  import { CommunitySheet } from '../components/CommunitySheet'
  import { SystemInfoSheet } from '../components/SystemInfoSheet'
  import { apiBase, baseLabel, serverIdentity } from '../lib/servers'
-@@ -196,6 +197,9 @@ export function SettingsPage() {
+@@ -209,6 +210,9 @@ export function SettingsPage() {
          </Card>
        </div>
  
