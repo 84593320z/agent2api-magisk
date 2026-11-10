@@ -39,6 +39,11 @@ command -v set_perm_recursive >/dev/null 2>&1 || set_perm_recursive() {
   chmod_tree "$1" "$4" "$5"
 }
 
+# 建目录兼容层必须在第一次 mkdir 之前加载：KernelSU 的安装器以
+# ASH_STANDALONE=1 跑 busybox sh，该模式下 `mkdir -p <绝对路径>` 一律失败
+# （详见 libexec/mkdir.sh 顶部说明）。common.sh 里也会再加载一次，带幂等保护。
+. "$MODPATH/libexec/mkdir.sh" || abort "无法加载 libexec/mkdir.sh"
+
 ui_print " "
 ui_print "=================================="
 ui_print " Agent2API 服务端 · Android 模块"
@@ -116,7 +121,7 @@ ui_print "- 准备运行目录"
 for d in "$APP_HOME" "$BINDIR" "$CFGDIR" "$DATADIR" \
          "$LOGDIR" "$RUNDIR" "$TMPD" "$HOMEDIR" "$BACKUPDIR" "$DLDIR" \
          "$A2A_LIVE"; do
-  mkdir -p "$d" 2>/dev/null || abort "无法创建 $d"
+  mkdir -p "$d" || abort "无法创建 $d：${A2A_MKDIR_ERR:-未知错误}"
 done
 chmod 700 "$CFGDIR" "$DATADIR" 2>/dev/null || abort "无法设置配置/数据目录权限"
 chmod 755 "$APP_HOME" "$BINDIR" "$LOGDIR" "$RUNDIR" \

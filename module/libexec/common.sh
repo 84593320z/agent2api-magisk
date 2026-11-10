@@ -15,6 +15,25 @@
 # ============================================================================
 
 A2A_COMMON_LOADED=1
+
+# 建目录兼容层（见 libexec/mkdir.sh）：KernelSU 以 ASH_STANDALONE=1 跑 busybox
+# sh，该模式下 `mkdir -p <绝对路径>` 一律失败，安装期和运行期都会踩到。必须在
+# 任何 mkdir 调用之前加载。customize.sh 更早一步自己加载过，这里带幂等保护。
+if [ -z "${A2A_MKDIR_SH:-}" ]; then
+  for _a2a_mkdir_lib in \
+      "${MODDIR:-}/libexec/mkdir.sh" \
+      "${MODPATH:-}/libexec/mkdir.sh" \
+      "$(dirname "${0:-}" 2>/dev/null)/mkdir.sh" \
+      /data/adb/modules/agent2api/libexec/mkdir.sh
+  do
+    if [ -f "$_a2a_mkdir_lib" ]; then
+      . "$_a2a_mkdir_lib"
+      break
+    fi
+  done
+  unset _a2a_mkdir_lib
+fi
+
 MODULE_ID=agent2api
 MODDIR="${MODDIR:-/data/adb/modules/$MODULE_ID}"
 

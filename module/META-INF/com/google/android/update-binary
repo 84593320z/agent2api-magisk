@@ -66,7 +66,10 @@ ui_print "- 走兜底解包流程"
 
 _A2A_INSTALL_TMP=/data/local/tmp/agent2api_install.$$
 rm -rf "$_A2A_INSTALL_TMP"
-mkdir -p "$_A2A_INSTALL_TMP" || abort "无法创建临时目录 $_A2A_INSTALL_TMP"
+# KernelSU 的 standalone busybox 里 `mkdir -p <绝对路径>` 会把路径截断成 "/"
+# 而失败（详见 module/libexec/mkdir.sh）；这里父目录一定存在，退回不带 -p 的写法。
+mkdir -p "$_A2A_INSTALL_TMP" 2>/dev/null || mkdir "$_A2A_INSTALL_TMP" \
+  || abort "无法创建临时目录 $_A2A_INSTALL_TMP"
 
 UNZIP=""
 # unzip 本身就是命令，不能再拼一次子命令；只有 busybox 需要 "busybox unzip"。
@@ -82,6 +85,9 @@ done
 
 # shellcheck disable=SC2086
 $UNZIP -o "$ZIPFILE" -d "$_A2A_INSTALL_TMP" >/dev/null 2>&1 || abort "解包失败：$ZIPFILE"
+
+# 解包后就能拿到兼容层：后面所有 mkdir -p 都由它兜底。
+[ -f "$_A2A_INSTALL_TMP/libexec/mkdir.sh" ] && . "$_A2A_INSTALL_TMP/libexec/mkdir.sh"
 
 MODID=$(sed -n 's/^id=//p' "$_A2A_INSTALL_TMP/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
 [ -n "$MODID" ] || abort "module.prop 里没有 id 字段"

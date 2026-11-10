@@ -37,6 +37,7 @@ for f in \
   "$SRC/service.sh" \
   "$SRC/uninstall.sh" \
   "$SRC/libexec/common.sh" \
+  "$SRC/libexec/mkdir.sh" \
   "$SRC/libexec/payload.sh" \
   "$SRC/libexec/updater.sh" \
   "$SRC/libexec/supervise.sh" \
@@ -50,7 +51,8 @@ for f in \
   "$SRC/hotinstall.sh" \
   "$HERE/txn_test.sh" \
   "$HERE/recovery_boundary_cases.sh" \
-  "$HERE/dns_identity_test.sh"
+  "$HERE/dns_identity_test.sh" \
+  "$HERE/mkdir_compat_test.sh"
 do
   if [ ! -f "$f" ]; then
     echo "  FAIL（文件不存在）: $f"
@@ -73,6 +75,15 @@ if "$SH_BIN" "$HERE/txn_test.sh"; then
   echo "  ok   txn_test.sh"
 else
   echo "  FAIL txn_test.sh"
+  FAIL=1
+fi
+
+echo
+echo "== 2a. mkdir 兼容层（KernelSU standalone 缺陷） =="
+if "$SH_BIN" "$HERE/mkdir_compat_test.sh"; then
+  echo "  ok   mkdir_compat_test.sh"
+else
+  echo "  FAIL mkdir_compat_test.sh"
   FAIL=1
 fi
 
