@@ -105,7 +105,7 @@ def release_refs(repo, plan, token=None):
             if obj['type'] != 'commit' or not re.fullmatch('[0-9a-f]{40}', obj['sha']):
                 raise ValueError('Release tag must point directly to a commit')
             refs[tag] = obj['sha']
-    if len(set(refs.values())) > 1:
+    if len(set(refs.values())) > 1 and not plan.get('republish'):
         raise ValueError('Release tags disagree on checkpoint commit')
     return refs
 
@@ -193,6 +193,14 @@ def main():
             assert plan['changed']
             if plan.get('retry'):
                 assert plan['version']==config['last_version'] and plan['commit']==config['last_commit']
+            elif plan.get('republish'):
+                # Module-only rebuild of the version already recorded in the checkpoint.
+                assert plan['version']==config['last_version'] and plan['commit']==config['last_commit']
+                assert plan['module_revision']==config['module_revision']+1
+                assert plan['mobile_version_code']==config['mobile_version_code']
+                for key in ('module_revision', 'mobile_version_code'):
+                    config[key] = plan[key]
+                config['last_plan'] = plan
             else:
                 assert version(plan['version']) > version(config['last_version'])
                 for key in ('module_revision', 'mobile_version_code'):

@@ -51,7 +51,10 @@ def commit_candidate(plan, archive, expected, zip_sha256, branch='main'):
     # candidate module.prop, so they belong to the same checkpoint commit.
     for name in sync_docs(ROOT, plan, config['repository'], zip_sha256):
         stage(name)
-    git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com', 'commit', '-m', f"chore: sync upstream {plan['tag']} (magisk.{plan['module_revision']})")
+    git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+        'commit', '-m', (f"chore: rebuild module {plan['version']} (magisk.{plan['module_revision']})"
+                         if plan.get('republish') else
+                         f"chore: sync upstream {plan['tag']} (magisk.{plan['module_revision']})"))
     commit = git('rev-parse', 'HEAD')
     subprocess.run(['git', '-C', str(ROOT), 'push', 'origin', 'HEAD:refs/heads/'+branch], check=True)
     return commit
@@ -126,6 +129,12 @@ def release(tag, commit, files, body, prerelease=False):
     print('Verified release:', r['html_url'])
     return r['html_url']
 
+def is_republish(cfg, plan):
+    """True for a module-only rebuild: same upstream version, one new revision."""
+    return (bool(plan.get('republish')) and cfg['last_version'] == plan['version']
+            and plan['module_revision'] == cfg['module_revision'] + 1)
+
+
 def publish(a):
     plan = json.loads(a.plan.read_text())
     # Validate signed artifact metadata and all binaries before pushing any source.
@@ -146,7 +155,8 @@ def publish(a):
     if json.loads((a.artifacts/'elf-compatibility.json').read_text()).get('status') != 'PASS':
         raise ValueError('ELF acceptance not PASS')
     cfg = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
-    if cfg['last_version']==plan['version']:
+    republish = is_republish(cfg, plan)
+    if cfg['last_version']==plan['version'] and not republish:
         assert cfg['last_commit']==plan['commit']
         commit = recovery_commit(plan)
     else:
@@ -158,7 +168,13 @@ def publish(a):
     prerelease = bool(plan.get('prerelease'))
     if prerelease:
         body += "\n※ 上游本次为预发布（beta）：模块与 APK 均按同一精确提交构建，签名与既有 .mod 证书一致；上游正式版发布后会自动再同步一版，届时可正常覆盖升级。\n"
+    if republish:
+        body += f"\n※ 本次是模块侧修复的重新构建：上游版本与 APK 未变，仅模块脚本更新；APK 沿用 `apk-v{plan['version']}-mod`，手机端无需重装。\n"
     release(f"v{plan['version']}-magisk.{plan['module_revision']}", commit, files+[sums], body, prerelease)
+    if republish:
+        # The APK is byte-identical to the one already published for this version.
+        print('Module-only rebuild: keeping the existing APK release')
+        return
     apk_sums = a.artifacts/'apk-checksums'/'SHA256SUMS.txt'
     apk_sums.parent.mkdir(parents=True, exist_ok=True)
     apk_sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in [apk, a.artifacts/'signature.json']), encoding='utf-8')

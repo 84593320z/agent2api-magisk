@@ -53,7 +53,15 @@ def validate_config(baseline, candidate, plan):
     canonical = checkpoint_plan(plan)
     if not canonical.get('changed') or canonical.get('upstream') != baseline['upstream']:
         raise ValueError('Candidate plan upstream mismatch')
-    if canonical['module_revision'] != baseline['module_revision'] + 1 or canonical['mobile_version_code'] <= baseline['mobile_version_code']:
+    if canonical['module_revision'] != baseline['module_revision'] + 1:
+        raise ValueError('Candidate counters do not advance baseline')
+    if canonical.get('republish'):
+        # Module-only rebuild: same upstream version and APK, one new revision.
+        if canonical['version'] != baseline['last_version'] or canonical['commit'] != baseline['last_commit']:
+            raise ValueError('Republish must keep the upstream version and commit')
+        if canonical['mobile_version_code'] != baseline['mobile_version_code']:
+            raise ValueError('Republish must keep the mobile version code')
+    elif canonical['mobile_version_code'] <= baseline['mobile_version_code']:
         raise ValueError('Candidate counters do not advance baseline')
     expected = dict(baseline)
     expected.update(last_version=canonical['version'], last_commit=canonical['commit'],

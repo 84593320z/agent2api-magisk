@@ -8,6 +8,10 @@ on:
         description: Build/test/sign current version without publishing
         type: boolean
         default: false
+      publish_current:
+        description: Rebuild the current upstream version as one new module revision and publish it
+        type: boolean
+        default: false
       allow_prerelease:
         description: Allow syncing an upstream prerelease (beta) tag
         type: boolean
@@ -43,12 +47,17 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UPSTREAM_TOKEN: ${{ secrets.UPSTREAM_READ_TOKEN }}
           SMOKE: ${{ inputs.build_current || false }}
+          PUBLISH_CURRENT: ${{ inputs.publish_current || false }}
           ALLOW_PRERELEASE: ${{ inputs.allow_prerelease || false }}
         run: |
           python scripts/autoupdate/control.py detect
           if [ "$SMOKE" = true ]; then
             python scripts/autoupdate/smoke_plan.py
             echo 'changed=true' >> "$GITHUB_OUTPUT"
+          elif [ "$PUBLISH_CURRENT" = true ]; then
+            if python scripts/autoupdate/republish_plan.py; then
+              echo 'changed=true' >> "$GITHUB_OUTPUT"
+            fi
           fi
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
