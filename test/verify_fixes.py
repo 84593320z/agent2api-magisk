@@ -852,7 +852,8 @@ def r18_metadata_consistent(out):
                    if line.startswith('METRIC ') and '=' in line)
     binary = metrics.get('binary', '')
     return (
-        re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)', binary) is not None
+        re.fullmatch(r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
+                     r'(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?', binary) is not None
         and metrics.get('version_file') == binary
         and metrics.get('consistent') == '1'
         and re.fullmatch(r'v' + re.escape(binary) + r' \(magisk\.[1-9][0-9]*\)',
