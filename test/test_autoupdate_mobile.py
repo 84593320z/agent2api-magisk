@@ -74,7 +74,8 @@ class MobileTests(unittest.TestCase):
 
     def test_version_and_parameterized_cli(self):
         self.assertEqual(mobile.version('v12.34.56', 987654), '12.34.56')
-        for tag in ('1.2.3', 'v1.2', 'v01.2.3', 'v1.2.3;echo hi', 'v1.2.3-beta'):
+        self.assertEqual(mobile.version('v1.2.3-beta.1', 123), '1.2.3-beta.1')
+        for tag in ('1.2.3', 'v1.2', 'v01.2.3', 'v1.2.3;echo hi', 'v1.2.3-', 'v1.2.3-beta..1'):
             with self.assertRaises(mobile.MobileError):
                 mobile.version(tag, 123)
         for code in (0, -1, True, 2100000001, '12'):
