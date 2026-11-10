@@ -383,8 +383,13 @@ def build(prepared, output, *, tag=None, commit=None, version_code=None):
         if '' in lock.get('packages', {}):
             lock['packages']['']['version'] = meta['version']
         lock_path.write_text(json.dumps(lock, indent=2) + '\n', encoding='utf-8')
-        run(['npm', 'ci', '--no-audit', '--no-fund'], cwd=mobile, env=env)
-        run(['npm', 'ci', '--no-audit', '--no-fund'], cwd=mobile.parent / 'ui-kit', env=env)
+        # Upstream lockfiles pin a public mirror that intermittently answers 504;
+        # retry before failing the whole sync.
+        npm_ci = ['npm', 'ci', '--no-audit', '--no-fund',
+                  '--fetch-retries=5', '--fetch-retry-mintimeout=10000',
+                  '--fetch-retry-maxtimeout=120000']
+        run(npm_ci, cwd=mobile, env=env)
+        run(npm_ci, cwd=mobile.parent / 'ui-kit', env=env)
         dist = mobile / 'android-www'
         if dist.exists():
             # Exact isolated generated target, never the caller's tree.

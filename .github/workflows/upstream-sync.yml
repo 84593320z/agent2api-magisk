@@ -132,6 +132,11 @@ jobs:
       - name: Build unsigned candidates without credentials
         env:
           SMOKE: ${{ needs.detect.outputs.smoke }}
+          # Upstream lockfiles resolve to registry.npmmirror.com, which answers
+          # 504 for GitHub-hosted runners often enough to break the sync. Point
+          # npm at the canonical registry and rewrite the pinned hosts.
+          NPM_CONFIG_REGISTRY: https://registry.npmjs.org/
+          NPM_CONFIG_REPLACE_REGISTRY_HOST: always
         run: |
           mkdir -p automation-out/source
           tar -xzf automation-out/source.tar.gz -C automation-out/source
