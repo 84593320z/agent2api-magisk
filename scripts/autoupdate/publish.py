@@ -59,10 +59,21 @@ def commit_candidate(plan, archive, expected, branch='main'):
 
 
 def commit_docs(plan, zip_sha256, branch='main'):
-    """Point update.json/README at a Release only after both Release tracks exist."""
+    """Point update.json/README at a Release only after both Release tracks exist.
+
+    A retry deliberately starts at the persisted checkpoint, while main may
+    already contain a reviewed publisher fix.  Catch up by fast-forward only;
+    never commit documentation on top of the old checkpoint or force-push main.
+    """
     head = git('rev-parse', 'HEAD')
-    if git('status', '--porcelain') or api('/git/ref/heads/main')['object']['sha'] != head:
-        raise ValueError('Documentation checkout differs from clean main')
+    remote = api('/git/ref/heads/main')['object']['sha']
+    if git('status', '--porcelain'):
+        raise ValueError('Documentation checkout is not clean')
+    if remote != head:
+        git('fetch', '--no-tags', 'origin', 'main')
+        git('merge-base', '--is-ancestor', head, remote)
+        git('checkout', '--detach', remote)
+        head = remote
     config = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
     if config.get('last_plan') != checkpoint_plan(plan):
         raise ValueError('Documentation checkpoint differs from published plan')
@@ -82,8 +93,15 @@ def recovery_commit(plan):
     """Recover the original checkpoint, even when main acquired later commits."""
     canonical = checkpoint_plan(plan)
     head = git('rev-parse', 'HEAD')
-    if api('/git/ref/heads/main')['object']['sha'] != head:
-        raise ValueError('Recovery checkout differs from main')
+    remote = api('/git/ref/heads/main')['object']['sha']
+    if remote != head:
+        # Retry jobs check out the original baseline to reuse its signed
+        # artifacts.  Later publisher fixes on main are valid only when they
+        # descend from that baseline; divergent/rewritten history is rejected.
+        if git('status', '--porcelain'):
+            raise ValueError('Recovery checkout is not clean')
+        git('fetch', '--no-tags', 'origin', 'main')
+        git('merge-base', '--is-ancestor', head, remote)
     # Checkout is deliberately shallow in Actions; materialize main history locally.
     if git('rev-parse', '--is-shallow-repository') == 'true':
         git('fetch', '--unshallow', 'origin', 'main')

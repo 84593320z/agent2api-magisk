@@ -8,7 +8,7 @@
 
 - `build_current=false`：检查更新；仅版本严格增加时构建并发布。中断发布优先使用原运行制品恢复。
 - `build_current=true`：重新构建当前版本、执行测试、使用既有证书签名并保存 artifacts，**不提交、不创建或覆盖 Release**。
-- `publish_current=true`：没有待发布的正常上游更新时，按当前上游版本做一次维护重发，`module_revision` 增加 1，`mobile_versionCode` 不变；若已有正常上游同步计划，则优先正常同步。只产生新的 `magisk.N`，不虚构上游或 APK 新版本；mobile overlay 未变化时逐字节复用既有 APK，发生变化时在原 APK Release 中受控替换并保留包名、versionCode 与证书。
+- `publish_current=true`：没有待发布的正常上游更新时，按当前上游版本做一次维护重发，`module_revision` 增加 1，`mobile_versionCode` 不变；若已有正常上游同步计划，则优先正常同步。只产生新的 `magisk.N`，不虚构上游或 APK 新版本；以实际签名资产与线上 Release 的比较决定是否复用或受控替换 APK，并保留包名、versionCode 与证书。
 - `allow_prerelease=true`：连上游标记为 prerelease 的 beta 一起检查（默认只看正式版）。以 beta 发布时 GitHub Release 同样标为 prerelease；semver 中预发布低于同号正式版，正式版 `X.Y.Z` 出来后仍会再同步。
 - 外部通知可调用 `repository_dispatch`，事件类型 `upstream-release`；仍重新读取官方 Release 与 tag，不相信事件中的下载地址。
 
@@ -22,7 +22,7 @@
 6. **publish**：仅该 job 获得 contents 写权限；维护重发先把新签名 APK 轨与线上 Release 逐资产比对，候选路径白名单与固定配置键校验后再提交或恢复候选 checkpoint。两个 Release 逐资产上传并回下载核 SHA-256，完整后再以独立 docs commit 更新 README 自动版本区及根目录 `update.json`。普通 Release 的既有同名资产只核验、不覆盖；只有同上游版本的 APK 维护重发可以按实际资产差异受控替换。后续 detect 同时核对 Release 与文档入口，文档提交失败或取消也会恢复原计划的幂等发布。
 7. **failure**：仅提交脱敏故障记录至 `automation/failure-<tag>` 并创建/复用 PR，附 Actions 日志入口。候选代码与原始日志不写入故障 PR。
 
-并发组 `upstream-sync` 串行运行；失败不会自动跳过检查。源码提交之后中断，由配置中的 `last_plan` 定位原 Actions artifacts、checkpoint commit 和原 tag，避免重新签名产生不同 APK。artifact 已过期或旧资产被篡改时，检查会保持失败并提供故障记录，而不是覆盖发布。
+并发组 `upstream-sync` 串行运行；失败不会自动跳过检查。源码提交之后中断，由配置中的 `last_plan` 定位原 Actions artifacts、checkpoint commit 和原 tag，避免重新签名产生不同 APK。重试可以从旧 checkpoint 检出，但要求它仍是最新 main 的祖先；文档提交前只快进到最后 main，拒绝分叉历史。artifact 已过期或旧资产被篡改时，检查会保持失败并提供故障记录，而不是覆盖发布。
 
 ## 发布可靠性与维护重发
 

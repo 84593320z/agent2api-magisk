@@ -175,6 +175,7 @@ class RecoveryTests(unittest.TestCase):
     def setUp(self):
         self.baseline, self.plan, self.config = fixture()
         self.head, self.checkpoint = 'd' * 40, 'c' * 40
+        self.remote = self.head
         self.calls = []
 
     def git(self, *args):
@@ -190,7 +191,7 @@ class RecoveryTests(unittest.TestCase):
         return ''
 
     def recover(self, refs):
-        with patch.object(publish, 'git', side_effect=self.git), patch.object(publish, 'api', return_value={'object': {'sha': self.head}}), patch.object(publish, 'release_refs', return_value=refs):
+        with patch.object(publish, 'git', side_effect=self.git), patch.object(publish, 'api', return_value={'object': {'sha': self.remote}}), patch.object(publish, 'release_refs', return_value=refs):
             return publish.recovery_commit(dict(self.plan, retry=True))
 
     def test_existing_tag_uses_checkpoint_not_latest_main(self):
@@ -203,6 +204,25 @@ class RecoveryTests(unittest.TestCase):
 
     def test_stale_apk_tag_does_not_hide_the_persisted_checkpoint(self):
         self.assertEqual(self.recover({'apk-v3.5.0-beta.1-mod': 'a' * 40}), self.checkpoint)
+
+    def test_retry_allows_later_main_fixes_descending_from_baseline(self):
+        self.remote = 'e' * 40
+        self.assertEqual(self.recover({}), self.checkpoint)
+        self.assertIn(('fetch', '--no-tags', 'origin', 'main'), self.calls)
+        self.assertIn(('merge-base', '--is-ancestor', self.head, self.remote), self.calls)
+
+    def test_retry_rejects_diverged_main(self):
+        self.remote = 'e' * 40
+        original = self.git
+        def diverged(*args):
+            if args == ('merge-base', '--is-ancestor', self.head, self.remote):
+                raise subprocess.CalledProcessError(1, args)
+            return original(*args)
+        with (patch.object(publish, 'git', side_effect=diverged),
+              patch.object(publish, 'api', return_value={'object': {'sha': self.remote}}),
+              patch.object(publish, 'release_refs', return_value={}),
+              self.assertRaises(subprocess.CalledProcessError)):
+            publish.recovery_commit(dict(self.plan, retry=True))
 
     def test_unrelated_tag_or_modified_checkpoint_rejected(self):
         original = self.git

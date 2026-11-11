@@ -162,5 +162,49 @@ class PublishOrderingTests(unittest.TestCase):
         self.assertEqual(releases[-1][2], {'move_tag': True, 'replace_assets': True})
 
 
+class DeferredDocsTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name)
+        (self.root / 'scripts/autoupdate').mkdir(parents=True)
+        self.plan = {'version': '3.5.0-beta.1', 'commit': 'b' * 40,
+                     'module_revision': 42, 'mobile_version_code': 30500}
+        (self.root / 'scripts/autoupdate/config.json').write_text(json.dumps({
+            'repository': '84593320z/agent2api-magisk',
+            'last_plan': publish.checkpoint_plan(self.plan),
+        }), encoding='utf-8')
+        self.head = 'c' * 40
+        self.remote = 'd' * 40
+        self.calls = []
+
+    def git(self, *args):
+        self.calls.append(args)
+        if args == ('rev-parse', 'HEAD'):
+            return self.head
+        if args == ('checkout', '--detach', self.remote):
+            self.head = self.remote
+        return ''
+
+    def test_docs_fast_forward_from_recovery_checkpoint_to_main(self):
+        with (patch.object(publish, 'ROOT', self.root),
+              patch.object(publish, 'git', side_effect=self.git),
+              patch.object(publish, 'api', return_value={'object': {'sha': self.remote}}),
+              patch.object(publish, 'sync_docs', return_value=[])):
+            self.assertEqual(publish.commit_docs(self.plan, 'a' * 64), self.remote)
+        self.assertIn(('merge-base', '--is-ancestor', 'c' * 40, self.remote), self.calls)
+        self.assertIn(('checkout', '--detach', self.remote), self.calls)
+
+    def test_docs_reject_a_newer_main_checkpoint(self):
+        document = json.loads((self.root / 'scripts/autoupdate/config.json').read_text())
+        document['last_plan']['module_revision'] = 43
+        (self.root / 'scripts/autoupdate/config.json').write_text(json.dumps(document), encoding='utf-8')
+        with (patch.object(publish, 'ROOT', self.root),
+              patch.object(publish, 'git', side_effect=self.git),
+              patch.object(publish, 'api', return_value={'object': {'sha': self.remote}}),
+              self.assertRaisesRegex(ValueError, 'checkpoint differs')):
+            publish.commit_docs(self.plan, 'a' * 64)
+
+
 if __name__ == '__main__':
     unittest.main()
