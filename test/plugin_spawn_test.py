@@ -80,10 +80,10 @@ int main(int argc, char **argv) {
 ''', encoding="utf-8")
         self.executable = self.base / "harness"
         subprocess.run([
-            self.cc, "-std=c11", "-Wall", "-Wextra", "-Werror",
+            self.cc, "-std=gnu11", "-Wall", "-Wextra", "-Werror",
             f"-DA2A_HOME=\"{self.home}/\"", f"-DBRIDGE=\"{self.bridge}\"",
             f"-I{SOURCE.parent}", str(harness), "-ldl", "-o", str(self.executable),
-        ], check=True, capture_output=True, text=True)
+        ], check=True, text=True)
 
     def tearDown(self):
         self.temporary.cleanup()
