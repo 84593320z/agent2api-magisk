@@ -172,6 +172,9 @@ plugin_interp_fix() {
         interp_fix_tree "$_sub" 0
       done
     done
+    # 3.5+ 的 Bun 不在 bin/ 中，而是 runtimes/bun/<版本>/<资产名>/bun。
+    # 动态 server 已在函数入口走 spawn 桥；这里只服务静态/桥缺失的回退路径。
+    [ ! -d "$_p/runtimes" ] || interp_fix_tree "$_p/runtimes" 0
   done
   return 0
 }

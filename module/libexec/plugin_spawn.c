@@ -13,7 +13,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 #define LOADER "/data/a2a/ld.so"
-#define LIBS "/data/adb/agent2api/payload/lib"
+#ifndef A2A_HOME
+#define A2A_HOME "/data/adb/agent2api/"
+#endif
+#define LIBS A2A_HOME "payload/lib"
+#ifndef BRIDGE
+#define BRIDGE "/data/adb/modules/agent2api/libexec/plugin-spawn.so"
+#endif
 #define MAX_ARGS 2048
 static int (*real_execve)(const char *,char *const[],char *const[]);
 static int (*real_execvp)(const char *,char *const[]);
@@ -27,13 +33,14 @@ __attribute__((constructor)) static void init(void) {
  real_execvpe=dlsym(RTLD_NEXT,"execvpe"); real_spawn=dlsym(RTLD_NEXT,"posix_spawn");
  real_spawnp=dlsym(RTLD_NEXT,"posix_spawnp"); real_pidfd_spawnp=dlsym(RTLD_NEXT,"pidfd_spawnp");
 }
-/* Only explicit absolute plugin/helper paths, ARM64 LE ELF with glibc interp.
- * No PATH interception of Android shell/tools, no modification of executable. */
+/* Only explicit absolute plugin/runtime/helper paths, ARM64 LE ELF with glibc
+ * interp. Upstream 3.5 installs Bun below data/runtimes, outside the old plugin
+ * roots. No PATH interception of Android shell/tools, no executable changes. */
 static int eligible(const char *path,char canonical[PATH_MAX]) {
  if(!path || path[0]!='/') return 0;
  if(!realpath(path,canonical)) return 0;
  path=canonical;
- const char *roots[]={"/data/adb/agent2api/data/plugins/","/data/adb/agent2api/data/providers/","/data/adb/agent2api/data/kernels/","/data/adb/agent2api/home/plugins/",0};
+ const char *roots[]={A2A_HOME "data/plugins/",A2A_HOME "data/providers/",A2A_HOME "data/kernels/",A2A_HOME "data/runtimes/",A2A_HOME "home/plugins/",0};
  int ok=0; for(int i=0;roots[i];i++) if(!strncmp(path,roots[i],strlen(roots[i]))) ok=1;
  if(!ok || access(path,X_OK)) return 0;
  int fd=open(path,O_RDONLY|O_CLOEXEC|O_NOFOLLOW); if(fd<0) return 0;
@@ -54,46 +61,52 @@ done: close(fd); return match;
 }
 static int wrap(const char *path,char *const argv[],char **out) {
  size_t n=0; if(argv) while(argv[n]) { if(n>=MAX_ARGS) return E2BIG; n++; }
- out[0]=LOADER;out[1]="--argv0";out[2]=(argv && argv[0])?argv[0]:(char*)path;
- out[3]="--inhibit-cache";out[4]="--library-path";out[5]=LIBS;out[6]=(char*)path;
- size_t j=7; for(size_t i=1;i<n;i++) out[j++]=argv[i]; out[j]=0;return 0;
+ size_t j=0;
+ out[j++]=LOADER;out[j++]="--argv0";out[j++]=(argv && argv[0])?argv[0]:(char*)path;
+ out[j++]="--inhibit-cache";out[j++]="--library-path";out[j++]=LIBS;
+ /* Keep the bridge in each wrapped glibc runtime itself, so Bun/plugin children
+  * spawned later receive the same treatment. This is loader-local, not an
+  * LD_PRELOAD environment variable; bionic children do not inherit it. */
+ if(!access(BRIDGE,R_OK)) {out[j++]="--preload";out[j++]=BRIDGE;}
+ out[j++]=(char*)path;
+ for(size_t i=1;i<n;i++) out[j++]=argv[i]; out[j]=0;return 0;
 }
 int execvp(const char *file,char *const argv[]) {
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,environ);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,environ);}
  return real_execvp(file,argv);
 }
 int execve(const char *file,char *const argv[],char *const envp[]) {
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,envp);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,envp);}
  return real_execve(file,argv,envp);
 }
 int posix_spawnp(pid_t *pid,const char *file,const posix_spawn_file_actions_t *fa,const posix_spawnattr_t *attr,char *const argv[],char *const envp[]) {
  if(!real_spawnp) return ENOSYS;
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r)return r;return real_spawnp(pid,LOADER,fa,attr,args,envp);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r)return r;return real_spawnp(pid,LOADER,fa,attr,args,envp);}
  return real_spawnp(pid,file,fa,attr,argv,envp);
 }
 int pidfd_spawnp(int *pidfd,const char *file,const posix_spawn_file_actions_t *fa,const posix_spawnattr_t *attr,char *const argv[],char *const envp[]) {
  if(!real_pidfd_spawnp) return ENOSYS;
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r)return r;return real_pidfd_spawnp(pidfd,LOADER,fa,attr,args,envp);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r)return r;return real_pidfd_spawnp(pidfd,LOADER,fa,attr,args,envp);}
  return real_pidfd_spawnp(pidfd,file,fa,attr,argv,envp);
 }
 
 int execv(const char *file,char *const argv[]) {
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,environ);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,environ);}
  return real_execve(file,argv,environ);
 }
 int execvpe(const char *file,char *const argv[],char *const envp[]) {
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,envp);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r){errno=r;return -1;}return real_execve(LOADER,args,envp);}
  return real_execvpe(file,argv,envp);
 }
 int posix_spawn(pid_t *pid,const char *file,const posix_spawn_file_actions_t *fa,const posix_spawnattr_t *attr,char *const argv[],char *const envp[]) {
  if(!real_spawn) return ENOSYS;
  char canonical[PATH_MAX];
- if(eligible(file,canonical)) {char *args[MAX_ARGS+8];int r=wrap(canonical,argv,args);if(r)return r;return real_spawn(pid,LOADER,fa,attr,args,envp);}
+ if(eligible(file,canonical)) {char *args[MAX_ARGS+10];int r=wrap(canonical,argv,args);if(r)return r;return real_spawn(pid,LOADER,fa,attr,args,envp);}
  return real_spawn(pid,file,fa,attr,argv,envp);
 }

@@ -313,6 +313,7 @@ svc_stray_pids() {
     esac
     case "$_cl" in
       *"$DATADIR/plugins/"*|*"$DATADIR/providers/"*|*"$DATADIR/kernels/"*|\
+      *"$DATADIR/runtimes/"*|\
       *"$HOMEDIR/plugins/"*|*"$HOMEDIR/providers/"*|*"$HOMEDIR/kernels/"*)
         printf '%s ' "$_pid" ;;
     esac

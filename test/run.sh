@@ -111,7 +111,7 @@ if [ "${1:-}" = "--full" ]; then
     FAIL=1
   fi
   if [ -n "$PY" ]; then
-    for v in verify_fixes.py verify_loop.py verify_paths.py recovery_boundary_test.py verify_frontend.py repack_test.py sign_test.py phone_runtime_test.py; do
+    for v in verify_fixes.py verify_loop.py verify_paths.py recovery_boundary_test.py verify_frontend.py repack_test.py sign_test.py phone_runtime_test.py plugin_spawn_test.py; do
       if [ -f "$HERE/$v" ]; then
         if PYTHONIOENCODING=utf-8 "$PY" "$HERE/$v"; then
           echo "  ok   $v"
