@@ -297,6 +297,26 @@ class MetadataAndElfTests(unittest.TestCase):
                 with self.assertRaises(server.ValidationError):
                     server.metadata(ROOT / 'module', older, NEXT_BUILT, NEXT_REVISION, 'a' * 64, 'b' * 40)
 
+    def test_metadata_supports_revision_100_and_later(self):
+        previous_code = int(re.search(r'^versionCode=([0-9]+)$',
+                                      (ROOT / 'module/module.prop').read_text(encoding='utf-8'), re.M).group(1))
+        for revision in (100, 101):
+            with self.subTest(revision=revision):
+                prop, _, name = server.metadata(ROOT / 'module', SEED_VERSION, NEXT_BUILT, revision,
+                                                'a' * 64, 'b' * 40)
+                code = int(re.search(rb'^versionCode=([0-9]+)$', prop, re.M).group(1))
+                self.assertEqual(code, int(NEXT_BUILT[:10].replace('-', '')) * 100 + revision)
+                self.assertGreater(code, previous_code)
+                self.assertEqual(name, f'v{SEED_VERSION} (magisk.{revision})')
+                previous_code = code
+
+    def test_metadata_rejects_nonpositive_or_noninteger_revision(self):
+        for revision in (0, -1, True, 1.5, '100'):
+            with self.subTest(revision=revision):
+                with self.assertRaisesRegex(server.ValidationError, 'positive integer'):
+                    server.metadata(ROOT / 'module', SEED_VERSION, NEXT_BUILT, revision,
+                                    'a' * 64, 'b' * 40)
+
     def test_metadata_rejects_injection_rollback_and_nonmonotonic(self):
         cases = [('v3.4.1', '2026-11-04T09:17:30Z', 38),
                  ('3.4.1\nkey=x', '2026-11-04T09:17:30Z', 38),
@@ -304,8 +324,7 @@ class MetadataAndElfTests(unittest.TestCase):
                  ('3.4.1', '2026-11-04T09:17:30Z', 37),
                  ('3.4.1', '2026-11-03T09:17:30Z', 38),
                  ('3.4.1', '2026-11-04', 38),
-                 ('3.4.1', '2026-99-04T09:17:30Z', 38),
-                 ('3.4.1', '2026-11-04T09:17:30Z', 100)]
+                 ('3.4.1', '2026-99-04T09:17:30Z', 38)]
         for version, built, revision in cases:
             with self.subTest(version=version, built=built, revision=revision):
                 with self.assertRaises(server.ValidationError):

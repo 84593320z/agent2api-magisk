@@ -30,5 +30,6 @@ test/out*/
 # Local build trees and raw upgrade output; portable evidence lives under docs/
 /upgrade-evidence/
 /.bridge-build-cache/
+/.bridge-toolchain/
 /automation-out/
 /signed/

@@ -21,9 +21,11 @@
 
 ### 上游自动同步
 
-仓库现包含每小时检测、精确来源校验、模块与手机端构建、分离原证书签名、幂等 Release 和失败 PR 的 Actions。每次发布会一并重写上方版本区与根目录 `update.json`；`module.prop` 的 `updateJson` 指向该文件，仓库公开后 Magisk 管理器即可检查模块更新（私有仓库的 raw URL 无法匿名读取）。手动试运行选择 `build_current=true`，仅生成验收 artifacts；使用和恢复机制见 [自动同步说明](docs/auto-sync.md)。
+仓库现包含每小时检测、精确来源校验、模块与手机端构建、分离原证书签名、幂等 Release 和失败 PR 的 Actions。仓库已公开，`module.prop` 的 `updateJson` 指向根目录 `update.json`，具备由 Magisk 管理器匿名读取并检查更新的条件；实际设备更新链仍需按当前版本验收。
 
-### magisk.37 真机修复
+同一上游版本的模块维护修复可通过 Actions 的 `publish_current` 重发：只递增 `magisk.N`，不伪造上游或 APK 新版本；若已有正常上游同步计划，则优先正常同步。预发布版本默认不跟进，手动试运行可显式开启 `allow_prerelease`；同号正式版发布后仍可再同步。手动试运行选择 `build_current=true` 时仅生成验收 artifacts，不提交或发布。使用、恢复机制和发布可靠性设计目标见 [自动同步说明](docs/auto-sync.md)。
+
+### 历史真机修复记录（v3.4.2 / magisk.37）
 
 - 新插件安装后同步 glibc 启动桥接，保留官方插件原字节与签名。
 - supervisor 使用持久运行 TMPDIR，状态 JSON 原子 printf；fallback 安装清理变量隔离。
@@ -31,19 +33,25 @@
 - 541 项集成检查、19 项 Shell 语法检查、六入口真机正负对照、50 次连续 spawnp 通过。
 - [手机修复验收与证据](docs/phone-fix-20261104/2026-11-04_手机修复验收-agent2api-report.md)。
 
-### 服务端与面板
+> 上述是 magisk.37 当时的真机与集成验收范围，不代表当前 3.5 beta 已重复同样的全量回归。
 
-使用 [aimod-cc/Agent2API v3.4.1](https://github.com/aimod-cc/Agent2API/releases/tag/v3.4.1) 的官方 `agent2api-server-linux-arm64.tar.gz`，二进制与 UI 原字节保留。上游源码提交 `3ff4b8215d0d65c3451ca74923e90964ed7dbf59`。
+### 当前服务端与面板
 
-**本版内置的是 glibc 动态 arm64 载荷，沿用仓库既有 loader 启动路径，并非 musl 静态包。** 随包 glibc 运行库保持原样；离线检查已确认所需库、符号版本及强版本化导入均有匹配。DNS 路径由已有 `libc.so.6` 的 `/data/a2a/resolv` 等长补丁处理，官方 server 自身未打补丁。
+当前使用 [aimod-cc/Agent2API v3.5.0-beta.1](https://github.com/aimod-cc/Agent2API/releases/tag/v3.5.0-beta.1) 的官方 `agent2api-server-linux-arm64.tar.gz`，二进制与 UI 原字节保留；上游源码提交为 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。这是上游**预发布版本**，当前模块 Release 为 [`v3.5.0-beta.1-magisk.41`](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.41)。
 
-上游 3.4.1 的工具服务页、附件导入、提供商及客户端相关更新随对应服务端和前端产物同步。Windows 本地 musl cross 构建未成功，未使用失败构建的中间产物。
+**当前内置的是 glibc 动态 arm64 载荷，沿用仓库既有 loader 启动路径，并非 musl 静态包。** 随包 glibc 运行库保持原样；发布链检查所需库、符号版本及强版本化导入。DNS 路径由已有 `libc.so.6` 的 `/data/a2a/resolv` 等长补丁处理，官方 server 自身未打补丁。
 
-### 手机端
+### 当前模块维护修复（magisk.40–.41）
 
-从上游 v3.4.1 完整源码构建 Web、Capacitor 与 Android 原生工程，保留新版 `ToolsPage` 等功能，同时融合自动发现、返回键及 9 个网关开关。新旧 GET/PUT 竞态的 epoch 屏障、在途隔离、严格 boolean 回显验证均保留。
+- **KernelSU standalone BusyBox 的 mkdir 兼容**：针对 `ASH_STANDALONE=1` 下 `mkdir -p <绝对路径>` 被错误截成 `/` 的设备问题，安装与运行脚本先尝试原命令，失败后逐级创建目录；不带 `-p` 的调用保持原语义，避免破坏 DNS 发布互斥锁。该缺陷本身曾在 KernelSU 3.3.1-44 / OnePlus PJZ110 上做命令级实测。
+- **Bun runtime spawn bridge**：上游 3.5 将 Bun 放到 `data/runtimes/`，启动桥接的受控目录随之覆盖该 runtime；仍只处理显式绝对路径下符合条件的 ARM64 glibc ELF，通过 loader 局部 `--preload` 传递桥接，不修改官方可执行文件，也不设置全局 `LD_PRELOAD`。
+- magisk.37 的插件启动、持久 TMPDIR、状态写入等修复继续保留；新旧修复的设备验收范围不能互相替代。
 
-APK 使用已有 mod 发布证书，SHA-256 为 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。构建、签名检查和 178 个 Web 资源逐字节对照已完成；Android 设备安装、启动与网络切换验收留待实机执行。
+### 当前手机端
+
+从上游 v3.5.0-beta.1 完整源码构建 Web、Capacitor 与 Android 原生工程，同时融合自动发现、返回键及 9 个网关开关。新旧 GET/PUT 竞态的 epoch 屏障、在途隔离、严格 boolean 回显验证均保留。
+
+当前 APK Release 为 [`apk-v3.5.0-beta.1-mod`](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.5.0-beta.1-mod)，文件 `Agent2API-3.5.0-beta.1-mod.apk`，包名 `com.agent2api.mobile.mod`，versionName `3.5.0-beta.1`，versionCode `30500`。APK 使用既有 mod 发布证书，SHA-256 为 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。当前版本的 Android 安装、启动、自动发现与网络切换仍需设备验收，不能由旧版记录代替。
 
 构建和迁移说明：[apk-mod/README-mod.md](apk-mod/README-mod.md)、[apk-mod/release-migration.md](apk-mod/release-migration.md)。
 
@@ -56,7 +64,7 @@ APK 使用已有 mod 发布证书，SHA-256 为 `d0ca6713c4aeaa4ad05b3610bee3e0f
 
 ---
 
-## 上一版（v3.3.0-beta.7 / magisk.33）改了什么
+## 历史版本记录（v3.3.0-beta.7 / magisk.33）
 
 把 2026-11-04 交来的 `localfix-20261104` 覆盖包**融合**进仓库：R01–R19 全部保留（其中三处被加强），
 另外补进一批事务与运行时能力（更新事务先停服+数据快照+txid 代次绑定、cgroup 全控制器逃逸、
@@ -66,8 +74,8 @@ boot-worker 统一开机入口、卸载零删除保护、DNS 三态还原、WebU
 > 输入包不是完整模块包（只有脚本与文档），处理方式是取其脚本、弃其安装器：脚本与文档合进 `module/`，
 > 那份安装器存进 [overlay/](overlay/) 作参考，仓库的 `customize.sh`、`seed/`、`tools/`、`zoneinfo/`、`META-INF/` 保留。
 
-验证：`test/verify_fixes.py` 37 项全绿、`test/verify_loop.py` 8 场景全绿、`sh -n` 全量 21 个 Shell 入口全过
-（均无真机回归，详见上一版 tag 的 README）。
+该历史版本当时的验证记录：`test/verify_fixes.py` 37 项全绿、`test/verify_loop.py` 8 场景全绿、`sh -n` 全量 21 个 Shell 入口全过。
+这些结果只用于追溯 magisk.33；当前版本的验证边界见下文「已知问题与验证范围」，历史详情见对应 tag 的 README。
 
 ---
 
@@ -166,7 +174,8 @@ su -c 'sh /data/adb/agent2api/bin/a2a doctor'    # 一键自检
 ```bash
 # 已安装相同 mod 发布证书的 .mod：保留配置覆盖安装
 adb install -r Agent2API-<上游版本>-mod.apk
-# 仓库公开后，可在已装模块的手机上自动取对应 APK、核验 Release SHA256SUMS 后覆盖安装：
+# 仓库已公开；可在已装模块的手机上取对应 APK、核验 Release SHA256SUMS 后覆盖安装。
+# 该设备更新链仍需按当前 Release 做真机验收：
 su -c 'sh /data/adb/agent2api/bin/a2a apk-update'
 # 旧世代 com.agent2api.mobile 的迁移步骤见 apk-mod/release-migration.md
 ```
@@ -194,18 +203,16 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 
 ---
 
-## 已知问题
+## 已知问题与验证范围
 
-- **APK 只做到「构建 + 签名 + 包内容抽检」**：3.4.1-mod 是从上游源码完整构建的（`@capacitor/app`
-  已进包，硬件返回键在代码层已修），但自动发现的新判据与返回键仍需一台装了模块的真机复验一次。
-  详见 `apk-mod/README-mod.md` 第 3.2 / 3.3 节。
-- **cgroup 逃逸依赖设备**：只在 `/sys/fs/cgroup/cgroup.procs` 可写、且 `/proc/self/cgroup`
-  里能匹配到 `apps`/`background` 等分组时生效；部分设备（cgroup v2 统一层级、厂商改写）不适用，属降级不影响运行。
-- **Wi-Fi 判定只认 `wlan0/wlan1/swlan0` 的 IPv4**：纯 IPv6 网络或厂商自定义接口名会判成"不在 Wi-Fi"，
-  `wifi_only=1` 时会被暂停。
-- **本版仍然没有真机回归**：修复是在 Windows + msys `sh` 沙箱里用源码切片 + 桩驱动验证的
-  （`test/verify_fixes.py` 37 项、`test/verify_loop.py` 8 个场景，全绿），Android 侧仍需实机验证
-  启动 / 守活 / 升级回滚。msys `sh` 不等于 Android BusyBox `ash`。
+- **真机证据按版本区分**：magisk.37 的 providers 3.4.1 / web 3.4.2、六入口与连续 spawnp 结果属于历史特定版本；mkdir 缺陷本身有命令级设备实测。这些证据不等于当前 magisk.41 已完成全量真机回归，也不能替代 Bun runtime 与当前 APK 的设备验收。
+- **当前预发布仍需设备验收**：v3.5.0-beta.1 / magisk.41 的安装、服务启动与守活、插件/Bun runtime、升级回滚，以及 3.5.0-beta.1-mod 的安装、启动、自动发现、硬件返回键和网络切换，均应在当前 Release 上核对。历史构建或旧版真机结果不直接外推。
+- **CI 不连接手机**：源码与归档校验、glibc 依赖检查、Shell/Python/前端测试、APK 构建与签名核验可以自动化，但不能证明 Android 设备上的安装、重启、真实账户请求和网络切换已经通过。
+- **更新入口需独立验收**：仓库已公开，具备匿名读取 `update.json` 和下载 Release 资产的条件；Magisk 管理器检查/安装更新及 `a2a apk-update` 的端到端设备链仍需当前版本真机确认。
+- **cgroup 逃逸依赖设备**：只在 `/sys/fs/cgroup/cgroup.procs` 可写、且 `/proc/self/cgroup` 里能匹配到 `apps`/`background` 等分组时生效；部分设备（cgroup v2 统一层级、厂商改写）不适用，属降级不影响运行。
+- **Wi-Fi 判定只认 `wlan0/wlan1/swlan0` 的 IPv4**：纯 IPv6 网络或厂商自定义接口名会判成“不在 Wi-Fi”，`wifi_only=1` 时会被暂停。
+
+APK 的历史验证记录、当前验收边界和重建方法见 [apk-mod/README-mod.md](apk-mod/README-mod.md)。
 
 ---
 
@@ -214,24 +221,24 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 ```bash
 python pack.py          # → dist/agent2api-magisk-vX.Y.Z-magisk.NN-arm64.zip
 sh test/run.sh          # 离线回归：语法检查 + 事务/DNS/CLI 故障注入（不需要真机）
-sh test/run.sh --full   # 上一行之外，追加 Python verify 套件（需要 python3）
+sh test/run.sh --full   # 追加 Python 与真实 Node 运行时套件（需要 python3、Node.js）
 ```
 
-`run.sh` 分三层：① 全部模块脚本的 `sh -n` 语法检查；② `txn_test.sh` 纯 POSIX
-故障注入测试（更新事务 journal / 中断恢复 / 回滚失败保现场 / 恢复互斥 / sweep 保护 /
-静态载荷 / DNS 网络身份与缓存恢复，共 99 项断言，另有完整 DNS 身份 130 项与恢复边界 25 项）；③ `--full` 时跑六组 Python 检查：
-`verify_fixes.py`（R01–R19 函数级复验）、`verify_loop.py`（主循环集成复验 8 场景）、
-`verify_paths.py`（跨平台路径转换）、`verify_frontend.py`（11 项集成 + 182 项真实函数/组件行为）、
-`repack_test.py`（APK 重打包的输入保护与原子输出）、`sign_test.py`（签名指纹拦截）。
-`--full` 是验收模式：缺 python 或缺少套件文件都直接判失败，不会静默 SKIP。
-Python 套件可用 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL` 覆盖路径，
-中间产物写到 `test/*/out/`。
+`run.sh` 分层执行：① 模块及测试脚本的 `sh -n`；② 事务/DNS/mkdir 故障注入，以及
+cgroup 与运行库 rename 38 项、自解包安装与回滚 33 项独立回归；③ `--full` 时运行
+`verify_fixes.py`、`verify_loop.py`、`verify_paths.py`、`recovery_boundary_test.py`、
+`verify_frontend.py`、`repack_test.py`、`sign_test.py`、`phone_runtime_test.py` 和
+`plugin_spawn_test.py`；④ 用真实 Node 执行 APK 端口发现 4 项运行时测试。
+`--full` 是验收模式：缺 Python、Node 或套件文件都直接判失败，不会静默 SKIP。
+CI 另外执行 `test_autoupdate*.py`，并用固定 Zig 0.13.0 重建、逐字节核对签入的 ARM64
+`plugin-spawn.so`。Python 套件可用 `A2A_MODULE`、`A2A_VERIFY_OUT`、`A2A_SH`、`A2A_CURL`
+覆盖路径，中间产物写到 `test/*/out/`。
 
 APK 侧（需要 Node 20+，构建细节见 `apk-mod/README-mod.md`）：
 
 ```bash
 git clone https://github.com/aimod-cc/Agent2API.git && cd Agent2API
-git checkout v3.4.1 && git apply /path/to/apk-mod/a2a-mobile-mod.patch
+git checkout v3.5.0-beta.1 && git apply /path/to/apk-mod/a2a-mobile-mod.patch
 cd desktop-tauri/mobile
 npm ci && npm install --no-save class-variance-authority clsx tailwind-merge tw-animate-css shadcn
 mkdir -p android-www && npm run build:native && npx cap sync android

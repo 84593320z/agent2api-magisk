@@ -3,8 +3,8 @@
 #
 # 层级：
 #   1. sh -n        全部模块 shell 脚本的语法检查
-#   2. txn_test.sh  事务/DNS/CLI 纯 POSIX 故障注入测试（F-001..F-008、RR-01..RR-07 的回归）
-#   3. verify 套件  事务/循环/路径/前端/打包 五组 Python 检查
+#   2. Shell 回归 事务/DNS/mkdir/cgroup/运行库/自解包安装故障注入
+#   3. --full      Python 行为套件与 APK 端口发现的真实 Node 运行时测试
 #
 # 历史问题（F-010）：旧 run.sh 是 2.x 架构，cp 一个已经不存在的
 # module/bin/lib.sh，README 推荐的 `dash test/run.sh` 从未跑通过。
@@ -12,7 +12,7 @@
 #
 # 用法：
 #   sh test/run.sh            # 语法 + 事务测试
-#   sh test/run.sh --full     # 加上 Python verify 套件（缺 python 直接判失败）
+#   sh test/run.sh --full     # 加上 Python/Node 套件（缺运行时直接判失败）
 #   A2A_SH=/path/to/sh sh test/run.sh   # 显式指定 POSIX shell
 
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -42,6 +42,7 @@ for f in \
   "$SRC/libexec/updater.sh" \
   "$SRC/libexec/supervise.sh" \
   "$SRC/libexec/control.sh" \
+  "$SRC/libexec/plugin.sh" \
   "$SRC/libexec/dns.sh" \
   "$SRC/libexec/launch.sh" \
   "$SRC/libexec/a2a" \
@@ -52,7 +53,9 @@ for f in \
   "$HERE/txn_test.sh" \
   "$HERE/recovery_boundary_cases.sh" \
   "$HERE/dns_identity_test.sh" \
-  "$HERE/mkdir_compat_test.sh"
+  "$HERE/mkdir_compat_test.sh" \
+  "$HERE/cgroup_payload_txn_test.sh" \
+  "$HERE/fallback_txn_test.sh"
 do
   if [ ! -f "$f" ]; then
     echo "  FAIL（文件不存在）: $f"
@@ -96,6 +99,24 @@ else
   FAIL=1
 fi
 
+echo
+echo "== 2c. cgroup 与运行库 rename 故障回归 =="
+if "$SH_BIN" "$HERE/cgroup_payload_txn_test.sh"; then
+  echo "  ok   cgroup_payload_txn_test.sh"
+else
+  echo "  FAIL cgroup_payload_txn_test.sh"
+  FAIL=1
+fi
+
+echo
+echo "== 2d. 自解包安装事务与回滚回归 =="
+if "$SH_BIN" "$HERE/fallback_txn_test.sh"; then
+  echo "  ok   fallback_txn_test.sh"
+else
+  echo "  FAIL fallback_txn_test.sh"
+  FAIL=1
+fi
+
 # 可选：Python verify 套件。--full 是验收模式：缺 python 或缺少套件文件都算失败，
 # 不再静默 SKIP（旧的 `--full` 在没装 python 的机器上会“全绿”，不能作为验收证据）。
 if [ "${1:-}" = "--full" ]; then
@@ -125,9 +146,22 @@ if [ "${1:-}" = "--full" ]; then
       fi
     done
   fi
+  echo
+  echo "== 4. APK 端口发现真实运行时回归 =="
+  if command -v node >/dev/null 2>&1; then
+    if node "$HERE/verify_discover_runtime.mjs"; then
+      echo "  ok   verify_discover_runtime.mjs"
+    else
+      echo "  FAIL verify_discover_runtime.mjs"
+      FAIL=1
+    fi
+  else
+    echo "  FAIL 未找到 node（--full 需要 Node.js）"
+    FAIL=1
+  fi
 else
   echo
-  echo "（提示：sh test/run.sh --full 可追加 Python verify 套件）"
+  echo "（提示：sh test/run.sh --full 可追加 Python 与 Node 验收套件）"
 fi
 
 echo

@@ -8,6 +8,7 @@ import re
 import subprocess
 import urllib.parse
 import urllib.request
+import zipfile
 from control import dump, request, version, release_refs
 from bundle import ROOT, apply, checkpoint_plan
 from docs_sync import sync as sync_docs
@@ -22,7 +23,19 @@ def api(path, method='GET', data=None):
 def git(*args):
     return subprocess.check_output(['git', '-C', str(ROOT), *args], text=True).strip()
 
-def commit_candidate(plan, archive, expected, zip_sha256, branch='main'):
+def stage_file(name):
+    data = (ROOT/name).read_bytes()
+    if re.search(rb'(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)', data):
+        raise ValueError('Secret-shaped candidate content')
+    mode = '100644'
+    old = git('ls-files', '-s', '--', name).split()
+    if old:
+        mode = old[0]
+    blob = git('hash-object', '-w', '--no-filters', '--', name)
+    git('update-index', '--add', '--cacheinfo', mode, blob, name)
+
+
+def commit_candidate(plan, archive, expected, branch='main'):
     if git('rev-parse', 'HEAD') != expected or git('status', '--porcelain'):
         raise ValueError('Trusted checkout differs from expected clean baseline')
     if api('/git/ref/heads/main')['object']['sha'] != expected:
@@ -31,30 +44,37 @@ def commit_candidate(plan, archive, expected, zip_sha256, branch='main'):
     config = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
     if config['last_version'] != plan['version'] or config['last_commit'] != plan['commit']:
         raise ValueError('Candidate provenance/config mismatch')
-    def stage(name):
-        data = (ROOT/name).read_bytes()
-        if re.search(rb'(?:gh[pousr]_[A-Za-z0-9_]{30,}|github_pat_[A-Za-z0-9_]{30,}|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----)', data):
-            raise ValueError('Secret-shaped candidate content')
-        mode = '100644'
-        old = git('ls-files', '-s', '--', name).split()
-        if old:
-            mode = old[0]
-        blob = git('hash-object', '-w', '--no-filters', '--', name)
-        git('update-index', '--add', '--cacheinfo', mode, blob, name)
     for row in rows:
         name = row['path']
         if row['deleted']:
             git('update-index', '--remove', '--', name)
         else:
-            stage(name)
-    # README and Magisk update.json are derived from the signed plan and the
-    # candidate module.prop, so they belong to the same checkpoint commit.
-    for name in sync_docs(ROOT, plan, config['repository'], zip_sha256):
-        stage(name)
+            stage_file(name)
     git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
         'commit', '-m', (f"chore: rebuild module {plan['version']} (magisk.{plan['module_revision']})"
                          if plan.get('republish') else
                          f"chore: sync upstream {plan['tag']} (magisk.{plan['module_revision']})"))
+    commit = git('rev-parse', 'HEAD')
+    subprocess.run(['git', '-C', str(ROOT), 'push', 'origin', 'HEAD:refs/heads/'+branch], check=True)
+    return commit
+
+
+def commit_docs(plan, zip_sha256, branch='main'):
+    """Point update.json/README at a Release only after both Release tracks exist."""
+    head = git('rev-parse', 'HEAD')
+    if git('status', '--porcelain') or api('/git/ref/heads/main')['object']['sha'] != head:
+        raise ValueError('Documentation checkout differs from clean main')
+    config = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
+    if config.get('last_plan') != checkpoint_plan(plan):
+        raise ValueError('Documentation checkpoint differs from published plan')
+    names = sync_docs(ROOT, plan, config['repository'], zip_sha256)
+    if not names:
+        print('Update entry points already current:', head)
+        return head
+    for name in names:
+        stage_file(name)
+    git('-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+github-actions[bot]@users.noreply.github.com',
+        'commit', '-m', f"docs: publish module {plan['version']} (magisk.{plan['module_revision']})")
     commit = git('rev-parse', 'HEAD')
     subprocess.run(['git', '-C', str(ROOT), 'push', 'origin', 'HEAD:refs/heads/'+branch], check=True)
     return commit
@@ -76,13 +96,14 @@ def recovery_commit(plan):
                 and cfg.get('last_commit') == canonical['commit']
                 and cfg.get('module_revision') == canonical['module_revision']
                 and cfg.get('mobile_version_code') == canonical['mobile_version_code'])
-    if refs:
-        commit = next(iter(refs.values()))
+    # A maintenance retry can see only the old, same-version APK tag.  It is not
+    # this plan's checkpoint; keep looking instead of rejecting the persisted
+    # module checkpoint or accidentally recovering the old APK commit.
+    for commit in dict.fromkeys(refs.values()):
         # This command must succeed: an unrelated or rewritten tag is never reused.
         git('merge-base', '--is-ancestor', commit, head)
-        if not matches(config_at(commit)):
-            raise ValueError('Release tag configuration differs from checkpoint')
-        return commit
+        if matches(config_at(commit)):
+            return commit
     # Oldest matching main commit is the first persisted checkpoint, not latest HEAD.
     for commit in git('rev-list', '--reverse', '--first-parent', head).splitlines():
         try:
@@ -98,16 +119,54 @@ def recovery_commit(plan):
 def download_asset(asset):
     return request(asset['url'], TOKEN, binary=True)
 
-def release(tag, commit, files, body, prerelease=False):
+
+def get_release(tag):
+    return next((x for x in api('/releases?per_page=100') if x['tag_name'] == tag), None)
+
+
+def candidate_mobile_changes(archive):
+    """The signed candidate manifest decides whether a rebuild changes the APK track."""
+    with zipfile.ZipFile(archive) as z:
+        rows = json.loads(z.read('manifest.json'))
+    return any(row['path'] == 'apk-mod/a2a-mobile-mod.patch' or row['path'].startswith('apk-mod/src/')
+               for row in rows)
+
+
+def assert_release_assets_identical(tag, files):
+    """A module-only rebuild must reuse the exact already published APK track."""
+    r = get_release(tag)
+    if r is None or r.get('draft'):
+        raise ValueError('Published APK release missing for module-only rebuild: '+tag)
+    old = {x['name']: x for x in r['assets']}
+    if set(old) != {p.name for p in files}:
+        raise ValueError('Published APK asset set differs for module-only rebuild: '+tag)
+    for p in files:
+        asset = old.get(p.name)
+        data = p.read_bytes()
+        if (asset is None or asset['size'] != len(data)
+                or hashlib.sha256(download_asset(asset)).hexdigest() != hashlib.sha256(data).hexdigest()):
+            raise ValueError('Module-only rebuild would change published APK asset: '+p.name)
+
+
+def upload_asset(r, p, data):
+    url = r['upload_url'].split('{')[0]+'?name='+urllib.parse.quote(p.name)
+    headers = {'Authorization':'Bearer '+TOKEN,'Accept':'application/vnd.github+json','Content-Type':'application/octet-stream','User-Agent':'agent2api-autoupdate'}
+    with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method='POST'), timeout=180) as response:
+        return json.load(response)
+
+
+def release(tag, commit, files, body, prerelease=False, move_tag=False, replace_assets=False):
+    if move_tag and not replace_assets:
+        raise ValueError('Moving a release tag requires explicit asset replacement mode')
     refs = api('/git/matching-refs/tags/'+tag)
     found = next((r for r in refs if r['ref']=='refs/tags/'+tag), None)
     if found is None:
         api('/git/refs', 'POST', {'ref':'refs/tags/'+tag,'sha':commit})
-    else:
-        if found['object']['sha'] != commit or found['object']['type'] != 'commit':
-            raise ValueError('Existing release tag points elsewhere')
-    releases = api('/releases?per_page=100')
-    r = next((x for x in releases if x['tag_name']==tag), None)
+    elif found['object']['type'] != 'commit':
+        raise ValueError('Existing release tag is not a commit')
+    elif found['object']['sha'] != commit and not move_tag:
+        raise ValueError('Existing release tag points elsewhere')
+    r = get_release(tag)
     if r is None:
         r = api('/releases', 'POST', {'tag_name':tag,'target_commitish':commit,'name':'Agent2API '+tag,'body':body,'draft':True,'prerelease':prerelease})
     old = {x['name']:x for x in r['assets']}
@@ -117,20 +176,29 @@ def release(tag, commit, files, body, prerelease=False):
         data = p.read_bytes()
         digest = hashlib.sha256(data).hexdigest()
         asset = old.get(p.name)
+        if asset is not None:
+            same = (asset['size'] == len(data)
+                    and hashlib.sha256(download_asset(asset)).hexdigest() == digest)
+            if not same:
+                if not replace_assets:
+                    raise ValueError('Release download hash differs: '+p.name)
+                api('/releases/assets/'+str(asset['id']), 'DELETE')
+                asset = None
         if asset is None:
-            url = r['upload_url'].split('{')[0]+'?name='+urllib.parse.quote(p.name)
-            headers = {'Authorization':'Bearer '+TOKEN,'Accept':'application/vnd.github+json','Content-Type':'application/octet-stream','User-Agent':'agent2api-autoupdate'}
-            with urllib.request.urlopen(urllib.request.Request(url, data=data, headers=headers, method='POST'), timeout=180) as response:
-                asset = json.load(response)
+            asset = upload_asset(r, p, data)
         if asset['size'] != len(data) or hashlib.sha256(download_asset(asset)).hexdigest() != digest:
             raise ValueError('Release download hash differs: '+p.name)
-    if r['draft']:
+    # Move a mutable same-version APK tag only after every downloaded asset is verified.
+    if found is not None and found['object']['sha'] != commit:
+        api('/git/refs/tags/'+tag, 'PATCH', {'sha':commit, 'force':True})
+    if r['draft'] or replace_assets:
         r = api('/releases/'+str(r['id']), 'PATCH', {'draft':False,'body':body,'prerelease':bool(prerelease),'make_latest':'false' if prerelease else 'true'})
     print('Verified release:', r['html_url'])
     return r['html_url']
 
+
 def is_republish(cfg, plan):
-    """True for a module-only rebuild: same upstream version, one new revision."""
+    """True for a same-upstream maintenance rebuild, one new module revision."""
     return (bool(plan.get('republish')) and cfg['last_version'] == plan['version']
             and plan['module_revision'] == cfg['module_revision'] + 1)
 
@@ -155,30 +223,38 @@ def publish(a):
     if json.loads((a.artifacts/'elf-compatibility.json').read_text()).get('status') != 'PASS':
         raise ValueError('ELF acceptance not PASS')
     cfg = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
+    maintenance = bool(plan.get('republish'))
     republish = is_republish(cfg, plan)
+    mobile_changed = candidate_mobile_changes(a.artifacts/'candidate.zip') if maintenance else True
     if cfg['last_version']==plan['version'] and not republish:
         assert cfg['last_commit']==plan['commit']
         commit = recovery_commit(plan)
     else:
-        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected,
-                                  hashlib.sha256(module.read_bytes()).hexdigest())
+        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected)
     sums = a.artifacts/'SHA256SUMS.txt'
     sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files), encoding='utf-8')
+    apk_sums = a.artifacts/'apk-checksums'/'SHA256SUMS.txt'
+    apk_sums.parent.mkdir(parents=True, exist_ok=True)
+    apk_files = [apk, a.artifacts/'signature.json', apk_sums]
+    apk_sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in apk_files[:2]), encoding='utf-8')
+    apk_tag = f"apk-v{plan['version']}-mod"
+    if maintenance and not mobile_changed:
+        # Fail before publishing the module if an allegedly module-only rebuild
+        # would make its bundled APK differ from the existing APK track.
+        assert_release_assets_identical(apk_tag, apk_files)
     body = f"自动同步上游 {plan['tag']}，精确源码 `{plan['commit']}`。\n\n模块保留 Android 启动桥接、事务恢复与 DNS 修复；手机端保留开关写屏障/严格回显。APK 使用既有 .mod 证书。完整离线回归、ELF闭包、资源与签名核验通过；CI 不替代真机验收。\n\n源码提交 `{commit}`。安装旧包 com.agent2api.mobile 的用户须按迁移文档重建配置；既有同签名 .mod 可覆盖升级。\n"
     prerelease = bool(plan.get('prerelease'))
     if prerelease:
         body += "\n※ 上游本次为预发布（beta）：模块与 APK 均按同一精确提交构建，签名与既有 .mod 证书一致；上游正式版发布后会自动再同步一版，届时可正常覆盖升级。\n"
-    if republish:
-        body += f"\n※ 本次是模块侧修复的重新构建：上游版本与 APK 未变，仅模块脚本更新；APK 沿用 `apk-v{plan['version']}-mod`，手机端无需重装。\n"
+    if maintenance:
+        if mobile_changed:
+            body += f"\n※ 本次是同上游版本的维护重发：模块与 APK 均有更新，`{apk_tag}` 中的 APK 会在完整验签和回下载校验后受控替换；versionCode 与签名保持不变，可覆盖升级。\n"
+        else:
+            body += f"\n※ 本次是模块侧修复的重新构建：上游版本与 APK 未变，仅模块脚本更新；已逐字节核验 `{apk_tag}` 的既有 APK，手机端无需重装。\n"
     release(f"v{plan['version']}-magisk.{plan['module_revision']}", commit, files+[sums], body, prerelease)
-    if republish:
-        # The APK is byte-identical to the one already published for this version.
-        print('Module-only rebuild: keeping the existing APK release')
-        return
-    apk_sums = a.artifacts/'apk-checksums'/'SHA256SUMS.txt'
-    apk_sums.parent.mkdir(parents=True, exist_ok=True)
-    apk_sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in [apk, a.artifacts/'signature.json']), encoding='utf-8')
-    release(f"apk-v{plan['version']}-mod", commit, [apk, a.artifacts/'signature.json', apk_sums], body, prerelease)
+    release(apk_tag, commit, apk_files, body, prerelease,
+            move_tag=maintenance, replace_assets=maintenance)
+    commit_docs(plan, hashlib.sha256(module.read_bytes()).hexdigest())
 
 def failure(a):
     plan = json.loads(a.plan.read_text()) if a.plan.exists() else {'tag':'detection-failed'}

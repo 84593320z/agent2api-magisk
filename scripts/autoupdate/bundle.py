@@ -23,12 +23,27 @@ def allowed(name):
 def export(out):
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    status = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '-uall'], text=True)
+    status = subprocess.check_output(['git', '-C', str(ROOT), 'status', '--porcelain', '-z', '-uall'])
+    fields = status.split(b'\0')
+    if fields[-1] != b'':
+        raise ValueError('Truncated Git status')
     paths = []
-    for line in status.splitlines():
-        name = line[3:]
-        if allowed(name):
-            paths.append(name)
+    index = 0
+    while index < len(fields) - 1:
+        header = fields[index]
+        index += 1
+        if len(header) < 4:
+            raise ValueError('Malformed Git status entry')
+        state = header[:2].decode('ascii')
+        names = [header[3:].decode('utf-8')]
+        if 'R' in state or 'C' in state:
+            if index >= len(fields) - 1:
+                raise ValueError('Rename/copy status lacks source path')
+            names.append(fields[index].decode('utf-8'))
+            index += 1
+        for name in names:
+            if allowed(name):
+                paths.append(name)
     if not paths:
         raise ValueError('No candidate changes')
     manifest = []
@@ -56,7 +71,8 @@ def validate_config(baseline, candidate, plan):
     if canonical['module_revision'] != baseline['module_revision'] + 1:
         raise ValueError('Candidate counters do not advance baseline')
     if canonical.get('republish'):
-        # Module-only rebuild: same upstream version and APK, one new revision.
+        # Maintenance rebuild: same upstream/versionCode, one new module revision;
+        # reviewed mobile snapshot changes may rebuild the same-version APK track.
         if canonical['version'] != baseline['last_version'] or canonical['commit'] != baseline['last_commit']:
             raise ValueError('Republish must keep the upstream version and commit')
         if canonical['mobile_version_code'] != baseline['mobile_version_code']:

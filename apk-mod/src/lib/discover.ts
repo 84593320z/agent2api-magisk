@@ -114,10 +114,11 @@ async function probeCandidate(base: string, timeoutMs: number): Promise<Found | 
 /**
  * 扫环回地址找网关。
  *
- * 21 个候选**并发**探测，每个 1.2 秒超时 —— 最坏 1.2 秒出结果（不是 21 × 1.2）。
+ * 21 个候选**并发**探测，每次请求 1.2 秒超时。同一候选的
+ * `/health` 与可能的 `/api/panel/status` **串行**，各有独立超时，
+ * 所以整轮最坏总预算约为 `2 × timeoutMs`（默认约 2.4 秒，不是 21 × 2.4）。
  * 环回连接要么立刻拒绝（毫秒级），要么立刻成功，长超时只用来兜住
- * 「端口被防火墙 DROP」这种极端情况。headless 形态的候选会多打一次
- * `/api/panel/status`，仍然是并发且共用同一组超时。
+ * 「端口被防火墙 DROP」这种极端情况。
  */
 export async function discoverLocalGateways(timeoutMs = 1200): Promise<Found[]> {
   const candidates = PORTS.map(port => normalizeBase(`127.0.0.1:${port}`)).filter(Boolean)
@@ -133,6 +134,8 @@ export async function discoverLocalGateways(timeoutMs = 1200): Promise<Found[]> 
   found.sort((a, b) => {
     const portA = Number(a.base.split(':').pop())
     const portB = Number(b.base.split(':').pop())
+    if (portA === 3065) return portB === 3065 ? 0 : -1
+    if (portB === 3065) return 1
     return portA - portB
   })
   return found

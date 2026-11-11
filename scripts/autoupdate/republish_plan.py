@@ -1,9 +1,9 @@
 """Rebuild the current upstream version as one new module revision.
 
-Used when the module itself is fixed but upstream has not released anything new:
-the server payload, the mobile sources and the APK stay exactly as published,
-only the module scripts change, so a fresh `magisk.<n>` release carries the fix
-without pretending upstream moved.
+Used when this repository is fixed but upstream has not released anything new:
+the upstream version and Android versionCode stay pinned, one fresh
+`magisk.<n>` release carries the module and any reviewed mobile changes,
+and publishing verifies both Release tracks before moving update.json.
 """
 import json
 import os

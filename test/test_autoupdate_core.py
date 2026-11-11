@@ -1,4 +1,5 @@
 """Core supply-chain checks. Offline: network/git effects mocked; ZIP tests use scratch."""
+import base64
 import copy
 import hashlib
 import io
@@ -156,6 +157,19 @@ class CompletionTests(unittest.TestCase):
             self.assertEqual(control.select_plan(self.config), dict(self.plan, retry=True))
             detect.assert_not_called()
 
+    def test_complete_releases_with_stale_docs_still_retry(self):
+        with (patch.object(control, 'releases_complete', return_value=True),
+              patch.object(control, 'docs_complete', return_value=False),
+              patch.object(control, 'detect') as detect):
+            self.assertEqual(control.select_plan(self.config), dict(self.plan, retry=True))
+            detect.assert_not_called()
+
+    def test_complete_releases_and_docs_continue_to_detection(self):
+        with (patch.object(control, 'releases_complete', return_value=True),
+              patch.object(control, 'docs_complete', return_value=True),
+              patch.object(control, 'detect', return_value={'changed': False})):
+            self.assertEqual(control.select_plan(self.config), {'changed': False})
+
 
 class RecoveryTests(unittest.TestCase):
     def setUp(self):
@@ -187,6 +201,9 @@ class RecoveryTests(unittest.TestCase):
     def test_no_tag_locates_first_persisted_checkpoint(self):
         self.assertEqual(self.recover({}), self.checkpoint)
 
+    def test_stale_apk_tag_does_not_hide_the_persisted_checkpoint(self):
+        self.assertEqual(self.recover({'apk-v3.5.0-beta.1-mod': 'a' * 40}), self.checkpoint)
+
     def test_unrelated_tag_or_modified_checkpoint_rejected(self):
         original = self.git
         def unrelated(*args):
@@ -198,6 +215,35 @@ class RecoveryTests(unittest.TestCase):
         self.config['last_plan'] = dict(self.plan, run_id='different')
         with self.assertRaises(ValueError):
             self.recover({'tag': self.checkpoint})
+
+
+class PublishedDocsTests(unittest.TestCase):
+    def test_docs_match_release_digest_and_deferred_checkpoint(self):
+        _, plan, config = fixture()
+        digest = 'f' * 64
+        tag = 'v1.2.3-magisk.7'
+        module = 'agent2api-magisk-v1.2.3-magisk.7-arm64.zip'
+        document = {
+            'version': 'v1.2.3 (magisk.7)', 'versionCode': 2026111107,
+            'zipUrl': f"https://github.com/{config['repository']}/releases/download/{tag}/{module}",
+            'changelog': f"https://github.com/{config['repository']}/releases/tag/{tag}",
+            'sha256': digest,
+        }
+        def response(url, token=None):
+            if '/contents/README.md?' in url:
+                text = control.docs_sync.latest_block(plan, config['repository'])
+            elif '/contents/update.json?' in url:
+                text = json.dumps(document)
+            elif '/releases/tags/' in url:
+                return {'assets': [{'name': module, 'digest': 'sha256:' + digest}]}
+            else:
+                raise AssertionError(url)
+            return {'type': 'file', 'encoding': 'base64',
+                    'content': base64.b64encode(text.encode()).decode()}
+        with patch.object(control, 'request', side_effect=response):
+            self.assertTrue(control.docs_complete(config, plan))
+            document['sha256'] = '0' * 64
+            self.assertFalse(control.docs_complete(config, plan))
 
 
 class PrereleaseTests(unittest.TestCase):
@@ -240,6 +286,16 @@ class PrereleaseTests(unittest.TestCase):
         self.assertIs(plan['prerelease'], True)
         self.assertEqual(plan['module_revision'], 7)
         self.assertEqual(plan['mobile_version_code'], 10300)
+
+    def test_plan_prerelease_combines_release_flag_and_semver_suffix(self):
+        for tag, release_flag, expected in (
+                ('v1.3.0', True, True),
+                ('v1.3.0-beta.1', False, True),
+                ('v1.3.0', False, False)):
+            with self.subTest(tag=tag, release_flag=release_flag):
+                plan = self.detect([self.release(tag, release_flag)],
+                                   allow_prerelease=True, last_version='1.2.3')
+                self.assertIs(plan['prerelease'], expected)
 
     def test_pinned_prerelease_is_not_downgraded(self):
         plan = self.detect([self.release('v1.2.3', False)], last_version='1.3.0-beta.1')

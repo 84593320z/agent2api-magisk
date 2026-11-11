@@ -13,6 +13,7 @@ import tempfile
 root = Path(__file__).resolve().parents[1]
 ap = argparse.ArgumentParser()
 ap.add_argument('--zig', required=True)
+ap.add_argument('--check', action='store_true', help='verify the checked-in ARM64 artifact without replacing it')
 args = ap.parse_args()
 version = subprocess.check_output([args.zig, 'version'], text=True).strip()
 assert version == '0.13.0', version
@@ -28,5 +29,10 @@ with tempfile.TemporaryDirectory(prefix='out-', dir=cache) as tmp:
     data = built.read_bytes()
     print('old_sha256', hashlib.sha256(old).hexdigest() if old else 'absent')
     print('built_sha256', hashlib.sha256(data).hexdigest())
-    print('same_bytes', old == data)
-    os.replace(built, out)
+    same = old == data
+    print('same_bytes', same)
+    if args.check:
+        if not same:
+            raise SystemExit('checked-in plugin-spawn.so is not reproducible from plugin_spawn.c')
+    else:
+        os.replace(built, out)

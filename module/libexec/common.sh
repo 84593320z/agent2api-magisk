@@ -695,7 +695,7 @@ cgroup_escape() { # $1 可选 --check：只读检查模式
         }
         # 优先 root 字段为 "/" 的挂载（bind 子树挂载的根不是层级根），
         # 没有再退到第一个匹配挂载。
-        if ($4 == "/") { print $5; exit }
+        if ($4 == "/") { print $5; m = ""; exit }
         if (m == "") m = $5
       }
       END { if (m != "") print m }

@@ -1,16 +1,22 @@
-# Agent2API 手机端 APK · 3.4.1-mod（配套 Magisk 模块）
+# Agent2API 手机端 APK · 3.5.0-beta.1-mod（配套 Magisk 模块）
 
-把官方 **v3.4.1 源码**（`desktop-tauri/mobile`，Capacitor 8 + React 19）直接构建成
-**能自己找到本机模块网关、并且功能开关与桌面面板双向同步**的 APK。
+把官方 **v3.5.0-beta.1 源码**（`desktop-tauri/mobile`，Capacitor 8 + React 19）直接构建成
+**能自己找到本机模块网关、并且功能开关与桌面面板双向同步**的 APK。上游与当前 APK 均按预发布版本管理。
 
-- 既有发布产物：`Agent2API-3.4.0-mod.apk`（5.50 MB / 已签名 / `com.agent2api.mobile.mod`）；它尚未包含本轮写屏障与严格回显修复。
-- 基线：上游 tag `v3.4.1`（commit `3ff4b8215d0d65c3451ca74923e90964ed7dbf59`）的完整源码，在同父目录 `mobile-build-3.4.1` 独立 worktree 构建。
-- 源码补丁：[a2a-mobile-mod.patch](a2a-mobile-mod.patch)（6 个差异文件）；仓库保留 7 个 3.4.1 源码快照，未覆盖上游 ToolsPage 工具服务路由、会话附件、图片/读取工具等新增实现。
-- 本轮状态：182/182 动态回归与 11/11 integration 通过，`npm run build:native`、Capacitor 同步及 Android `assembleRelease` 实际成功。
-- 本轮产物：[Agent2API-3.4.1-mod.apk（Release 下载）](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.4.1-mod)，5,880,005 bytes，`com.agent2api.mobile.mod` / versionName `3.4.1` / versionCode `30401`；复用既有 `d0ca6713…b16f` 证书，APK v2 签名验证通过。最终散列见 [APK manifest](../docs/upgrade-3.4.1/evidence/apk-manifest.json)，构建证据见 [升级验收报告](../docs/upgrade-3.4.1/report.md)。
-- 已验收本地制品按本仓 Release 发布；真机安装验收未执行。下文 3.4.0 构建数据及升级验收报告中的“未发布”描述均为发布前历史记录，当前发布入口以上述 Release 为准。
-- 与 3.1.2 版的最大区别：**这次从源码完整构建（含原生层），不再拿官方 APK 替换
-  `assets/public` 重打包** —— `@capacitor/app` 真正进了包，硬件返回键问题随之消失（见 3.3）。
+- 当前 Release：[apk-v3.5.0-beta.1-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.5.0-beta.1-mod)，产物 `Agent2API-3.5.0-beta.1-mod.apk`。
+- 基线：上游 tag `v3.5.0-beta.1`，精确源码提交 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。
+- 当前包信息：`com.agent2api.mobile.mod` / versionName `3.5.0-beta.1` / versionCode `30500`。
+- 源码补丁：[a2a-mobile-mod.patch](a2a-mobile-mod.patch)；仓库保留七文件 mobile overlay，未覆盖的上游页面与实现随完整源码构建保留。
+- 当前 APK 复用既有 mod 发布证书，SHA-256 为 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。
+- 自 3.4.0 起改为**从源码完整构建（含原生层）**，不再拿官方 APK 只替换 `assets/public`；`@capacitor/app` 与硬件返回键处理因此进入源码构建链。当前设备验收边界见第 3 节。
+
+### 历史构建记录（3.4.1-mod）
+
+以下数据只用于追溯 3.4.1-mod，不是当前 3.5 beta 的大小、散列或验收结论：
+
+- 基线为上游 tag `v3.4.1`（commit `3ff4b8215d0d65c3451ca74923e90964ed7dbf59`），曾在独立 worktree `mobile-build-3.4.1` 构建。
+- 当时记录为 182/182 动态回归与 11/11 integration 通过，Web 构建、Capacitor 同步及 Android `assembleRelease` 成功。
+- 历史产物为 5,880,005 bytes，versionName `3.4.1` / versionCode `30401`，APK v2 签名验证通过；详见 [APK manifest](../docs/upgrade-3.4.1/evidence/apk-manifest.json) 与 [升级验收报告](../docs/upgrade-3.4.1/report.md)。报告中的“未发布”等措辞属于当时阶段记录。
 
 ---
 
@@ -89,8 +95,8 @@
 # 1) 已安装旧包的用户：卸载实际旧包，而不是只卸载 .mod
 adb uninstall com.agent2api.mobile
 # 2) 核对证书指纹（见第5节）与实际新包名，再安装既有发布包
-apksigner verify --print-certs Agent2API-3.4.0-mod.apk
-adb install -r Agent2API-3.4.0-mod.apk
+apksigner verify --print-certs Agent2API-3.5.0-beta.1-mod.apk
+adb install -r Agent2API-3.5.0-beta.1-mod.apk
 # 3) 应只保留 package:com.agent2api.mobile.mod，没有 package:com.agent2api.mobile
 adb shell pm list packages com.agent2api.mobile
 ```
@@ -102,14 +108,15 @@ adb shell pm list packages com.agent2api.mobile
 首次启动会自动连上 `127.0.0.1:3065`；连不上（模块没启动 / 端口改过）就落到
 「服务器」页，点「自动发现」或手填。
 
-> 装完在「设置 → 关于」看到 **`3.4.0`** 就是这一版（这次连清单里的 versionName
-> 都是上游真值，不再是 3.1.0 冒充）。
+> 装完在「设置 → 关于」应看到 **`3.5.0-beta.1`**；这只是当前版本的识别方法，不代替实际安装与启动验收。
 
 ---
 
 ## 3. 验证记录
 
-### 3.1 既有发布的构建记录（非本轮重构建）
+### 3.1 历史构建产物核验（3.4.0）
+
+下表只追溯 3.4.0-mod 的历史构建，不是当前 3.5.0-beta.1-mod 的产物大小、散列或真机结论。
 
 | 验证项 | 方法 | 结果 |
 |---|---|---|
@@ -120,7 +127,7 @@ adb shell pm list packages com.agent2api.mobile
 | 包信息 | `aapt2 dump badging` | `com.agent2api.mobile.mod` / `versionName 3.4.0` / `versionCode 30400` / minSdk 24 / targetSdk 36 |
 | 产物内容 | `unzip -p … assets/public/mobile.js` | `api/panel/status`、`captchaDesktop`、`routingBreakerEnabled` 等关键词均在；`assets/capacitor.plugins.json` 含 `@capacitor/app`、`@capacitor/keyboard` |
 
-本轮源码回归使用实际拆分组件与 API，控制 HTTP 响应顺序并模拟即时/延迟 React updater，
+仓库保留的源码回归使用实际拆分组件与 API，控制 HTTP 响应顺序并模拟即时/延迟 React updater，
 覆盖未知禁用、跨 PUT 旧 GET、写失败、全局串行、pending 隔离和严格 boolean 回显；同时校验三份新增文件的 patch 快照一致。
 测试要求 Python 3 与 Node >=22.13，无 npm 依赖：
 
@@ -134,9 +141,9 @@ node test/verify_frontend_runtime.mjs --report frontend-runtime-results.json
 
 以上命令在本仓库根目录执行；它们不是 TypeScript 全工程检查、APK 构建或真机 UI 验收。
 
-### 3.2 真机（3.1.2 版记录，3.4.0 待复验）
+### 3.2 历史真机记录（3.1.2-mod）
 
-3.1.2 版真机验证过的项目（KernelSU + ColorOS / Android 15，1440×3168）：
+以下只是 3.1.2 版在 KernelSU + ColorOS / Android 15、1440×3168 设备上的历史验证：
 
 | 验证项 | 方法 | 结果 |
 |---|---|---|
@@ -147,13 +154,11 @@ node test/verify_frontend_runtime.mjs --report frontend-runtime-results.json
 | 应用内返回 | 二级页左上角 `‹` | 正常回到上一级（设置 → 更多） |
 | 稳定性 | 反复进出各页面 | 无崩溃（logcat 无 FATAL EXCEPTION） |
 
-**3.4.0 尚未上真机**：本仓库的验证只做到「构建 + 签名 + 包内容抽检」。
-自动发现的新判据（`/api/panel/status` 段）与硬件返回键需要在装了本模块的手机上
-实测一次确认。
+**当前 3.5.0-beta.1-mod 不能沿用上述旧版结论。** 当前 Release 的安装/同证书覆盖安装、首次启动、环回自动发现（含 `/api/panel/status` 判据）、开关双向同步、硬件返回键、后台切换与网络切换，仍需在安装了当前模块的设备上验收。CI 的构建、签名和离线行为测试不连接手机，不能替代这些检查。
 
 ---
 
-## 3.3 硬件返回键（3.1.2 的问题，3.4.0 已从源码层解决）
+## 3.3 硬件返回键的历史修复与当前边界
 
 **3.1.2 的现象**：任意二级页按系统返回键/返回手势，直接退回桌面。
 
@@ -162,10 +167,10 @@ node test/verify_frontend_runtime.mjs --report frontend-runtime-results.json
 `OnBackPressedCallback`，系统只能 `finish()`。当时试过的三种原生补丁都因为拿不到
 WebView 实例而回退。
 
-**3.4.0 为什么解决**：从源码完整构建，`@capacitor/app@8.1.2` 已注册
-（`assets/capacitor.plugins.json` 可见），`App.tsx` 里上游自带的 `backButton`
+**自 3.4.0 起的源码层修复**：从源码完整构建，`@capacitor/app@8.1.2` 已注册
+（历史构建的 `assets/capacitor.plugins.json` 可见），`App.tsx` 里上游自带的 `backButton`
 监听会把事件转给 JS：能回退就 `history.back()`，到根页面才 `exitApp()`。
-仍需真机点一次确认（见 3.2）。
+当前 3.5 beta 继续使用完整源码构建链，但旧版代码与构建证据不等于当前设备行为已经复验；仍须按 3.2 的当前版本边界实测。
 
 ---
 
@@ -190,7 +195,7 @@ Node 20+。
 ```bash
 # 1) 源码 + 补丁
 git clone https://github.com/aimod-cc/Agent2API.git && cd Agent2API
-git checkout v3.4.1
+git checkout v3.5.0-beta.1
 git apply /path/to/a2a-mobile-mod.patch
 
 # 2) 两个独立 package 都须安装锁定依赖
@@ -213,10 +218,12 @@ cd android
 # 产物：android/app/build/outputs/apk/release/app-release.apk
 ```
 
-本机完整可重放脚本：[build-mobile-3.4.1.py](build-mobile-3.4.1.py)。它默认使用真实 Node/JDK21/现有 SDK，先执行 mobile 与 ui-kit 的 `npm ci`，再执行原生 Web 构建、Capacitor 同步、离线 Gradle release 构建与 APK 元数据/签名验证。已有 Web 产物时可用 `--skip-web`。
+### 历史本机重放脚本（3.4.1）
+
+[build-mobile-3.4.1.py](build-mobile-3.4.1.py) 与 `verify-mobile-3.4.1.py` 是 **3.4.1 的历史重放脚本**，不是当前 3.5 beta 的版本化构建器；当前版本应按上面的通用步骤或 CI 工作流构建。历史脚本默认使用真实 Node/JDK21/现有 SDK，依次执行 mobile 与 ui-kit 的 `npm ci`、原生 Web 构建、Capacitor 同步、离线 Gradle release 构建与 APK 元数据/签名验证；已有 Web 产物时可用 `--skip-web`。
 
 ```bash
-# 已在完整 v3.4.1 独立 worktree 应用补丁后，从 upgrade 树运行
+# 历史记录：在完整 v3.4.1 独立 worktree 应用补丁后，从 upgrade 树运行
 # 签名路径由部署环境注入，口令文件仅读入内存；脚本从不新建签名 key
 export A2A_KEYSTORE=/outside/repository/a2a-release.jks
 export A2A_KEYSTORE_PASS_FILE=/outside/repository/a2a-release.pass
@@ -226,7 +233,7 @@ python apk-mod/verify-mobile-3.4.1.py
 NODE_BINARY=E:/AI/tools/node/node.exe python test/verify_frontend.py
 ```
 
-脚本固定校验当前发布证书 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`；未设置签名路径时输出明确命名的 `-unsigned.apk`。Gradle signing 通过 `androidComponents.finalizeDsl` 注入内存，临时的 `keystore.properties` 仅有注释并在 `finally` 中清理。证据目录只保存公开证书摘要与构建结果。
+该历史脚本固定校验仓库沿用至今的发布证书 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`；未设置签名路径时输出明确命名的 `-unsigned.apk`。Gradle signing 通过 `androidComponents.finalizeDsl` 注入内存，临时的 `keystore.properties` 仅有注释并在 `finally` 中清理。证据目录只保存公开证书摘要与构建结果。
 
 两处需要适配的上游默认值：
 
@@ -257,7 +264,7 @@ zipalign -p -f 4 ...-mod-unsigned.apk ...-mod-aligned.apk
 - 已经用旧钥匙装上的手机**不会自动变安全**——签名校验只发生在安装时，
   攻击者签的包同样能通过；用户需要按 `apk-mod/signing.md` 主动换成新签名版本。
 
-本版（3.4.1-mod）复用 3.4.0-mod 的既有新钥匙签名，证书 SHA-256
+当前 3.5.0-beta.1-mod 继续复用自 3.4.0-mod 起使用的发布钥匙，证书 SHA-256
 `d0ca6713c4aeaa4ad05b3610bee3e0f87379f428f59ba4b85e514a25bb46b15f`。
 
 新钥匙用脚本生成（默认拒绝写进仓库目录，口令随机并单独落 600 文件）：
@@ -278,10 +285,12 @@ apksigner sign --ks "$A2A_KEYSTORE" --ks-key-alias "$A2A_KEY_ALIAS" \
   --out ...-mod.apk ...-aligned.apk
 ```
 
-同包名跨签名无法直接覆盖；本次既有3.4.0发布还改了包名，因此安装 `.mod` 不会替换旧的
-`com.agent2api.mobile`。必须明确卸载旧包，再恢复配置并登录；见 [签名迁移](signing.md)。
+### 历史包名与签名迁移（3.4.0）
+
+同包名跨签名无法直接覆盖；3.4.0 的历史发布还修改了包名，因此安装 `.mod` 不会替换旧的
+`com.agent2api.mobile`。从该旧包迁移时必须明确卸载旧包，再恢复配置并登录；同签名 `.mod` 的后续升级不在此列，详见 [签名迁移](signing.md)。
 2026-11-04 复验时正式旧签名 asset 仍在，历史私钥对象仍存在；本地源码修复没有删除远端 asset、
-改写发布正文或抹去 Git 历史。后续发版前需分别验收旧资产下架、完整构建和用户迁移。
+改写发布正文或抹去 Git 历史。这段只记录当时状态，不是当前 Release 的资产清单。
 
 `*.jks` / `*.keystore` / `*.pass` 已被根 `.gitignore` 排除；任何情况下都不要
 为了「方便别人复现」把私钥或口令放进 git（包括示例、截图、CI 日志）。

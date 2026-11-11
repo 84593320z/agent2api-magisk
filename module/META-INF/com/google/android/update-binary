@@ -92,13 +92,70 @@ $UNZIP -o "$ZIPFILE" -d "$_A2A_INSTALL_TMP" >/dev/null 2>&1 || abort "解包失�
 MODID=$(sed -n 's/^id=//p' "$_A2A_INSTALL_TMP/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
 [ -n "$MODID" ] || abort "module.prop 里没有 id 字段"
 
-MODPATH="/data/adb/modules_update/$MODID"
-rm -rf "$MODPATH"
-mkdir -p "$MODPATH" || abort "无法创建 $MODPATH"
-cp -R "$_A2A_INSTALL_TMP"/. "$MODPATH"/ || abort "复制模块文件失败"
-rm -rf "$MODPATH/META-INF"
+case "$MODID" in
+  *[!A-Za-z0-9._-]*|"."|"..") abort "module.prop 里的 id 不安全：$MODID" ;;
+esac
 
-# 让 customize.sh 看到与 Magisk 一致的环境
+MODPATH="/data/adb/modules_update/$MODID"
+_A2A_MODPARENT=${MODPATH%/*}
+_A2A_STAGE="$MODPATH.new.$$"
+_A2A_OLD="$MODPATH.old.$$"
+_A2A_FAILED="$MODPATH.failed.$$"
+_A2A_INSTALL_OK=0
+_A2A_OLD_PRESENT=0
+_A2A_ACTIVATE_STARTED=0
+
+_a2a_fallback_validate() {
+  [ -d "$1" ] && [ -s "$1/module.prop" ] || return 1
+  _afv_id=$(sed -n 's/^id=//p' "$1/module.prop" 2>/dev/null | head -n 1 | tr -d '\r')
+  [ "$_afv_id" = "$MODID" ] && [ ! -e "$1/META-INF" ]
+}
+
+_a2a_fallback_cleanup() {
+  # customize.sh 在子 shell 执行，不能覆盖这里的恢复 trap。清理期间也不再
+  # 接受信号重入；回滚失败时保留 old/failed 现场，绝不把旧目录嵌回新目录。
+  trap - EXIT HUP INT TERM
+  if [ "$_A2A_INSTALL_OK" != "1" ]; then
+    if [ -d "$_A2A_OLD" ]; then
+      if [ -e "$MODPATH" ]; then
+        rm -rf "$_A2A_FAILED" 2>/dev/null
+        mv "$MODPATH" "$_A2A_FAILED" 2>/dev/null || \
+          ui_print "! 无法移开不完整的新模块，旧模块保留在 $_A2A_OLD"
+      fi
+      if [ ! -e "$MODPATH" ]; then
+        if mv "$_A2A_OLD" "$MODPATH" 2>/dev/null; then
+          _A2A_OLD_PRESENT=0
+          _A2A_ACTIVATE_STARTED=0
+          rm -rf "$_A2A_FAILED" 2>/dev/null
+        else
+          ui_print "! 旧模块回滚失败，请从 $_A2A_OLD 手工恢复"
+        fi
+      fi
+    elif [ "$_A2A_OLD_PRESENT" != "1" ] && [ "$_A2A_ACTIVATE_STARTED" = "1" ] && [ -e "$MODPATH" ]; then
+      # 全新安装没有旧目录可恢复，失败时至少回到安装前“不存在”的状态。
+      rm -rf "$MODPATH" 2>/dev/null
+    fi
+  fi
+  rm -rf "$_A2A_STAGE" 2>/dev/null
+  [ "$_A2A_INSTALL_OK" = "1" ] && rm -rf "$_A2A_OLD" "$_A2A_FAILED" 2>/dev/null
+  rm -rf "$_A2A_INSTALL_TMP" 2>/dev/null
+}
+trap '_a2a_fallback_cleanup' EXIT
+trap 'exit 1' HUP INT TERM
+
+# 暂存、旧目录和失败现场都与 MODPATH 同父目录，所有发布/回滚均为同盘 rename。
+rm -rf "$_A2A_STAGE" "$_A2A_OLD" "$_A2A_FAILED" 2>/dev/null
+[ ! -e "$_A2A_STAGE" ] && [ ! -e "$_A2A_OLD" ] && [ ! -e "$_A2A_FAILED" ] \
+  || abort "无法清理旧的安装事务现场"
+# 此处使用解包后加载的 mkdir 兼容层，兼容 KernelSU standalone busybox。
+mkdir -p "$_A2A_MODPARENT" || abort "无法创建模块父目录 $_A2A_MODPARENT"
+mkdir "$_A2A_STAGE" || abort "无法创建暂存目录 $_A2A_STAGE"
+cp -R "$_A2A_INSTALL_TMP"/. "$_A2A_STAGE"/ || abort "复制模块文件到暂存目录失败"
+rm -rf "$_A2A_STAGE/META-INF"
+_a2a_fallback_validate "$_A2A_STAGE" || abort "暂存模块校验失败"
+
+# 让 customize.sh 看到与 Magisk 一致的环境；MODPATH 只在子 shell 指向暂存目录，
+# 避免 customize 的 EXIT trap 覆盖 fallback 的回滚 trap。
 export MODPATH
 export TMPDIR="$_A2A_INSTALL_TMP"
 export ZIPFILE
@@ -131,11 +188,30 @@ set_perm_recursive() {
   find "$1" -type f -exec chmod "$5" {} + 2>/dev/null
 }
 
-if [ -f "$MODPATH/customize.sh" ]; then
-  # shellcheck disable=SC1091
-  MODPATH="$MODPATH" . "$MODPATH/customize.sh" || abort "customize.sh 执行失败"
+if [ -f "$_A2A_STAGE/customize.sh" ]; then
+  (
+    MODPATH="$_A2A_STAGE"
+    export MODPATH
+    # shellcheck disable=SC1091
+    . "$_A2A_STAGE/customize.sh"
+  ) || abort "customize.sh 执行失败"
 fi
+_a2a_fallback_validate "$_A2A_STAGE" || abort "定制后的暂存模块校验失败"
 
+# 只有完整暂存并通过校验后才触碰现有模块。标志在 rename 前设置，覆盖
+# “rename 已发生、标志尚未来得及更新”的中断窗口；trap 以磁盘实际目录为准。
+if [ -e "$MODPATH" ] || [ -L "$MODPATH" ]; then
+  [ -d "$MODPATH" ] && [ ! -L "$MODPATH" ] || abort "现有模块路径不是普通目录：$MODPATH"
+  _A2A_OLD_PRESENT=1
+  mv "$MODPATH" "$_A2A_OLD" || abort "无法备份现有模块"
+fi
+[ ! -e "$MODPATH" ] && [ ! -L "$MODPATH" ] || abort "现有模块备份后目标仍占用"
+_A2A_ACTIVATE_STARTED=1
+mv "$_A2A_STAGE" "$MODPATH" || abort "无法发布暂存模块"
+_a2a_fallback_validate "$MODPATH" || abort "发布后的模块校验失败"
+_A2A_INSTALL_OK=1
+
+rm -rf "$_A2A_OLD" "$_A2A_FAILED" 2>/dev/null
 rm -rf "$_A2A_INSTALL_TMP"
 ui_print "- 安装完成，重启后生效"
 exit 0

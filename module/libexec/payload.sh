@@ -1026,30 +1026,84 @@ lib_verify() {
 }
 lib_snapshot_save() {
   [ -d "$PLIB" ] || return 1
-  rm -rf "$BACKUPDIR/lib.new" 2>/dev/null
+  rm -rf "$BACKUPDIR/lib.new" "$BACKUPDIR/lib.old" 2>/dev/null
+  [ ! -e "$BACKUPDIR/lib.new" ] && [ ! -e "$BACKUPDIR/lib.old" ] || return 1
   mkdir -p "$BACKUPDIR/lib.new" 2>/dev/null || return 1
   cp -R "$PLIB"/. "$BACKUPDIR/lib.new"/ 2>/dev/null || { rm -rf "$BACKUPDIR/lib.new"; return 1; }
-  rm -rf "$BACKUPDIR/lib.old" 2>/dev/null
-  [ -d "$BACKUPDIR/lib" ] && mv "$BACKUPDIR/lib" "$BACKUPDIR/lib.old" 2>/dev/null
-  mv "$BACKUPDIR/lib.new" "$BACKUPDIR/lib" 2>/dev/null || return 1
+  if [ -d "$BACKUPDIR/lib" ]; then
+    # 第一次 rename 失败后绝不能继续：目标仍在时第二次 mv 会把 lib.new
+    # 嵌进旧 lib 并返回成功，留下没有可用新快照的“成功”事务。
+    if ! mv "$BACKUPDIR/lib" "$BACKUPDIR/lib.old" 2>/dev/null; then
+      rm -rf "$BACKUPDIR/lib.new" 2>/dev/null
+      return 1
+    fi
+  fi
+  if [ -e "$BACKUPDIR/lib" ]; then
+    rm -rf "$BACKUPDIR/lib.new" 2>/dev/null
+    return 1
+  fi
+  if ! mv "$BACKUPDIR/lib.new" "$BACKUPDIR/lib" 2>/dev/null; then
+    # 旧快照已经移开时必须放回去；恢复也失败则保留 lib.old 供重试。
+    if [ -d "$BACKUPDIR/lib.old" ] && [ ! -e "$BACKUPDIR/lib" ]; then
+      mv "$BACKUPDIR/lib.old" "$BACKUPDIR/lib" 2>/dev/null || \
+        echo "严重：运行库旧快照在 $BACKUPDIR/lib.old，请手工恢复"
+    fi
+    rm -rf "$BACKUPDIR/lib.new" 2>/dev/null
+    return 1
+  fi
+  # mv 的返回码之外再核实布局，禁止 lib.new 嵌套或源目录残留时假成功。
+  if [ ! -d "$BACKUPDIR/lib" ] || [ -e "$BACKUPDIR/lib.new" ] || [ -e "$BACKUPDIR/lib/lib.new" ]; then
+    echo "运行库快照切换不完整，旧快照保留在 $BACKUPDIR/lib.old"
+    return 1
+  fi
   rm -rf "$BACKUPDIR/lib.old" 2>/dev/null
   return 0
 }
 lib_restore() {
   [ -d "$BACKUPDIR/lib" ] || return 1
-  rm -rf "$PLIB.restore" 2>/dev/null
+  rm -rf "$PLIB.restore" "$PLIB.bad" 2>/dev/null
+  [ ! -e "$PLIB.restore" ] && [ ! -e "$PLIB.bad" ] || return 1
   mkdir -p "$PLIB.restore" 2>/dev/null || return 1
   cp -R "$BACKUPDIR/lib"/. "$PLIB.restore"/ 2>/dev/null || { rm -rf "$PLIB.restore"; return 1; }
-  rm -rf "$PLIB.bad" 2>/dev/null
-  [ -d "$PLIB" ] && mv "$PLIB" "$PLIB.bad" 2>/dev/null
+  if [ -d "$PLIB" ]; then
+    # 与快照轮换相同：旧 PLIB 仍在时继续 mv 只会嵌套 restore，随后
+    # lib_verify 检查的仍是旧 loader，可能把失败的恢复误报为成功。
+    if ! mv "$PLIB" "$PLIB.bad" 2>/dev/null; then
+      rm -rf "$PLIB.restore" 2>/dev/null
+      return 1
+    fi
+  fi
+  if [ -e "$PLIB" ]; then
+    rm -rf "$PLIB.restore" 2>/dev/null
+    return 1
+  fi
   if ! mv "$PLIB.restore" "$PLIB" 2>/dev/null; then
-    [ -d "$PLIB.bad" ] && mv "$PLIB.bad" "$PLIB" 2>/dev/null
+    if [ -d "$PLIB.bad" ] && [ ! -e "$PLIB" ]; then
+      mv "$PLIB.bad" "$PLIB" 2>/dev/null || \
+        echo "严重：原运行库在 $PLIB.bad，请手工恢复"
+    fi
+    rm -rf "$PLIB.restore" 2>/dev/null
+    return 1
+  fi
+  if [ ! -d "$PLIB" ] || [ -e "$PLIB.restore" ] || [ -e "$PLIB/lib.restore" ]; then
+    echo "运行库恢复切换不完整，原运行库保留在 $PLIB.bad"
     return 1
   fi
   payload_fix_perms "$PAYLOAD"
   if ! lib_verify; then
-    rm -rf "$PLIB" 2>/dev/null
-    [ -d "$PLIB.bad" ] && mv "$PLIB.bad" "$PLIB" 2>/dev/null
+    if [ -d "$PLIB.bad" ]; then
+      rm -rf "$PLIB" 2>/dev/null
+      if [ -e "$PLIB" ]; then
+        echo "严重：无法移除校验失败的运行库，原运行库保留在 $PLIB.bad"
+        return 1
+      fi
+      mv "$PLIB.bad" "$PLIB" 2>/dev/null || {
+        echo "严重：原运行库在 $PLIB.bad，请手工恢复"
+        return 1
+      }
+    else
+      rm -rf "$PLIB" 2>/dev/null
+    fi
     payload_fix_perms "$PAYLOAD"
     live_link_refresh
     echo "恢复的运行库校验失败，已退回原运行库"

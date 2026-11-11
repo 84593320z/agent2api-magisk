@@ -293,7 +293,7 @@ def metadata(module, version, built, revision, archive_hash, commit):
         published = dt.datetime.fromisoformat(built.replace('Z', '+00:00'))
     except ValueError as exc:
         raise ValidationError('invalid release timestamp') from exc
-    require(isinstance(revision, int) and 0 < revision <= 99, 'module revision must be 1..99')
+    require(type(revision) is int and revision > 0, 'module revision must be a positive integer')
     require(isinstance(commit, str) and re.fullmatch(r'[0-9a-f]{40}', commit) is not None,
             'upstream commit must be a lowercase 40-hex SHA')
     prop = (module / 'module.prop').read_text(encoding='utf-8')
@@ -305,6 +305,7 @@ def metadata(module, version, built, revision, archive_hash, commit):
             _precedence(version) >= _precedence(old_ver.group(1)),
             'upstream version rollback')
     datecode = int(published.astimezone(dt.timezone.utc).strftime('%Y%m%d')) * 100 + revision
+    require(datecode <= 2100000000, 'release datecode exceeds Android versionCode limit')
     require(datecode > int(old_code.group(1)), 'release datecode must increase')
     value = 'v%s (magisk.%d)' % (version, revision)
     prop = re.sub(r'^version=.*$', 'version=' + value, prop, flags=re.M)

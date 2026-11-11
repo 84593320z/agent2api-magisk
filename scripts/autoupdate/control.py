@@ -1,12 +1,15 @@
 """Trusted orchestration; never execute code from an upstream checkout with credentials."""
 import argparse
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import urllib.parse
 import urllib.request
 import urllib.error
+import docs_sync
 import versioning
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -45,8 +48,8 @@ def detect(config, token=None, releases=None, ref_lookup=None, allow_prerelease=
     base = 'https://api.github.com/repos/' + repo
     releases = releases if releases is not None else request(base + '/releases?per_page=100', token)
     pattern = versioning.VERSION_RE if allow_prerelease else versioning.STABLE_RE
-    pool = [r for r in releases if not r['draft'] and (allow_prerelease or not r['prerelease'])
-            and pattern.fullmatch(r['tag_name'])]
+    pool = [r for r in releases if r.get('draft') is False and isinstance(r.get('prerelease'), bool)
+            and (allow_prerelease or not r['prerelease']) and pattern.fullmatch(r['tag_name'])]
     if not pool:
         raise ValueError('No stable upstream release' if not allow_prerelease else 'No usable upstream release')
     release = max(pool, key=lambda r: version(r['tag_name']))
@@ -74,7 +77,7 @@ def detect(config, token=None, releases=None, ref_lookup=None, allow_prerelease=
         raise ValueError('Invalid pinned upstream commit')
     ver = versioning.normalize(release['tag_name'])
     nums = versioning.numbers(release['tag_name'])
-    return {'changed': True, 'version': ver, 'tag': release['tag_name'], 'commit': ref['sha'], 'release_id': release['id'], 'published_at': release['published_at'], 'asset_id': asset['id'], 'asset_size': asset['size'], 'asset_sha256': digest[7:], 'upstream': repo, 'prerelease': versioning.prerelease(release['tag_name']), 'module_revision': config['module_revision'] + 1, 'mobile_version_code': max(nums[0]*10000+nums[1]*100+nums[2], config['mobile_version_code']+1)}
+    return {'changed': True, 'version': ver, 'tag': release['tag_name'], 'commit': ref['sha'], 'release_id': release['id'], 'published_at': release['published_at'], 'asset_id': asset['id'], 'asset_size': asset['size'], 'asset_sha256': digest[7:], 'upstream': repo, 'prerelease': bool(release['prerelease'] or versioning.prerelease(release['tag_name'])), 'module_revision': config['module_revision'] + 1, 'mobile_version_code': max(nums[0]*10000+nums[1]*100+nums[2], config['mobile_version_code']+1)}
 
 def download(plan, out, token=None):
     if not plan.get('changed'):
@@ -156,9 +159,59 @@ def releases_complete(config, plan, token=None):
     return True
 
 
+def docs_complete(config, plan, token=None):
+    """Release assets are not fully published until the deferred entry points land.
+
+    README/update.json are deliberately committed after both Releases.  Treat a
+    missing or stale docs commit as incomplete so the next run retries the
+    idempotent publisher instead of leaving public update pointers stuck forever.
+    """
+    base = 'https://api.github.com/repos/' + config['repository']
+    branch = urllib.parse.quote(config.get('branch', 'main'), safe='')
+
+    def content(name):
+        row = request(base + '/contents/' + name + '?ref=' + branch, token)
+        if (not isinstance(row, dict) or row.get('type') != 'file'
+                or row.get('encoding') != 'base64' or not isinstance(row.get('content'), str)):
+            raise ValueError('Published entry point is not a readable file: ' + name)
+        return base64.b64decode(row['content']).decode('utf-8')
+
+    try:
+        readme = content('README.md')
+        document = json.loads(content('update.json'))
+        if not isinstance(document, dict):
+            return False
+        if docs_sync.latest_block(plan, config['repository']) not in readme:
+            return False
+        version = plan['version']
+        revision = plan['module_revision']
+        tag = f'v{version}-magisk.{revision}'
+        module = f'agent2api-magisk-v{version}-magisk.{revision}-arm64.zip'
+        release = request(base + '/releases/tags/' + tag, token)
+        assets = [a for a in release['assets'] if a['name'] == module]
+        if len(assets) != 1:
+            return False
+        digest = assets[0].get('digest', '')
+        expected = {
+            'version': f'v{version} (magisk.{revision})',
+            'zipUrl': f"https://github.com/{config['repository']}/releases/download/{tag}/{module}",
+            'changelog': f"https://github.com/{config['repository']}/releases/tag/{tag}",
+            'sha256': digest[7:] if digest.startswith('sha256:') else '',
+        }
+        return (all(document.get(k) == v for k, v in expected.items())
+                and type(document.get('versionCode')) is int and document['versionCode'] > 0
+                and re.fullmatch('[0-9a-f]{64}', expected['sha256']) is not None)
+    except (KeyError, TypeError, ValueError, UnicodeError) as exc:
+        # Malformed content is an incomplete publish, not a success; transport
+        # errors from request() deliberately propagate and fail the detect job.
+        print('Published documentation check failed:', exc)
+        return False
+
+
 def select_plan(config, token=None, upstream_token=None, allow_prerelease=False):
     previous = config.get('last_plan')
-    if previous and not releases_complete(config, previous, token):
+    if previous and (not releases_complete(config, previous, token)
+                     or not docs_complete(config, previous, token)):
         return dict(previous, retry=True)
     plan = detect(config, upstream_token or token, allow_prerelease=allow_prerelease)
     if plan.get('changed'):

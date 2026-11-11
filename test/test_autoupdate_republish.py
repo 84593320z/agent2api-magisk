@@ -128,6 +128,21 @@ class AdvanceTests(unittest.TestCase):
         self.assertEqual(advanced['last_version'], '3.5.0-beta.1')
         self.assertEqual(advanced['last_plan'], plan)
 
+    def test_revision_100_flows_through_republish_and_checkpoint(self):
+        baseline, plan, _ = fixture()
+        baseline['module_revision'] = 99
+        config = dict(baseline, last_plan=dict(plan, module_revision=99, republish=False))
+        plan100 = republish_plan.build_plan(config)
+        self.assertEqual(plan100['module_revision'], 100)
+        self.assertEqual(plan100['version'], baseline['last_version'])
+        self.assertEqual(plan100['mobile_version_code'], baseline['mobile_version_code'])
+        candidate = dict(baseline, module_revision=100, last_plan=plan100)
+        bundle.validate_config(baseline, candidate, plan100)
+        self.assertIn('v3.5.0-beta.1-magisk.100', control.release_specs(plan100))
+        advanced = self.run_advance(baseline, plan100)
+        self.assertEqual(advanced['module_revision'], 100)
+        self.assertEqual(advanced['last_plan'], plan100)
+
     def test_advance_rejects_a_jumped_revision(self):
         baseline, plan, _ = fixture()
         with self.assertRaises(subprocess.CalledProcessError):
