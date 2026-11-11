@@ -1,7 +1,7 @@
 {
-  "version": "v3.5.0-beta.1 (magisk.41)",
-  "versionCode": 2026110941,
-  "zipUrl": "https://github.com/84593320z/agent2api-magisk/releases/download/v3.5.0-beta.1-magisk.41/agent2api-magisk-v3.5.0-beta.1-magisk.41-arm64.zip",
-  "changelog": "https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.41",
-  "sha256": "86ebb9a3f19b82760b3e17eeb57f18a48d4625d09c4caf62693a2f22bd238838"
+  "version": "v3.5.0-beta.1 (magisk.42)",
+  "versionCode": 2026110942,
+  "zipUrl": "https://github.com/84593320z/agent2api-magisk/releases/download/v3.5.0-beta.1-magisk.42/agent2api-magisk-v3.5.0-beta.1-magisk.42-arm64.zip",
+  "changelog": "https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.42",
+  "sha256": "16ab16ea8bf0d315584d21c54b2433ab1410bbc7ee12434944a2003518f837e6"
 }

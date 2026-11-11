@@ -8,11 +8,11 @@
 ---
 
 <!-- AUTO-LATEST-BEGIN -->
-## 最新版本：v3.5.0-beta.1 / magisk.41
+## 最新版本：v3.5.0-beta.1 / magisk.42
 
 自动同步上游 `v3.5.0-beta.1`，精确源码 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。
 
-- **[下载 Magisk / KernelSU 模块 v3.5.0-beta.1 · magisk.41](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.41)**：`agent2api-magisk-v3.5.0-beta.1-magisk.41-arm64.zip`。
+- **[下载 Magisk / KernelSU 模块 v3.5.0-beta.1 · magisk.42](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.42)**：`agent2api-magisk-v3.5.0-beta.1-magisk.42-arm64.zip`。
 - **[下载手机端 APK 3.5.0-beta.1-mod](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.5.0-beta.1-mod)**：`Agent2API-3.5.0-beta.1-mod.apk`，包名 `com.agent2api.mobile.mod`，版本 `3.5.0-beta.1 / 30500`。
 - 校验清单、构建来源与验收证据随模块 Release 附带；历史版本的手工验收报告仍保留在 [docs/](docs/)。
 - 模块内更新只替换服务端与面板；仓库公开后，手机端 APK 可在设备上运行 `a2a apk-update` 下载、校验并覆盖安装。
