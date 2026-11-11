@@ -96,12 +96,13 @@ v3.4.2 / magisk.38 随后完成真实 publish，两条 Release 均已生成。�
 | [42753934443](https://github.com/84593320z/agent2api-magisk/actions/runs/42753934443) | `c55fe36`：显式开启预发布后首次同步上游 v3.5.0-beta.1，模块为 magisk.39，APK 为 3.5.0-beta.1-mod / versionCode 30500 |
 | [42790043366](https://github.com/84593320z/agent2api-magisk/actions/runs/42790043366) | `ad9a02d`：同一上游版本的维护重发，模块升至 magisk.40，包含 KernelSU standalone BusyBox 的 mkdir 兼容修复；mobile versionCode 不变 |
 | [42952807126](https://github.com/84593320z/agent2api-magisk/actions/runs/42952807126) | `964898e`：同一上游版本再次维护重发，模块升至 magisk.41，加入 Bun runtime spawn bridge；APK 仍为 3.5.0-beta.1-mod / versionCode 30500 |
+| [42973753655](https://github.com/84593320z/agent2api-magisk/actions/runs/42973753655) + [42980041777](https://github.com/84593320z/agent2api-magisk/actions/runs/42980041777) | `c31ca7d` checkpoint / `a9fb575` docs：完整构建、签名及回归通过；两次发布恢复分别修正实际 APK 资产比较与旧 checkpoint 后代 main 恢复，最终 magisk.42 和更新后的 APK 轨均发布并回下载核验，文档最后提交 |
 
-当前发布为 [`v3.5.0-beta.1-magisk.41`](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.41) 与 [`apk-v3.5.0-beta.1-mod`](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.5.0-beta.1-mod)，上游精确源码为 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。这是 beta 同步及后续模块维护重发的结果，不应虚构新的上游版本或 APK Release。
+当前发布为 [`v3.5.0-beta.1-magisk.42`](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.42) 与 [`apk-v3.5.0-beta.1-mod`](https://github.com/84593320z/agent2api-magisk/releases/tag/apk-v3.5.0-beta.1-mod)，上游精确源码为 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。magisk.42 包含本轮模块、发布链与 APK 自动发现修复；APK 上游版本和 versionCode 仍为 3.5.0-beta.1 / 30500，没有虚构新的上游或 APK 版本。
 
 ### 真机边界
 
 - magisk.37 的 providers 3.4.1 / web 3.4.2、六入口与连续 spawnp 等结果属于历史特定版本，不能外推为当前 3.5 beta 的全量回归。
-- mkdir 缺陷曾在 KernelSU 3.3.1-44 / OnePlus PJZ110 上做命令级实测；这不等于 magisk.41 的安装、运行、Bun runtime 与更新链已完成整机验收。
+- mkdir 缺陷曾在 KernelSU 3.3.1-44 / OnePlus PJZ110 上做命令级实测；这不等于 magisk.42 的安装、运行、Bun runtime 与更新链已完成整机验收。
 - 当前 APK 的安装/覆盖安装、启动、自动发现、开关同步、硬件返回键与网络切换仍需在当前 Release 上验证。CI 的构建、签名、资源核验及离线命令测试均不连接手机。
 - 仓库公开只消除了私有 raw/Release 资产的匿名访问限制；Magisk `updateJson` 更新与 `a2a apk-update` 仍需当前版本真机端到端验收。

@@ -37,7 +37,7 @@
 
 ### 当前服务端与面板
 
-当前使用 [aimod-cc/Agent2API v3.5.0-beta.1](https://github.com/aimod-cc/Agent2API/releases/tag/v3.5.0-beta.1) 的官方 `agent2api-server-linux-arm64.tar.gz`，二进制与 UI 原字节保留；上游源码提交为 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。这是上游**预发布版本**，当前模块 Release 为 [`v3.5.0-beta.1-magisk.41`](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.41)。
+当前使用 [aimod-cc/Agent2API v3.5.0-beta.1](https://github.com/aimod-cc/Agent2API/releases/tag/v3.5.0-beta.1) 的官方 `agent2api-server-linux-arm64.tar.gz`，二进制与 UI 原字节保留；上游源码提交为 `aba58858c7f3ae695c5e71d388d7d0e31c7dd7cf`。这是上游**预发布版本**，当前模块 Release 为 [`v3.5.0-beta.1-magisk.42`](https://github.com/84593320z/agent2api-magisk/releases/tag/v3.5.0-beta.1-magisk.42)。
 
 **当前内置的是 glibc 动态 arm64 载荷，沿用仓库既有 loader 启动路径，并非 musl 静态包。** 随包 glibc 运行库保持原样；发布链检查所需库、符号版本及强版本化导入。DNS 路径由已有 `libc.so.6` 的 `/data/a2a/resolv` 等长补丁处理，官方 server 自身未打补丁。
 
@@ -205,8 +205,8 @@ su -c 'sh /data/adb/agent2api/bin/a2a update'
 
 ## 已知问题与验证范围
 
-- **真机证据按版本区分**：magisk.37 的 providers 3.4.1 / web 3.4.2、六入口与连续 spawnp 结果属于历史特定版本；mkdir 缺陷本身有命令级设备实测。这些证据不等于当前 magisk.41 已完成全量真机回归，也不能替代 Bun runtime 与当前 APK 的设备验收。
-- **当前预发布仍需设备验收**：v3.5.0-beta.1 / magisk.41 的安装、服务启动与守活、插件/Bun runtime、升级回滚，以及 3.5.0-beta.1-mod 的安装、启动、自动发现、硬件返回键和网络切换，均应在当前 Release 上核对。历史构建或旧版真机结果不直接外推。
+- **真机证据按版本区分**：magisk.37 的 providers 3.4.1 / web 3.4.2、六入口与连续 spawnp 结果属于历史特定版本；mkdir 缺陷本身有命令级设备实测。这些证据不等于当前 magisk.42 已完成全量真机回归，也不能替代 Bun runtime 与当前 APK 的设备验收。
+- **当前预发布仍需设备验收**：v3.5.0-beta.1 / magisk.42 的安装、服务启动与守活、插件/Bun runtime、升级回滚，以及 3.5.0-beta.1-mod 的安装、启动、自动发现、硬件返回键和网络切换，均应在当前 Release 上核对。历史构建或旧版真机结果不直接外推。
 - **CI 不连接手机**：源码与归档校验、glibc 依赖检查、Shell/Python/前端测试、APK 构建与签名核验可以自动化，但不能证明 Android 设备上的安装、重启、真实账户请求和网络切换已经通过。
 - **更新入口需独立验收**：仓库已公开，具备匿名读取 `update.json` 和下载 Release 资产的条件；Magisk 管理器检查/安装更新及 `a2a apk-update` 的端到端设备链仍需当前版本真机确认。
 - **cgroup 逃逸依赖设备**：只在 `/sys/fs/cgroup/cgroup.procs` 可写、且 `/proc/self/cgroup` 里能匹配到 `apps`/`background` 等分组时生效；部分设备（cgroup v2 统一层级、厂商改写）不适用，属降级不影响运行。
