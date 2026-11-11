@@ -69,7 +69,9 @@ static int wrap(const char *path,char *const argv[],char **out) {
   * LD_PRELOAD environment variable; bionic children do not inherit it. */
  if(!access(BRIDGE,R_OK)) {out[j++]="--preload";out[j++]=BRIDGE;}
  out[j++]=(char*)path;
- for(size_t i=1;i<n;i++) out[j++]=argv[i]; out[j]=0;return 0;
+ for(size_t i=1;i<n;i++) out[j++]=argv[i];
+ out[j]=0;
+ return 0;
 }
 int execvp(const char *file,char *const argv[]) {
  char canonical[PATH_MAX];
