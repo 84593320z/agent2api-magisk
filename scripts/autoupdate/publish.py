@@ -8,7 +8,6 @@ import re
 import subprocess
 import urllib.parse
 import urllib.request
-import zipfile
 from control import dump, request, version, release_refs
 from bundle import ROOT, apply, checkpoint_plan
 from docs_sync import sync as sync_docs
@@ -124,28 +123,29 @@ def get_release(tag):
     return next((x for x in api('/releases?per_page=100') if x['tag_name'] == tag), None)
 
 
-def candidate_mobile_changes(archive):
-    """The signed candidate manifest decides whether a rebuild changes the APK track."""
-    with zipfile.ZipFile(archive) as z:
-        rows = json.loads(z.read('manifest.json'))
-    return any(row['path'] == 'apk-mod/a2a-mobile-mod.patch' or row['path'].startswith('apk-mod/src/')
-               for row in rows)
+def release_assets_identical(tag, files):
+    """Compare signed output with the published track, not the baseline Git diff.
 
-
-def assert_release_assets_identical(tag, files):
-    """A module-only rebuild must reuse the exact already published APK track."""
+    Overlay fixes may already be in the baseline commit, so the candidate
+    manifest says nothing about whether the existing Release still matches.
+    """
     r = get_release(tag)
-    if r is None or r.get('draft'):
-        raise ValueError('Published APK release missing for module-only rebuild: '+tag)
-    old = {x['name']: x for x in r['assets']}
-    if set(old) != {p.name for p in files}:
-        raise ValueError('Published APK asset set differs for module-only rebuild: '+tag)
-    for p in files:
-        asset = old.get(p.name)
-        data = p.read_bytes()
-        if (asset is None or asset['size'] != len(data)
+    if r is None:
+        return False
+    expected = {p.name: p for p in files}
+    assets = r.get('assets', [])
+    old = {x['name']: x for x in assets}
+    if len(old) != len(assets) or set(old) - set(expected):
+        raise ValueError('Unexpected existing assets; preserving release: '+tag)
+    if set(old) != set(expected):
+        return False
+    for name, path in expected.items():
+        data = path.read_bytes()
+        asset = old[name]
+        if (asset['size'] != len(data)
                 or hashlib.sha256(download_asset(asset)).hexdigest() != hashlib.sha256(data).hexdigest()):
-            raise ValueError('Module-only rebuild would change published APK asset: '+p.name)
+            return False
+    return True
 
 
 def upload_asset(r, p, data):
@@ -225,12 +225,6 @@ def publish(a):
     cfg = json.loads((ROOT/'scripts/autoupdate/config.json').read_text())
     maintenance = bool(plan.get('republish'))
     republish = is_republish(cfg, plan)
-    mobile_changed = candidate_mobile_changes(a.artifacts/'candidate.zip') if maintenance else True
-    if cfg['last_version']==plan['version'] and not republish:
-        assert cfg['last_commit']==plan['commit']
-        commit = recovery_commit(plan)
-    else:
-        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected)
     sums = a.artifacts/'SHA256SUMS.txt'
     sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files), encoding='utf-8')
     apk_sums = a.artifacts/'apk-checksums'/'SHA256SUMS.txt'
@@ -238,19 +232,23 @@ def publish(a):
     apk_files = [apk, a.artifacts/'signature.json', apk_sums]
     apk_sums.write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in apk_files[:2]), encoding='utf-8')
     apk_tag = f"apk-v{plan['version']}-mod"
-    if maintenance and not mobile_changed:
-        # Fail before publishing the module if an allegedly module-only rebuild
-        # would make its bundled APK differ from the existing APK track.
-        assert_release_assets_identical(apk_tag, apk_files)
+    # The baseline may already contain an overlay repair.  Decide from the
+    # actual signed assets before any checkpoint or Release is changed.
+    apk_changed = maintenance and not release_assets_identical(apk_tag, apk_files)
+    if cfg['last_version']==plan['version'] and not republish:
+        assert cfg['last_commit']==plan['commit']
+        commit = recovery_commit(plan)
+    else:
+        commit = commit_candidate(plan, a.artifacts/'candidate.zip', a.expected)
     body = f"自动同步上游 {plan['tag']}，精确源码 `{plan['commit']}`。\n\n模块保留 Android 启动桥接、事务恢复与 DNS 修复；手机端保留开关写屏障/严格回显。APK 使用既有 .mod 证书。完整离线回归、ELF闭包、资源与签名核验通过；CI 不替代真机验收。\n\n源码提交 `{commit}`。安装旧包 com.agent2api.mobile 的用户须按迁移文档重建配置；既有同签名 .mod 可覆盖升级。\n"
     prerelease = bool(plan.get('prerelease'))
     if prerelease:
         body += "\n※ 上游本次为预发布（beta）：模块与 APK 均按同一精确提交构建，签名与既有 .mod 证书一致；上游正式版发布后会自动再同步一版，届时可正常覆盖升级。\n"
     if maintenance:
-        if mobile_changed:
-            body += f"\n※ 本次是同上游版本的维护重发：模块与 APK 均有更新，`{apk_tag}` 中的 APK 会在完整验签和回下载校验后受控替换；versionCode 与签名保持不变，可覆盖升级。\n"
+        if apk_changed:
+            body += f"\n※ 本次是同上游版本的维护重发：模块与 APK 资产均有更新，`{apk_tag}` 会在完整验签和回下载校验后受控替换；versionCode 与签名保持不变，可覆盖升级。\n"
         else:
-            body += f"\n※ 本次是模块侧修复的重新构建：上游版本与 APK 未变，仅模块脚本更新；已逐字节核验 `{apk_tag}` 的既有 APK，手机端无需重装。\n"
+            body += f"\n※ 本次是模块侧修复的重新构建：上游版本与 APK 资产未变，仅模块脚本更新；已逐字节核验 `{apk_tag}` 的既有 APK，手机端无需重装。\n"
     release(f"v{plan['version']}-magisk.{plan['module_revision']}", commit, files+[sums], body, prerelease)
     release(apk_tag, commit, apk_files, body, prerelease,
             move_tag=maintenance, replace_assets=maintenance)

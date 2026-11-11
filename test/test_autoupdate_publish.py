@@ -12,26 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts/autoupdate
 import publish
 
 
-class CandidateTests(unittest.TestCase):
-    def manifest(self, paths):
-        temp = tempfile.TemporaryDirectory()
-        self.addCleanup(temp.cleanup)
-        archive = Path(temp.name) / 'candidate.zip'
-        with zipfile.ZipFile(archive, 'w') as z:
-            z.writestr('manifest.json', json.dumps([
-                {'path': path, 'deleted': False, 'sha256': '0' * 64} for path in paths
-            ]))
-        return archive
-
-    def test_mobile_manifest_detection(self):
-        self.assertFalse(publish.candidate_mobile_changes(self.manifest([
-            'module/module.prop', 'scripts/autoupdate/config.json'])))
-        self.assertTrue(publish.candidate_mobile_changes(self.manifest([
-            'apk-mod/src/lib/discover.ts', 'scripts/autoupdate/config.json'])))
-        self.assertTrue(publish.candidate_mobile_changes(self.manifest([
-            'apk-mod/a2a-mobile-mod.patch'])))
-
-
 class ReleaseReplacementTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -98,14 +78,20 @@ class ReleaseReplacementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'replacement'):
             self.run_release(move_tag=True)
 
-    def test_module_only_preflight_requires_the_exact_asset_set(self):
+    def test_track_identity_uses_actual_assets_and_rejects_unexpected_extras(self):
         self.new.write_bytes(b'old')
         with patch.object(publish, 'get_release', return_value=self.release), \
              patch.object(publish, 'download_asset', side_effect=lambda asset: self.bodies[asset['id']]):
-            publish.assert_release_assets_identical('apk-v1-mod', [self.new, self.same])
+            self.assertTrue(publish.release_assets_identical('apk-v1-mod', [self.new, self.same]))
+            self.new.write_bytes(b'changed')
+            self.assertFalse(publish.release_assets_identical('apk-v1-mod', [self.new, self.same]))
             self.release['assets'].append({'id': 3, 'name': 'unexpected', 'size': 0})
-            with self.assertRaisesRegex(ValueError, 'asset set differs'):
-                publish.assert_release_assets_identical('apk-v1-mod', [self.old, self.same])
+            with self.assertRaisesRegex(ValueError, 'Unexpected existing assets'):
+                publish.release_assets_identical('apk-v1-mod', [self.new, self.same])
+
+    def test_missing_track_is_a_controlled_creation_not_an_identity_match(self):
+        with patch.object(publish, 'get_release', return_value=None):
+            self.assertFalse(publish.release_assets_identical('apk-v1-mod', [self.new, self.same]))
 
 
 class PublishOrderingTests(unittest.TestCase):
@@ -148,28 +134,28 @@ class PublishOrderingTests(unittest.TestCase):
             z.writestr('manifest.json', json.dumps([{'path': path} for path in paths]))
         return root, SimpleNamespace(plan=plan_path, artifacts=artifacts, expected='a' * 40)
 
-    def run_publish(self, mobile):
-        root, args = self.fixture(mobile)
+    def run_publish(self, track_changed):
+        root, args = self.fixture(False)
         events = []
         with patch.object(publish, 'ROOT', root), \
              patch.object(publish, 'commit_candidate', side_effect=lambda *a: events.append('commit') or 'c' * 40), \
-             patch.object(publish, 'assert_release_assets_identical', side_effect=lambda *a: events.append('apk-preflight')), \
+             patch.object(publish, 'release_assets_identical', side_effect=lambda *a: events.append('apk-compare') or not track_changed), \
              patch.object(publish, 'release', side_effect=lambda *a, **kw: events.append(('release', a[0], kw))), \
              patch.object(publish, 'commit_docs', side_effect=lambda *a: events.append('docs')):
             publish.publish(args)
         return events
 
-    def test_module_only_republish_preflights_apk_and_updates_docs_last(self):
+    def test_identical_apk_track_is_compared_before_checkpoint_and_docs_are_last(self):
         events = self.run_publish(False)
-        self.assertEqual(events[0:2], ['commit', 'apk-preflight'])
+        self.assertEqual(events[0:2], ['apk-compare', 'commit'])
         self.assertEqual(events[-1], 'docs')
         releases = [event for event in events if isinstance(event, tuple)]
         self.assertEqual(len(releases), 2)
         self.assertEqual(releases[-1][2], {'move_tag': True, 'replace_assets': True})
 
-    def test_mobile_republish_skips_byte_identity_and_replaces_track(self):
+    def test_changed_apk_replaces_track_even_without_a_candidate_manifest_diff(self):
         events = self.run_publish(True)
-        self.assertNotIn('apk-preflight', events)
+        self.assertEqual(events[0:2], ['apk-compare', 'commit'])
         self.assertEqual(events[-1], 'docs')
         releases = [event for event in events if isinstance(event, tuple)]
         self.assertEqual(len(releases), 2)

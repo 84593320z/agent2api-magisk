@@ -19,7 +19,7 @@
 3. **fetch**：使用只读令牌取得钉死源码与归档；临时认证通过环境注入，不保存至 Git 配置；完整源码传输有磁盘与时间限额。
 4. **build**：独立无凭据 runner，融合七文件 mobile overlay，保留上游其余页面；构建 Web/Capacitor/unsigned APK。服务端验证安全归档、ARM64 ELF 依赖与强符号闭包、版本及确定性 ZIP，保留运行库、事务/DNS 修复和插件/runtime 桥接。更新候选树后再次跑完整回归。
 5. **sign**：全新 runner，仅运行仓库签名脚本与 Android 官方工具，不执行上游 npm/Gradle。核对包名、版本、Web 资源、APK v2 签名与固定既有证书。
-6. **publish**：仅该 job 获得 contents 写权限；候选路径白名单与固定配置键校验后先提交候选 checkpoint。两个 Release 逐资产上传并回下载核 SHA-256，完整后再以独立 docs commit 更新 README 自动版本区及根目录 `update.json`。普通 Release 的既有同名资产只核验、不覆盖；只有同上游版本的 APK 维护重发可以按候选 manifest 受控替换变化资产。后续 detect 同时核对 Release 与文档入口，文档提交失败或取消也会恢复原计划的幂等发布。
+6. **publish**：仅该 job 获得 contents 写权限；维护重发先把新签名 APK 轨与线上 Release 逐资产比对，候选路径白名单与固定配置键校验后再提交或恢复候选 checkpoint。两个 Release 逐资产上传并回下载核 SHA-256，完整后再以独立 docs commit 更新 README 自动版本区及根目录 `update.json`。普通 Release 的既有同名资产只核验、不覆盖；只有同上游版本的 APK 维护重发可以按实际资产差异受控替换。后续 detect 同时核对 Release 与文档入口，文档提交失败或取消也会恢复原计划的幂等发布。
 7. **failure**：仅提交脱敏故障记录至 `automation/failure-<tag>` 并创建/复用 PR，附 Actions 日志入口。候选代码与原始日志不写入故障 PR。
 
 并发组 `upstream-sync` 串行运行；失败不会自动跳过检查。源码提交之后中断，由配置中的 `last_plan` 定位原 Actions artifacts、checkpoint commit 和原 tag，避免重新签名产生不同 APK。artifact 已过期或旧资产被篡改时，检查会保持失败并提供故障记录，而不是覆盖发布。
@@ -29,7 +29,7 @@
 以下规则由发布代码和故障注入测试约束；是否已在某个 Release 上执行，以实际部署记录为准：
 
 1. **发布完成后再更新文档入口**：模块与 APK Release 的资产均上传并回下载核验后，再用独立 docs commit 更新 README 自动版本区与 `update.json`，避免更新入口提前指向尚未完整发布的资产。
-2. **同上游版本的 APK 维护重发**：维护重发时比较候选 manifest 中的 mobile overlay 是否变化。未变化则先在发布模块前逐字节核验原 APK 轨；发生变化时才允许在原有 `apk-vX.Y.Z-mod` Release 上替换变化资产，保持同一上游版本、包名、versionCode 和固定证书，全部回下载核验后才移动 tag。
+2. **同上游版本的 APK 维护重发**：维护重发直接比较新签名 APK、`signature.json`、校验和与线上 Release，不能用候选 manifest 推断——overlay 修复可能已经在 baseline 中。资产完全一致则复用原 APK 轨；有差异才允许在原有 `apk-vX.Y.Z-mod` Release 上替换变化资产，保持同一上游版本、包名、versionCode 和固定证书，全部回下载核验后才移动 tag。线上出现计划外资产时，在任何 checkpoint 或 Release 变更前失败。
 3. **验收前不外推**：单元测试、真实发布演练和真机验收是不同证据层级；任何一层通过都不能替代其余层级。
 
 ## 签名配置
